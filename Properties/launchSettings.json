@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "PDF_simple_edit (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "PDF_simple_edit (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
