@@ -1,0 +1,40 @@
+using System;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using Microsoft.UI.Xaml.Media.Imaging;
+
+namespace PDF_simple_edit
+{
+    /// <summary>
+    /// Page thumbnail data for the page list view.
+    /// Must be in root namespace for x:DataType binding in XAML.
+    /// </summary>
+    public class PageThumbnailData : INotifyPropertyChanged
+    {
+        private int _pageNumber;
+        private BitmapImage? _thumbnail;
+
+        public int PageNumber
+        {
+            get => _pageNumber;
+            set { _pageNumber = value; OnPropertyChanged(); OnPropertyChanged(nameof(PageLabel)); }
+        }
+
+        public int PageIndex => PageNumber - 1;
+
+        public string PageLabel => PageNumber.ToString();
+
+        public BitmapImage? Thumbnail
+        {
+            get => _thumbnail;
+            set { _thumbnail = value; OnPropertyChanged(); }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        protected void OnPropertyChanged([CallerMemberName] string? name = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        }
+    }
+}

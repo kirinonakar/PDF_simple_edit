@@ -7,13 +7,419 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Title="PDF_simple_edit">
+    Title="PDF Editor">
 
+    <!--
     <Window.SystemBackdrop>
         <MicaBackdrop />
     </Window.SystemBackdrop>
+    -->
 
-    <Grid>
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="32"/>
+        </Grid.RowDefinitions>
 
+        <!-- Custom Title Bar -->
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Background="Transparent">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                <FontIcon Glyph="&#xEA90;" FontSize="16" Foreground="#0078D4"/>
+                <TextBlock x:Name="TitleText" Text="PDF Editor" Margin="12,0,0,0"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Menu Bar -->
+        <MenuBar Grid.Row="1">
+            <MenuBarItem Title="파일">
+                <MenuFlyoutItem Text="새로 만들기" Click="NewDocument_Click">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8A5;"/></MenuFlyoutItem.Icon>
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="N"/>
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="열기..." Click="OpenFile_Click">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E5;"/></MenuFlyoutItem.Icon>
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="O"/>
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="저장" x:Name="MenuSave" Click="SaveFile_Click" IsEnabled="False">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74E;"/></MenuFlyoutItem.Icon>
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="S"/>
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="다른 이름으로 저장..." x:Name="MenuSaveAs" Click="SaveAsFile_Click" IsEnabled="False">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE792;"/></MenuFlyoutItem.Icon>
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control,Shift" Key="S"/>
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
+                <MenuFlyoutSeparator/>
+                <MenuFlyoutItem Text="인쇄..." x:Name="MenuPrint" Click="Print_Click" IsEnabled="False">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE749;"/></MenuFlyoutItem.Icon>
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="P"/>
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
+                <MenuFlyoutSeparator/>
+                <MenuFlyoutItem Text="닫기" x:Name="MenuClose" Click="CloseFile_Click" IsEnabled="False"/>
+            </MenuBarItem>
+
+            <MenuBarItem Title="편집">
+                <MenuFlyoutItem Text="찾기..." x:Name="MenuFind" Click="Find_Click" IsEnabled="False">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE721;"/></MenuFlyoutItem.Icon>
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="F"/>
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="찾기 및 바꾸기..." x:Name="MenuFindReplace" Click="FindReplace_Click" IsEnabled="False">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8EE;"/></MenuFlyoutItem.Icon>
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="H"/>
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
+            </MenuBarItem>
+
+            <MenuBarItem Title="보기" x:Name="MenuViewItem">
+                <MenuFlyoutItem Text="확대" Click="ZoomIn_Click">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8A3;"/></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="축소" Click="ZoomOut_Click">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE71F;"/></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="페이지에 맞추기" Click="FitToPage_Click"/>
+                <MenuFlyoutSeparator/>
+                <ToggleMenuFlyoutItem Text="페이지 패널 표시" x:Name="MenuShowPagePanel"
+                                       IsChecked="True" Click="TogglePagePanel_Click"/>
+            </MenuBarItem>
+
+            <MenuBarItem Title="도구">
+                <MenuFlyoutItem Text="텍스트 추가" x:Name="MenuAddText" Click="AddTextTool_Click" IsEnabled="False">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8D2;"/></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="텍스트 강조" x:Name="MenuHighlight" Click="HighlightTool_Click" IsEnabled="False">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE7E6;"/></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="스티커 노트" x:Name="MenuStickyNote" Click="StickyNoteTool_Click" IsEnabled="False">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE70B;"/></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="이미지 추가" x:Name="MenuAddImage" Click="AddImageTool_Click" IsEnabled="False">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B9;"/></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutSeparator/>
+                <MenuFlyoutItem Text="PDF 합치기..." Click="MergePdf_Click">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8BB;"/></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="PDF 나누기..." x:Name="MenuSplitPdf" Click="SplitPdf_Click" IsEnabled="False">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xF156;"/></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="페이지 삭제" x:Name="MenuDeletePage" Click="DeletePage_Click" IsEnabled="False">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74D;"/></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+            </MenuBarItem>
+
+            <MenuBarItem Title="설정">
+                <MenuFlyoutItem Text="환경 설정..." Click="Settings_Click">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE713;"/></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="정보" Click="About_Click">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE946;"/></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+            </MenuBarItem>
+        </MenuBar>
+
+        <!-- Main Toolbar -->
+        <Grid Grid.Row="2" Padding="8,4"
+              BorderBrush="#30000000" BorderThickness="0,0,0,1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- File operations -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2">
+                <Button x:Name="BtnOpen" Click="OpenFile_Click" ToolTipService.ToolTip="열기 (Ctrl+O)"
+                        Padding="8,6" Background="Transparent" BorderThickness="0">
+                    <FontIcon Glyph="&#xE8E5;" FontSize="16"/>
+                </Button>
+                <Button x:Name="BtnSave" Click="SaveFile_Click" ToolTipService.ToolTip="저장 (Ctrl+S)"
+                        Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                    <FontIcon Glyph="&#xE74E;" FontSize="16"/>
+                </Button>
+                <Button x:Name="BtnPrint" Click="Print_Click" ToolTipService.ToolTip="인쇄 (Ctrl+P)"
+                        Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                    <FontIcon Glyph="&#xE749;" FontSize="16"/>
+                </Button>
+                <AppBarSeparator/>
+            </StackPanel>
+
+            <!-- Edit tools -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
+                <ToggleButton x:Name="BtnSelect" Click="SelectTool_Click" ToolTipService.ToolTip="선택"
+                              IsEnabled="False" Padding="8,6">
+                    <FontIcon Glyph="&#xEF20;" FontSize="16"/>
+                </ToggleButton>
+                <ToggleButton x:Name="BtnAddText" Click="AddTextTool_Click" ToolTipService.ToolTip="텍스트 추가"
+                              IsEnabled="False" Padding="8,6">
+                    <FontIcon Glyph="&#xE8D2;" FontSize="16"/>
+                </ToggleButton>
+                <ToggleButton x:Name="BtnHighlight" Click="HighlightTool_Click" ToolTipService.ToolTip="텍스트 강조"
+                              IsEnabled="False" Padding="8,6">
+                    <FontIcon Glyph="&#xE7E6;" FontSize="16"/>
+                </ToggleButton>
+                <ToggleButton x:Name="BtnStickyNote" Click="StickyNoteTool_Click" ToolTipService.ToolTip="스티커 노트"
+                              IsEnabled="False" Padding="8,6">
+                    <FontIcon Glyph="&#xE70B;" FontSize="16"/>
+                </ToggleButton>
+                <Button x:Name="BtnAddImage" Click="AddImageTool_Click" ToolTipService.ToolTip="이미지 추가"
+                        Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                    <FontIcon Glyph="&#xE8B9;" FontSize="16"/>
+                </Button>
+                <AppBarSeparator/>
+            </StackPanel>
+
+            <!-- Font settings toolbar -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" x:Name="FontToolbar">
+                <ComboBox x:Name="CmbFontFamily" Width="150" PlaceholderText="폰트"
+                          SelectionChanged="FontFamily_Changed" VerticalAlignment="Center">
+                    <ComboBoxItem Content="맑은 고딕" IsSelected="True"/>
+                    <ComboBoxItem Content="굴림"/>
+                    <ComboBoxItem Content="돋움"/>
+                    <ComboBoxItem Content="바탕"/>
+                    <ComboBoxItem Content="궁서"/>
+                    <ComboBoxItem Content="나눔고딕"/>
+                    <ComboBoxItem Content="나눔명조"/>
+                    <ComboBoxItem Content="Arial"/>
+                    <ComboBoxItem Content="Times New Roman"/>
+                    <ComboBoxItem Content="Courier New"/>
+                    <ComboBoxItem Content="Verdana"/>
+                    <ComboBoxItem Content="Calibri"/>
+                    <ComboBoxItem Content="Segoe UI"/>
+                </ComboBox>
+                <NumberBox x:Name="NbFontSize" Value="12" Minimum="6" Maximum="144"
+                           SpinButtonPlacementMode="Compact" Width="90"
+                           ValueChanged="FontSize_Changed" VerticalAlignment="Center"/>
+                <ToggleButton x:Name="BtnBold" ToolTipService.ToolTip="굵게"
+                              Click="FontBold_Click" Padding="8,6">
+                    <FontIcon Glyph="&#xE8DD;" FontSize="14"/>
+                </ToggleButton>
+                <ToggleButton x:Name="BtnItalic" ToolTipService.ToolTip="기울임"
+                              Click="FontItalic_Click" Padding="8,6">
+                    <FontIcon Glyph="&#xE8DB;" FontSize="14"/>
+                </ToggleButton>
+                <DropDownButton x:Name="BtnFontColor" ToolTipService.ToolTip="글자 색상" Padding="8,6">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <FontIcon Glyph="&#xE8D3;" FontSize="14"/>
+                        <Border x:Name="FontColorIndicator" Width="14" Height="4"
+                                CornerRadius="1" Background="Black"/>
+                    </StackPanel>
+                    <DropDownButton.Flyout>
+                        <Flyout>
+                            <GridView x:Name="ColorPalette" SelectionChanged="FontColor_Changed"
+                                      MaxWidth="240">
+                            </GridView>
+                        </Flyout>
+                    </DropDownButton.Flyout>
+                </DropDownButton>
+                <AppBarSeparator/>
+            </StackPanel>
+
+            <!-- Zoom and navigation -->
+            <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="2">
+                <Button Click="ZoomOut_Click" Padding="8,6" ToolTipService.ToolTip="축소"
+                        Background="Transparent" BorderThickness="0">
+                    <FontIcon Glyph="&#xE71F;" FontSize="14"/>
+                </Button>
+                <TextBlock x:Name="TxtZoom" Text="100%" VerticalAlignment="Center"
+                           MinWidth="40" TextAlignment="Center" Margin="4,0"/>
+                <Button Click="ZoomIn_Click" Padding="8,6" ToolTipService.ToolTip="확대"
+                        Background="Transparent" BorderThickness="0">
+                    <FontIcon Glyph="&#xE8A3;" FontSize="14"/>
+                </Button>
+                <AppBarSeparator/>
+                <Button Click="FitToPage_Click" Padding="8,6" ToolTipService.ToolTip="페이지에 맞추기"
+                        Background="Transparent" BorderThickness="0">
+                    <FontIcon Glyph="&#xE9A6;" FontSize="14"/>
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- Content Area -->
+        <Grid Grid.Row="3">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="PagePanelColumn" Width="200"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition x:Name="FindPanelColumn" Width="0"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Page Thumbnails Panel -->
+            <Grid Grid.Column="0" x:Name="PagePanel"
+                  Background="#0A000000"
+                  BorderBrush="#20000000" BorderThickness="0,0,1,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="40"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="페이지" Margin="12,0" VerticalAlignment="Center"
+                           FontWeight="SemiBold" FontSize="13"/>
+                <ListView x:Name="PageListView" Grid.Row="1"
+                          SelectionChanged="PageListView_SelectionChanged"
+                          Padding="4">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="local:PageThumbnailData">
+                            <Grid Margin="4" MaxWidth="180">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Border Background="White"
+                                        BorderBrush="#40000000"
+                                        BorderThickness="1" CornerRadius="4"
+                                        Padding="2" HorizontalAlignment="Center">
+                                    <Image Source="{x:Bind Thumbnail, Mode=OneWay}" MaxHeight="200"
+                                           Stretch="Uniform"/>
+                                </Border>
+                                <TextBlock Grid.Row="1" Text="{x:Bind PageLabel, Mode=OneWay}"
+                                           HorizontalAlignment="Center" Margin="0,4,0,0"
+                                           FontSize="11" Opacity="0.7"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+
+            <!-- PDF Viewer Area -->
+            <Grid Grid.Column="1" Background="#F0F0F0">
+                <!-- Welcome screen -->
+                <StackPanel x:Name="WelcomePanel" HorizontalAlignment="Center"
+                            VerticalAlignment="Center" Spacing="16">
+                    <FontIcon Glyph="&#xEA90;" FontSize="64"
+                              Foreground="#0078D4" Opacity="0.6"/>
+                    <TextBlock Text="PDF Editor" FontSize="28" FontWeight="SemiBold"
+                               HorizontalAlignment="Center" Opacity="0.8"/>
+                    <TextBlock Text="PDF 파일을 열거나 새로 만드세요" FontSize="14"
+                               HorizontalAlignment="Center" Opacity="0.5"/>
+                    <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" Margin="0,16,0,0">
+                        <Button Content="파일 열기" Click="OpenFile_Click" Style="{StaticResource AccentButtonStyle}"
+                                Padding="24,10"/>
+                        <Button Content="새로 만들기" Click="NewDocument_Click" Padding="24,10"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- PDF page display -->
+                <ScrollViewer x:Name="PdfScrollViewer" Visibility="Collapsed"
+                              ZoomMode="Enabled" MinZoomFactor="0.25" MaxZoomFactor="5"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto"
+                              ViewChanged="PdfScrollViewer_ViewChanged">
+                    <Grid x:Name="PdfContentGrid" HorizontalAlignment="Center"
+                          VerticalAlignment="Top" Margin="20">
+                        <Image x:Name="PdfPageImage" Stretch="None"
+                               HorizontalAlignment="Center" VerticalAlignment="Top"/>
+                        <Canvas x:Name="OverlayCanvas"
+                                PointerPressed="OverlayCanvas_PointerPressed"
+                                PointerMoved="OverlayCanvas_PointerMoved"
+                                PointerReleased="OverlayCanvas_PointerReleased"
+                                Background="Transparent"/>
+                    </Grid>
+                </ScrollViewer>
+
+                <!-- Loading indicator -->
+                <ProgressRing x:Name="LoadingRing" IsActive="False" Width="48" Height="48"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Grid>
+
+            <!-- Find/Replace Panel -->
+            <Grid Grid.Column="2" x:Name="FindPanel"
+                  Background="#0A000000"
+                  BorderBrush="#20000000" BorderThickness="1,0,0,0"
+                  Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Grid Padding="12,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="찾기 및 바꾸기" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Click="CloseFindPanel_Click"
+                            Background="Transparent" BorderThickness="0" Padding="6">
+                        <FontIcon Glyph="&#xE711;" FontSize="12"/>
+                    </Button>
+                </Grid>
+                <StackPanel Grid.Row="1" Padding="12,0,12,12" Spacing="8">
+                    <TextBox x:Name="TxtFindText" PlaceholderText="찾을 텍스트..."
+                             TextChanged="FindText_Changed"/>
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Button Content="이전" Click="FindPrevious_Click" Padding="12,6"/>
+                        <Button Content="다음" Click="FindNext_Click" Padding="12,6"/>
+                        <TextBlock x:Name="TxtFindCount" VerticalAlignment="Center"
+                                   Margin="8,0" Opacity="0.6" FontSize="12"/>
+                    </StackPanel>
+                    <AppBarSeparator HorizontalAlignment="Stretch"/>
+                    <TextBox x:Name="TxtReplaceText" PlaceholderText="바꿀 텍스트..."/>
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Button Content="바꾸기" Click="Replace_Click" Padding="12,6"/>
+                        <Button Content="모두 바꾸기" Click="ReplaceAll_Click" Padding="12,6"/>
+                    </StackPanel>
+                    <CheckBox x:Name="ChkMatchCase" Content="대소문자 구분"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+
+        <!-- Status Bar -->
+        <Grid Grid.Row="4" Background="#0078D4" Padding="12,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock x:Name="TxtStatus" Text="준비" Foreground="White" FontSize="12"
+                       VerticalAlignment="Center"/>
+            <AppBarSeparator Grid.Column="1" Foreground="White" Opacity="0.3"/>
+
+            <!-- Page navigation -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                <Button x:Name="BtnPrevPage" Click="PrevPage_Click" Padding="4,2"
+                        Background="Transparent" BorderThickness="0" IsEnabled="False">
+                    <FontIcon Glyph="&#xE76B;" FontSize="12" Foreground="White"/>
+                </Button>
+                <TextBlock x:Name="TxtPageInfo" Text="페이지: 0 / 0" Foreground="White"
+                           FontSize="12" VerticalAlignment="Center"/>
+                <Button x:Name="BtnNextPage" Click="NextPage_Click" Padding="4,2"
+                        Background="Transparent" BorderThickness="0" IsEnabled="False">
+                    <FontIcon Glyph="&#xE76C;" FontSize="12" Foreground="White"/>
+                </Button>
+                <TextBox x:Name="TxtGoToPage" Width="50" PlaceholderText="이동" FontSize="11"
+                         Padding="4,2" VerticalAlignment="Center"
+                         KeyDown="GoToPage_KeyDown"/>
+            </StackPanel>
+
+            <TextBlock Grid.Column="3" x:Name="TxtToolMode" Text="" Foreground="White"
+                       FontSize="12" VerticalAlignment="Center" Margin="8,0"/>
+            <AppBarSeparator Grid.Column="4" Foreground="White" Opacity="0.3"/>
+            <TextBlock Grid.Column="5" x:Name="TxtFileInfo" Text="" Foreground="White"
+                       FontSize="12" VerticalAlignment="Center"/>
+        </Grid>
     </Grid>
 </Window>
