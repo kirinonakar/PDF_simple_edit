@@ -43,6 +43,9 @@ namespace PDF_simple_edit
         private bool _isDialogOpen = false;
         private bool _isInlineEditing = false;
         private bool _isFirstLoad = false;
+        private PdfAnnotation? _selectedAnnotation;
+        private bool _isMovingAnnotation = false;
+        private Windows.Foundation.Point _lastMousePos;
         
         // PDF는 72 DPI, Windows 논리 픽셀은 96 DPI입니다.
         private const double PdfToPixels = 96.0 / 72.0;
@@ -353,20 +356,10 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
         {
             if (!_pdfManager.IsLoaded) return;
 
-            ApplyAllAnnotations();
-
             if (_pdfManager.FilePath != null)
             {
-                TxtStatus.Text = "저장 중...";
-                bool success = await _pdfManager.SaveAsync();
-                TxtStatus.Text = success ? "저장됨" : "저장 실패";
-
-                if (success)
-                {
-                    _renderTempPath = _pdfManager.FilePath;
-                    await RenderCurrentPageAsync();
-                    AddToRecentFiles(_pdfManager.FilePath);
-                }
+                await PerformSaveAsync(_pdfManager.FilePath, true);
+                AddToRecentFiles(_pdfManager.FilePath);
             }
             else
             {
@@ -377,8 +370,6 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
         private async void SaveAsFile_Click(object sender, RoutedEventArgs e)
         {
             if (!_pdfManager.IsLoaded) return;
-
-            ApplyAllAnnotations();
 
             var picker = new FileSavePicker();
             picker.FileTypeChoices.Add("PDF 파일", new List<string> { ".pdf" });
@@ -391,31 +382,8 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
             var file = await picker.PickSaveFileAsync();
             if (file != null)
             {
-                TxtStatus.Text = "저장 중...";
-                try
-                {
-                    bool success = await _pdfManager.SaveAsAsync(file.Path);
-                    if (success)
-                    {
-                        await RenderCurrentPageAsync();
-                        TxtStatus.Text = "다른 이름으로 저장됨";
-                        AddToRecentFiles(file.Path);
-                    }
-                    else
-                    {
-                        TxtStatus.Text = "저장 실패";
-                        await ShowErrorDialogAsync("오류", "파일을 저장할 수 없습니다. 다른 프로그램에서 사용 중인지 확인하세요.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    TxtStatus.Text = "저장 오류";
-                    await ShowErrorDialogAsync("오류", $"저장 중 오류가 발생했습니다: {ex.Message}");
-                }
-                finally
-                {
-                    UpdateUIState();
-                }
+                await PerformSaveAsync(file.Path, true);
+                AddToRecentFiles(file.Path);
             }
         }
 
@@ -436,14 +404,12 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
 
             try
             {
-                string tempPath = _renderTempPath ?? _pdfManager.FilePath ?? "";
-                if (string.IsNullOrEmpty(tempPath))
-                {
-                    tempPath = Path.Combine(Path.GetTempPath(), $"print_{Guid.NewGuid()}.pdf");
-                    await _pdfManager.SaveAsAsync(tempPath, false);
-                }
+                // 인쇄 시에는 현재 모든 어노테이션이 반영된 상태여야 하므로 임시 파일로 플래트닝하여 저장
+                string tempPath = Path.Combine(Path.GetTempPath(), $"print_{Guid.NewGuid()}.pdf");
+                await PerformSaveAsync(tempPath, false);
 
                 var hwnd = WindowNative.GetWindowHandle(this);
+                // PerformSaveAsync가 성공하면 tempPath에 정적 PDF가 생성됨
                 await _printHelper.PrintAsync(_pdfManager.Document, tempPath, hwnd);
             }
             catch (Exception ex)
@@ -733,6 +699,8 @@ private void FitToPage()
             };
 
             UpdateCursor(mode);
+            _selectedAnnotation = null;
+            RenderAnnotationOverlays();
         }
 
         private void UpdateCursor(EditToolMode mode)
@@ -788,12 +756,25 @@ private void FitToPage()
             if (file != null)
             {
                 var pageSize = _pdfManager.GetPageSize(_currentPageIndex);
+                double x = (pageSize.width - 150) / 2;
+                double y = (pageSize.height - 150) / 2;
+                double w = 150, h = 150;
 
-                _pdfManager.AddImage(_currentPageIndex, file.Path,
-                    (pageSize.width - 150) / 2, (pageSize.height - 150) / 2, 150, 150);
+                _annotations.Add(new PdfAnnotation
+                {
+                    Type = AnnotationType.Image,
+                    PageIndex = _currentPageIndex,
+                    X = x,
+                    Y = y,
+                    Width = w,
+                    Height = h,
+                    ImagePath = file.Path,
+                    IsApplied = false
+                });
+                _pdfManager.MarkModified();
 
-                await SaveToTempAndRenderAsync();
-                TxtStatus.Text = "이미지가 추가되었습니다";
+                TxtStatus.Text = "이미지가 추가되었습니다 (저장 시 반영)";
+                RenderAnnotationOverlays();
             }
         }
 
@@ -821,9 +802,23 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
     switch (_currentTool)
     {
+        case EditToolMode.Select:
+            _selectedAnnotation = FindAnnotationAt(pdfX, pdfY);
+            if (_selectedAnnotation != null)
+            {
+                _isMovingAnnotation = true;
+                _lastMousePos = pos;
+                OverlayCanvas.CapturePointer(e.Pointer);
+                TxtStatus.Text = "객체 선택됨 (드래그하여 이동)";
+            }
+            else
+            {
+                TxtStatus.Text = "준비";
+            }
+            RenderAnnotationOverlays();
+            break;
+
         case EditToolMode.AddText:
-            // [수정] 폰트 크기에 따른 임의의 Y좌표 보정을 완전히 제거하여
-            // 클릭한 위치에 정확하게 텍스트 박스가 생성되도록 합니다.
             AddInlineTextBox(pdfX, pdfY);
             break;
 
@@ -849,11 +844,64 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
     }
 }
 
+private PdfAnnotation? FindAnnotationAt(double pdfX, double pdfY)
+{
+    // 탐색 순서를 역순으로 하여 가장 위에 있는 것부터 찾음
+    for (int i = _annotations.Count - 1; i >= 0; i--)
+    {
+        var ann = _annotations[i];
+        if (ann.PageIndex != _currentPageIndex) continue;
+
+        if (ann.Type == AnnotationType.Text || ann.Type == AnnotationType.FreeText)
+        {
+            // 텍스트의 경우 대략적인 범위 계산 (정확한 높이는 폰트 크기에 따라 다름)
+            double width = (ann.Content.Length * ann.FontSize * 0.6); // 근사치
+            double height = ann.FontSize * 1.2;
+            // UI상으로는 [ann.X, ann.Y] ~ [ann.X+W, ann.Y+H] 범위에 그려집니다.
+            if (pdfX >= ann.X && pdfX <= ann.X + width &&
+                pdfY >= ann.Y && pdfY <= ann.Y + height)
+            {
+                return ann;
+            }
+        }
+        else if (ann.Type == AnnotationType.Highlight || ann.Type == AnnotationType.Image)
+        {
+            if (pdfX >= ann.X && pdfX <= ann.X + ann.Width &&
+                pdfY >= ann.Y && pdfY <= ann.Y + ann.Height)
+            {
+                return ann;
+            }
+        }
+        else if (ann.Type == AnnotationType.StickyNote)
+        {
+            if (pdfX >= ann.X && pdfX <= ann.X + 24 &&
+                pdfY >= ann.Y && pdfY <= ann.Y + 24)
+            {
+                return ann;
+            }
+        }
+    }
+    return null;
+}
+
         private void OverlayCanvas_PointerMoved(object sender, PointerRoutedEventArgs e)
         {
-            if (_isDragging && _dragRect != null)
+            var pos = e.GetCurrentPoint(OverlayCanvas).Position;
+
+            if (_isMovingAnnotation && _selectedAnnotation != null)
             {
-                var pos = e.GetCurrentPoint(OverlayCanvas).Position;
+                double dx = (pos.X - _lastMousePos.X) / PdfToPixels;
+                double dy = (pos.Y - _lastMousePos.Y) / PdfToPixels;
+
+                _selectedAnnotation.X += dx;
+                _selectedAnnotation.Y += dy;
+                _selectedAnnotation.IsApplied = false; // 위치가 바뀌었으므로 문서 재적용 필요
+
+                _lastMousePos = pos;
+                RenderAnnotationOverlays();
+            }
+            else if (_isDragging && _dragRect != null)
+            {
                 double x = Math.Min(pos.X, _dragStart.X);
                 double y = Math.Min(pos.Y, _dragStart.Y);
                 double w = Math.Abs(pos.X - _dragStart.X);
@@ -868,7 +916,16 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
         private async void OverlayCanvas_PointerReleased(object sender, PointerRoutedEventArgs e)
         {
-            if (_isDragging && _dragRect != null && _currentTool == EditToolMode.Highlight)
+            if (_isMovingAnnotation)
+            {
+                _isMovingAnnotation = false;
+                OverlayCanvas.ReleasePointerCapture(e.Pointer);
+                
+                _pdfManager.MarkModified();
+                TxtStatus.Text = "위치 이동됨 (저장 시 반영)";
+                RenderAnnotationOverlays();
+            }
+            else if (_isDragging && _dragRect != null && _currentTool == EditToolMode.Highlight)
             {
                 _isDragging = false;
                 OverlayCanvas.ReleasePointerCapture(e.Pointer);
@@ -880,9 +937,6 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
                 if (w > 5 && h > 5)
                 {
-                    _pdfManager.AddHighlight(_currentPageIndex, x, y, w, h,
-                        XColor.FromArgb(255, 255, 255, 0), 0.3);
-
                     _annotations.Add(new PdfAnnotation
                     {
                         Type = AnnotationType.Highlight,
@@ -893,10 +947,11 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                         Height = h,
                         Color = "#FFFF00",
                         Opacity = 0.3,
-                        IsApplied = true
+                        IsApplied = false
                     });
 
-                    TxtStatus.Text = "텍스트 강조가 추가되었습니다";
+                    _pdfManager.MarkModified();
+                    TxtStatus.Text = "텍스트 강조가 추가되었습니다 (저장 시 반영)";
                     RenderAnnotationOverlays();
                 }
 
@@ -913,6 +968,8 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
             foreach (var ann in pageAnnotations)
             {
+                FrameworkElement? element = null;
+
                 switch (ann.Type)
                 {
                     case AnnotationType.Text:
@@ -932,22 +989,17 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                             Padding = new Thickness(0),
                             Margin = new Thickness(0)
                         };
-                        Canvas.SetLeft(tb, ann.X * PdfToPixels);
-                        Canvas.SetTop(tb, ann.Y * PdfToPixels);
-                        OverlayCanvas.Children.Add(tb);
+                        element = tb;
                         break;
 
                     case AnnotationType.Highlight:
-                        var rect = new Microsoft.UI.Xaml.Shapes.Rectangle
+                        element = new Microsoft.UI.Xaml.Shapes.Rectangle
                         {
                             Width = ann.Width * PdfToPixels,
                             Height = ann.Height * PdfToPixels,
                             Fill = new SolidColorBrush(ParseColor(ann.Color)),
                             Opacity = ann.Opacity
                         };
-                        Canvas.SetLeft(rect, ann.X * PdfToPixels);
-                        Canvas.SetTop(rect, ann.Y * PdfToPixels);
-                        OverlayCanvas.Children.Add(rect);
                         break;
 
                     case AnnotationType.StickyNote:
@@ -961,11 +1013,98 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                         };
                         ToolTipService.SetToolTip(snGrid, ann.Content);
                         snGrid.Children.Add(new FontIcon { Glyph = "\uE70B", FontSize = 12 * PdfToPixels });
-                        Canvas.SetLeft(snGrid, ann.X * PdfToPixels);
-                        Canvas.SetTop(snGrid, ann.Y * PdfToPixels);
-                        OverlayCanvas.Children.Add(snGrid);
+                        element = snGrid;
+                        break;
+
+                    case AnnotationType.Image:
+                        if (ann.ImagePath != null)
+                        {
+                            element = new Image
+                            {
+                                Source = new BitmapImage(new Uri(ann.ImagePath)),
+                                Width = ann.Width * PdfToPixels,
+                                Height = ann.Height * PdfToPixels,
+                                Stretch = Stretch.Fill
+                            };
+                        }
                         break;
                 }
+
+                if (element != null)
+                {
+                    Canvas.SetLeft(element, ann.X * PdfToPixels);
+                    Canvas.SetTop(element, ann.Y * PdfToPixels);
+                    
+                    // 선택 시 시각적 표시
+                    if (ann == _selectedAnnotation)
+                    {
+                        var border = new Border
+                        {
+                            BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
+                            BorderThickness = new Thickness(1),
+                            Margin = new Thickness(-2),
+                            Child = element
+                        };
+                        
+                        // 더블 클릭 시 편집 (텍스트만)
+                        if (ann.Type == AnnotationType.Text || ann.Type == AnnotationType.FreeText)
+                        {
+                            border.DoubleTapped += (s, e) => EditAnnotationContent(ann);
+                        }
+
+                        Canvas.SetLeft(border, ann.X * PdfToPixels);
+                        Canvas.SetTop(border, ann.Y * PdfToPixels);
+                        OverlayCanvas.Children.Add(border);
+                    }
+                    else
+                    {
+                        OverlayCanvas.Children.Add(element);
+                    }
+                }
+            }
+        }
+
+        private async void EditAnnotationContent(PdfAnnotation ann)
+        {
+            if (ann.Type == AnnotationType.Text || ann.Type == AnnotationType.FreeText)
+            {
+                var dialog = new ContentDialog
+                {
+                    Title = "텍스트 편집",
+                    PrimaryButtonText = "확인",
+                    SecondaryButtonText = "삭제",
+                    CloseButtonText = "취소",
+                    DefaultButton = ContentDialogButton.Primary,
+                    XamlRoot = Content.XamlRoot,
+                };
+
+                var textBox = new TextBox
+                {
+                    Text = ann.Content,
+                    AcceptsReturn = true,
+                    TextWrapping = TextWrapping.Wrap,
+                    MinHeight = 100,
+                    MinWidth = 300
+                };
+                textBox.Loaded += (s, e) => textBox.Focus(FocusState.Programmatic);
+                dialog.Content = textBox;
+
+                var result = await dialog.ShowAsync();
+                if (result == ContentDialogResult.Primary)
+                {
+                    ann.Content = textBox.Text;
+                    ann.IsApplied = false; // 변경됨
+                    _pdfManager.MarkModified();
+                    TxtStatus.Text = "텍스트가 수정되었습니다 (저장 시 반영)";
+                }
+                else if (result == ContentDialogResult.Secondary)
+                {
+                    _annotations.Remove(ann);
+                    _selectedAnnotation = null;
+                    _pdfManager.MarkModified();
+                    TxtStatus.Text = "객체가 삭제되었습니다";
+                }
+                RenderAnnotationOverlays();
             }
         }
 
@@ -1039,6 +1178,7 @@ private void AddInlineTextBox(double pdfX, double pdfY)
             string text = textBox.Text;
             var pdfPos = (Windows.Foundation.Point)textBox.Tag;
 
+            textBox.Text = ""; // 텍스트 상자 내용 지우기
             OverlayCanvas.Children.Remove(textBox);
             _isInlineEditing = false;
 
@@ -1064,23 +1204,12 @@ private void AddInlineTextBox(double pdfX, double pdfY)
                     Color = selectedColor,
                     IsBold = isBold,
                     IsItalic = isItalic,
-                    IsApplied = true
+                    IsApplied = false // 저장 시 반영
                 };
                 _annotations.Add(newAnn);
+                _pdfManager.MarkModified();
 
-                var xColor = ConvertToXColor(selectedColor);
-
-                // [추가] PDF 엔진이 글자를 밑으로 밀어내며 그리는 현상을 상쇄하기 위해
-// PDF 파일에 기록할 때만 Y좌표를 폰트 크기의 약 1.8배만큼 위로 끌어올립니다.
-double pdfEngineY = pdfPos.Y - (fontSize * 2.21);
-
-// pdfPos.Y 대신 pdfEngineY를 전달
-_pdfManager.AddText(_currentPageIndex, pdfPos.X, pdfEngineY, text,
-    fontFamily, fontSize, xColor, isBold, isItalic);
-
-
-                TxtStatus.Text = "텍스트가 추가되었습니다";
-
+                TxtStatus.Text = "텍스트가 추가되었습니다 (저장 시 반영)";
                 RenderAnnotationOverlays();
             }
             catch (Exception ex)
@@ -1186,10 +1315,11 @@ _pdfManager.AddText(_currentPageIndex, pdfPos.X, pdfEngineY, text,
                 bool isBold = chkBold.IsChecked == true;
                 bool isItalic = chkItalic.IsChecked == true;
 
-                var xColor = ConvertToXColor(selectedColor);
-
-                _pdfManager.AddText(_currentPageIndex, pdfX, pdfY, txtContent.Text,
-                    fontFamily, fontSize, xColor, isBold, isItalic);
+                _fontSettings.FontFamily = fontFamily;
+                _fontSettings.FontSize = fontSize;
+                _fontSettings.IsBold = isBold;
+                _fontSettings.IsItalic = isItalic;
+                _fontSettings.Color = selectedColor;
 
                 var newAnn = new PdfAnnotation
                 {
@@ -1203,28 +1333,22 @@ _pdfManager.AddText(_currentPageIndex, pdfPos.X, pdfEngineY, text,
                     Color = selectedColor,
                     IsBold = isBold,
                     IsItalic = isItalic,
-                    IsApplied = true
+                    IsApplied = false
                 };
                 
                 _annotations.Add(newAnn);
+                _pdfManager.MarkModified();
 
-                _fontSettings.FontFamily = fontFamily;
-                _fontSettings.FontSize = fontSize;
-                _fontSettings.IsBold = isBold;
-                _fontSettings.IsItalic = isItalic;
-                _fontSettings.Color = selectedColor;
-
-                TxtStatus.Text = "텍스트가 추가되었습니다";
+                TxtStatus.Text = "텍스트가 추가되었습니다 (저장 시 반영)";
+                txtContent.Text = ""; // 텍스트 상자 내용 지우기
                 RenderAnnotationOverlays();
-
-                await RenderCurrentPageAsync();
             }
         }
         finally
-            {
-                _isDialogOpen = false;
-            }
+        {
+            _isDialogOpen = false;
         }
+    }
 
         private async Task ShowStickyNoteDialogAsync(double pdfX, double pdfY)
         {
@@ -1258,9 +1382,6 @@ _pdfManager.AddText(_currentPageIndex, pdfPos.X, pdfEngineY, text,
             var result = await dialog.ShowAsync();
             if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(txtContent.Text))
             {
-                _pdfManager.AddStickyNote(_currentPageIndex, pdfX, pdfY, txtContent.Text,
-                    _fontSettings.FontFamily, _fontSettings.FontSize);
-
                 _annotations.Add(new PdfAnnotation
                 {
                     Type = AnnotationType.StickyNote,
@@ -1270,18 +1391,19 @@ _pdfManager.AddText(_currentPageIndex, pdfPos.X, pdfEngineY, text,
                     Content = txtContent.Text,
                     FontFamily = _fontSettings.FontFamily,
                     FontSize = _fontSettings.FontSize,
-                    IsApplied = true
+                    IsApplied = false
                 });
+                _pdfManager.MarkModified();
 
-                TxtStatus.Text = "스티커 노트가 추가되었습니다";
+                TxtStatus.Text = "스티커 노트가 추가되었습니다 (저장 시 반영)";
                 RenderAnnotationOverlays();
             }
         }
         finally
-            {
-                _isDialogOpen = false;
-            }
+        {
+            _isDialogOpen = false;
         }
+    }
 
         #endregion
 
@@ -1429,6 +1551,20 @@ _pdfManager.AddText(_currentPageIndex, pdfPos.X, pdfEngineY, text,
             return text.Substring(0, pos) + replace + text.Substring(pos + search.Length);
         }
 
+        #endregion
+
+        #region Keyboard Shortcuts Extension
+        private void MainWindow_KeyDown(object sender, KeyRoutedEventArgs e)
+        {
+            if (e.Key == Windows.System.VirtualKey.Delete && _selectedAnnotation != null && !_isInlineEditing && !_isDialogOpen)
+            {
+                _annotations.Remove(_selectedAnnotation);
+                _selectedAnnotation = null;
+                RenderAnnotationOverlays();
+                e.Handled = true;
+                TxtStatus.Text = "객체 삭제됨";
+            }
+        }
         #endregion
 
         #region Font Settings
@@ -1804,13 +1940,50 @@ _pdfManager.AddText(_currentPageIndex, pdfPos.X, pdfEngineY, text,
 
         #region Helpers
 
-        private void ApplyAllAnnotations()
+        private async Task PerformSaveAsync(string filePath, bool isUserSave)
         {
-            foreach (var ann in _annotations.Where(a => !a.IsApplied))
-                ApplyAnnotationToDocument(ann);
+            if (!_pdfManager.IsLoaded || _pdfManager.Document == null) return;
+
+            TxtStatus.Text = "저장 중...";
+            LoadingRing.IsActive = true;
+
+            try
+            {
+                // [핵심] 현재 문서의 복사본을 만들어 모든 어노테이션을 반영하고 저장합니다.
+                // 원본 메모리 문서는 '깨끗한' 상태로 유지하여 이동/재저장 시 DOUBLING을 방지합니다.
+                using var ms = new MemoryStream();
+                _pdfManager.Document.Save(ms);
+                ms.Position = 0;
+                using var outputDoc = PdfSharp.Pdf.IO.PdfReader.Open(ms, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Modify);
+
+                foreach (var ann in _annotations)
+                {
+                    ApplyAnnotationToDocument(ann, outputDoc);
+                }
+
+                outputDoc.Save(filePath);
+
+                if (isUserSave)
+                {
+                    _pdfManager.SetFilePath(filePath);
+                    _pdfManager.MarkModified(false);
+                    UpdateTitleBar();
+                }
+                
+                TxtStatus.Text = isUserSave ? "저장 완료" : "준비 완료";
+            }
+            catch (Exception ex)
+            {
+                await ShowErrorDialogAsync("저장 오류", $"저장 중 오류가 발생했습니다: {ex.Message}");
+            }
+            finally
+            {
+                LoadingRing.IsActive = false;
+                UpdateUIState();
+            }
         }
 
-        private void ApplyAnnotationToDocument(PdfAnnotation ann)
+        private void ApplyAnnotationToDocument(PdfAnnotation ann, PdfDocument? targetDoc = null)
         {
             if (!_pdfManager.IsLoaded) return;
 
@@ -1819,24 +1992,24 @@ _pdfManager.AddText(_currentPageIndex, pdfPos.X, pdfEngineY, text,
             {
                 case AnnotationType.Text:
                 case AnnotationType.FreeText:
+                    // 텍스트 위치 보정이 필요하다면 여기서 수행
                     _pdfManager.AddText(ann.PageIndex, ann.X, ann.Y, ann.Content,
-                        ann.FontFamily, ann.FontSize, xColor, ann.IsBold, ann.IsItalic);
+                        ann.FontFamily, ann.FontSize, xColor, ann.IsBold, ann.IsItalic, targetDoc);
                     break;
                 case AnnotationType.Highlight:
                     _pdfManager.AddHighlight(ann.PageIndex, ann.X, ann.Y,
-                        ann.Width, ann.Height, XColor.FromArgb(255, 255, 255, 0), 0.3);
+                        ann.Width, ann.Height, XColor.FromArgb(255, 255, 255, 0), 0.3, targetDoc);
                     break;
                 case AnnotationType.StickyNote:
                     _pdfManager.AddStickyNote(ann.PageIndex, ann.X, ann.Y, ann.Content,
-                        ann.FontFamily, ann.FontSize);
+                        ann.FontFamily, ann.FontSize, targetDoc);
                     break;
                 case AnnotationType.Image:
                     if (ann.ImagePath != null)
                         _pdfManager.AddImage(ann.PageIndex, ann.ImagePath,
-                            ann.X, ann.Y, ann.Width, ann.Height);
+                            ann.X, ann.Y, ann.Width, ann.Height, targetDoc);
                     break;
             }
-            ann.IsApplied = true;
         }
 
         private static XColor ConvertToXColor(string hexColor)

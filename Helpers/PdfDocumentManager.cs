@@ -22,7 +22,14 @@ namespace PDF_simple_edit.Helpers
 
         public PdfDocument? Document => _document;
         public string? FilePath => _filePath;
+        public void SetFilePath(string path) => _filePath = path;
+        
         public bool IsModified => _isModified;
+        public void MarkModified(bool modified = true)
+        {
+            _isModified = modified;
+            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+        }
         public int PageCount => _document?.PageCount ?? 0;
         public bool IsLoaded => _document != null;
 
@@ -117,12 +124,13 @@ namespace PDF_simple_edit.Helpers
         /// </summary>
         public void AddText(int pageIndex, double x, double y, string text,
             string fontFamily, double fontSize, XColor color,
-            bool isBold = false, bool isItalic = false)
+            bool isBold = false, bool isItalic = false, PdfDocument? targetDoc = null)
         {
-            if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount)
+            var doc = targetDoc ?? _document;
+            if (doc == null || pageIndex < 0 || pageIndex >= doc.PageCount)
                 return;
 
-            var page = _document.Pages[pageIndex];
+            var page = doc.Pages[pageIndex];
             using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
 
             var style = XFontStyleEx.Regular;
@@ -141,15 +149,17 @@ namespace PDF_simple_edit.Helpers
 
                 for (int i = 0; i < lines.Length; i++)
                 {
-                    // Shifting Y to match WinUI's Top-Left layout exactly
-                    // font.Metrics.Ascent is in font units (usually 1000 or 2048)
-                    double fontAscentPoints = font.Metrics.Ascent * font.Size / 1000.0;
-                    gfx.DrawString(lines[i], font, brush, new XPoint(x, y + fontAscentPoints + (i * lineSpacing)), XStringFormats.TopLeft);
+                    // Using TopLeft format directly with the provided Y coordinate
+                    // ensures alignment with the UI overlay.
+                    gfx.DrawString(lines[i], font, brush, new XPoint(x, y + (i * lineSpacing)), XStringFormats.TopLeft);
                 }
 
-                _isModified = true;
-                ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-                DocumentChanged?.Invoke(this, EventArgs.Empty);
+                if (targetDoc == null)
+                {
+                    _isModified = true;
+                    ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                    DocumentChanged?.Invoke(this, EventArgs.Empty);
+                }
             }
             catch (Exception ex)
             {
@@ -162,12 +172,13 @@ namespace PDF_simple_edit.Helpers
         /// Adds a highlight rectangle on a page.
         /// </summary>
         public void AddHighlight(int pageIndex, double x, double y, double width, double height,
-            XColor color, double opacity = 0.3)
+            XColor color, double opacity = 0.3, PdfDocument? targetDoc = null)
         {
-            if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount)
+            var doc = targetDoc ?? _document;
+            if (doc == null || pageIndex < 0 || pageIndex >= doc.PageCount)
                 return;
 
-            var page = _document.Pages[pageIndex];
+            var page = doc.Pages[pageIndex];
             using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
 
             var brush = new XSolidBrush(XColor.FromArgb((int)(opacity * 255), color));
@@ -175,42 +186,50 @@ namespace PDF_simple_edit.Helpers
             // Top-down coordinates
             gfx.DrawRectangle(brush, x, y, width, height);
 
-            _isModified = true;
-            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-            DocumentChanged?.Invoke(this, EventArgs.Empty);
+            if (targetDoc == null)
+            {
+                _isModified = true;
+                ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                DocumentChanged?.Invoke(this, EventArgs.Empty);
+            }
         }
 
         /// <summary>
         /// Adds an image to a page at a specific position.
         /// </summary>
         public void AddImage(int pageIndex, string imagePath, double x, double y,
-            double width, double height)
+            double width, double height, PdfDocument? targetDoc = null)
         {
-            if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount)
+            var doc = targetDoc ?? _document;
+            if (doc == null || pageIndex < 0 || pageIndex >= doc.PageCount)
                 return;
 
-            var page = _document.Pages[pageIndex];
+            var page = doc.Pages[pageIndex];
             using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
 
             var image = XImage.FromFile(imagePath);
             // Top-down coordinates
             gfx.DrawImage(image, x, y, width, height);
 
-            _isModified = true;
-            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-            DocumentChanged?.Invoke(this, EventArgs.Empty);
+            if (targetDoc == null)
+            {
+                _isModified = true;
+                ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                DocumentChanged?.Invoke(this, EventArgs.Empty);
+            }
         }
 
         /// <summary>
         /// Adds a sticky note annotation to a page.
         /// </summary>
         public void AddStickyNote(int pageIndex, double x, double y, string noteText,
-            string fontFamily = "맑은 고딕", double fontSize = 10)
+            string fontFamily = "맑은 고딕", double fontSize = 10, PdfDocument? targetDoc = null)
         {
-            if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount)
+            var doc = targetDoc ?? _document;
+            if (doc == null || pageIndex < 0 || pageIndex >= doc.PageCount)
                 return;
 
-            var page = _document.Pages[pageIndex];
+            var page = doc.Pages[pageIndex];
             using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
 
             // Draw sticky note background
@@ -245,9 +264,12 @@ namespace PDF_simple_edit.Helpers
             var tf = new PdfSharp.Drawing.Layout.XTextFormatter(gfx);
             tf.DrawString(noteText, font, XBrushes.Black, textRect);
 
-            _isModified = true;
-            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-            DocumentChanged?.Invoke(this, EventArgs.Empty);
+            if (targetDoc == null)
+            {
+                _isModified = true;
+                ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                DocumentChanged?.Invoke(this, EventArgs.Empty);
+            }
         }
 
         /// <summary>

@@ -1,0 +1,9 @@
+  복원할 프로젝트를 확인하는 중...
+  복원할 모든 프로젝트가 최신 상태입니다.
+  PDF_simple_edit -> D:\ASUNA\Tools\Visual_studio\PDF_simple_edit\bin\Release\net8.0-windows10.0.19041.0\win-x64\PDF_simple_edit.dll
+
+빌드했습니다.
+    경고 0개
+    오류 0개
+
+경과 시간: 00:00:05.12

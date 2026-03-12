@@ -16,7 +16,8 @@
     -->
 
     <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-          AllowDrop="True" DragOver="Grid_DragOver" Drop="Grid_Drop">
+          AllowDrop="True" DragOver="Grid_DragOver" Drop="Grid_Drop"
+          KeyDown="MainWindow_KeyDown">
         <Grid.RowDefinitions>
             <RowDefinition Height="48"/>
             <RowDefinition Height="Auto"/>
@@ -419,7 +420,7 @@
                         Background="Transparent" BorderThickness="0" IsEnabled="False">
                     <FontIcon Glyph="&#xE76C;" FontSize="12" Foreground="White"/>
                 </Button>
-                <TextBox x:Name="TxtGoToPage" Width="50" PlaceholderText="이동" FontSize="11"
+                <TextBox x:Name="TxtGoToPage" Width="50" PlaceholderText="이동" FontSize="16"
                          Padding="4,2" VerticalAlignment="Center"
                          KeyDown="GoToPage_KeyDown"/>
             </StackPanel>
