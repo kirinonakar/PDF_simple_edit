@@ -106,21 +106,37 @@ namespace PDF_simple_edit.Helpers
                 return;
 
             var page = _document.Pages[pageIndex];
-            using var gfx = XGraphics.FromPdfPage(page);
+            using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
 
             var style = XFontStyleEx.Regular;
             if (isBold && isItalic) style = XFontStyleEx.BoldItalic;
             else if (isBold) style = XFontStyleEx.Bold;
             else if (isItalic) style = XFontStyleEx.Italic;
 
-            var font = new XFont(fontFamily, fontSize, style);
-            var brush = new XSolidBrush(color);
+            try
+            {
+                var font = new XFont(fontFamily, fontSize, style);
+                var brush = new XSolidBrush(color);
 
-            gfx.DrawString(text, font, brush, new XPoint(x, y));
+                // Handle multi-line text by splitting into lines
+                string[] lines = text.Replace("\r", "").Split('\n');
+                double lineSpacing = font.GetHeight(); // Use font height for line spacing
 
-            _isModified = true;
-            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-            DocumentChanged?.Invoke(this, EventArgs.Empty);
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    // PDFsharp XGraphics.FromPdfPage uses top-down coordinates by default
+                    gfx.DrawString(lines[i], font, brush, new XPoint(x, y + (i * lineSpacing)), XStringFormats.TopLeft);
+                }
+
+                _isModified = true;
+                ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                DocumentChanged?.Invoke(this, EventArgs.Empty);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error adding text to PDF: {ex.Message}");
+                throw; // Rethrow to let the UI know if needed, or handle it
+            }
         }
 
         /// <summary>
@@ -133,10 +149,11 @@ namespace PDF_simple_edit.Helpers
                 return;
 
             var page = _document.Pages[pageIndex];
-            using var gfx = XGraphics.FromPdfPage(page);
+            using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
 
-            var brush = new XSolidBrush(XColor.FromArgb((int)(opacity * 255),
-                (int)(color.R * 255), (int)(color.G * 255), (int)(color.B * 255)));
+            var brush = new XSolidBrush(XColor.FromArgb((int)(opacity * 255), color));
+            
+            // Top-down coordinates
             gfx.DrawRectangle(brush, x, y, width, height);
 
             _isModified = true;
@@ -154,9 +171,10 @@ namespace PDF_simple_edit.Helpers
                 return;
 
             var page = _document.Pages[pageIndex];
-            using var gfx = XGraphics.FromPdfPage(page);
+            using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
 
             var image = XImage.FromFile(imagePath);
+            // Top-down coordinates
             gfx.DrawImage(image, x, y, width, height);
 
             _isModified = true;
@@ -174,7 +192,7 @@ namespace PDF_simple_edit.Helpers
                 return;
 
             var page = _document.Pages[pageIndex];
-            using var gfx = XGraphics.FromPdfPage(page);
+            using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
 
             // Draw sticky note background
             double noteWidth = 150;
@@ -198,7 +216,7 @@ namespace PDF_simple_edit.Helpers
             // Header text
             var headerFont = new XFont(fontFamily, 8, XFontStyleEx.Bold);
             gfx.DrawString("📝 메모", headerFont, XBrushes.DarkSlateGray,
-                new XPoint(x + padding, y + 14));
+                new XPoint(x + padding, y + 14), XStringFormats.TopLeft);
 
             // Note text
             var font = new XFont(fontFamily, fontSize, XFontStyleEx.Regular);

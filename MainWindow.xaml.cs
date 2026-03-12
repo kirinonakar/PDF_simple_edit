@@ -32,12 +32,13 @@ namespace PDF_simple_edit
         private double _zoomLevel = 1.0;
         private double _renderScale = 2.0;
         private EditToolMode _currentTool = EditToolMode.None;
-        private string? _tempFilePath;
+        private string? _renderTempPath;
 
         // For highlight drag
         private bool _isDragging;
         private Windows.Foundation.Point _dragStart;
         private Microsoft.UI.Xaml.Shapes.Rectangle? _dragRect;
+        private bool _isDialogOpen = false;
 
         public MainWindow()
         {
@@ -132,9 +133,10 @@ namespace PDF_simple_edit
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
-            if (_tempFilePath != null && File.Exists(_tempFilePath))
+            // Only delete if it's a real temporary file created by the app
+            if (_renderTempPath != null && _renderTempPath.Contains(Path.GetTempPath()) && File.Exists(_renderTempPath))
             {
-                try { File.Delete(_tempFilePath); } catch { }
+                try { File.Delete(_renderTempPath); } catch { }
             }
         }
 
@@ -147,8 +149,14 @@ namespace PDF_simple_edit
                 UpdateUIState();
                 if (_pdfManager.IsLoaded)
                 {
+                    // If page count changed or first time loading, update thumbnails
+                    if (_pageThumbnails.Count != _pdfManager.PageCount)
+                    {
+                        await LoadThumbnailsAsync();
+                    }
+                    
+                    // ALWAYS render the current page to ensure updates (like new text) are visible
                     await RenderCurrentPageAsync();
-                    await LoadThumbnailsAsync();
                 }
             });
         }
@@ -259,25 +267,57 @@ namespace PDF_simple_edit
             var file = await picker.PickSingleFileAsync();
             if (file != null)
             {
-                LoadingRing.IsActive = true;
-                TxtStatus.Text = "파일을 여는 중...";
+                await OpenPdfFileAsync(file);
+            }
+        }
 
+        private async Task OpenPdfFileAsync(StorageFile file)
+        {
+            LoadingRing.IsActive = true;
+            TxtStatus.Text = "파일을 여는 중...";
+
+            try
+            {
                 bool success = await _pdfManager.OpenAsync(file.Path);
                 if (success)
                 {
                     _currentPageIndex = 0;
                     _annotations.Clear();
-                    _tempFilePath = file.Path;
-                    await RenderCurrentPageAsync();
-                    await LoadThumbnailsAsync();
+                    // Clear the old render temp path so it creates a new one for the new file
+                    _renderTempPath = null;
                 }
                 else
                 {
                     await ShowErrorDialogAsync("오류", "PDF 파일을 열 수 없습니다.");
                 }
-
+            }
+            catch (Exception ex)
+            {
+                await ShowErrorDialogAsync("오류", $"파일을 여는 중 오류가 발생했습니다: {ex.Message}");
+            }
+            finally
+            {
                 LoadingRing.IsActive = false;
                 UpdateUIState();
+            }
+        }
+
+        private void Grid_DragOver(object sender, DragEventArgs e)
+        {
+            e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+            e.DragUIOverride.Caption = "PDF 열기";
+            e.DragUIOverride.IsCaptionVisible = true;
+        }
+
+        private async void Grid_Drop(object sender, DragEventArgs e)
+        {
+            if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+            {
+                var items = await e.DataView.GetStorageItemsAsync();
+                if (items.Count > 0 && items[0] is StorageFile file && file.FileType.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+                {
+                    await OpenPdfFileAsync(file);
+                }
             }
         }
 
@@ -295,7 +335,7 @@ namespace PDF_simple_edit
 
                 if (success)
                 {
-                    _tempFilePath = _pdfManager.FilePath;
+                    _renderTempPath = _pdfManager.FilePath;
                     await RenderCurrentPageAsync();
                 }
             }
@@ -323,13 +363,28 @@ namespace PDF_simple_edit
             if (file != null)
             {
                 TxtStatus.Text = "저장 중...";
-                bool success = await _pdfManager.SaveAsAsync(file.Path);
-                TxtStatus.Text = success ? "저장됨" : "저장 실패";
-
-                if (success)
+                try
                 {
-                    _tempFilePath = file.Path;
-                    await RenderCurrentPageAsync();
+                    // Ensure we don't have locks before saving
+                    bool success = await _pdfManager.SaveAsAsync(file.Path);
+                    if (success)
+                    {
+                        await RenderCurrentPageAsync();
+                        TxtStatus.Text = "다른 이름으로 저장됨";
+                    }
+                    else
+                    {
+                        TxtStatus.Text = "저장 실패";
+                        await ShowErrorDialogAsync("오류", "파일을 저장할 수 없습니다. 다른 프로그램에서 사용 중인지 확인하세요.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    TxtStatus.Text = "저장 오류";
+                    await ShowErrorDialogAsync("오류", $"저장 중 오류가 발생했습니다: {ex.Message}");
+                }
+                finally
+                {
                     UpdateUIState();
                 }
             }
@@ -352,7 +407,7 @@ namespace PDF_simple_edit
 
             try
             {
-                string tempPath = _tempFilePath ?? _pdfManager.FilePath ?? "";
+                string tempPath = _renderTempPath ?? _pdfManager.FilePath ?? "";
                 if (string.IsNullOrEmpty(tempPath))
                 {
                     tempPath = Path.Combine(Path.GetTempPath(), $"print_{Guid.NewGuid()}.pdf");
@@ -376,18 +431,33 @@ namespace PDF_simple_edit
         {
             if (!_pdfManager.IsLoaded) return;
 
-            string? filePath = _tempFilePath ?? _pdfManager.FilePath;
-            if (filePath == null || !File.Exists(filePath))
-            {
-                filePath = Path.Combine(Path.GetTempPath(), $"render_{Guid.NewGuid()}.pdf");
-                await _pdfManager.SaveAsAsync(filePath);
-                _tempFilePath = filePath;
-            }
-
+            string oldStatus = TxtStatus.Text;
             try
             {
+                TxtStatus.Text = "페이지 렌더링 중...";
+                // If modified or No temp file yet, save to a NEW temp file for rendering
+                if (_pdfManager.IsModified || _renderTempPath == null || !File.Exists(_renderTempPath))
+                {
+                    string? oldPath = _renderTempPath;
+                    _renderTempPath = Path.Combine(Path.GetTempPath(), $"pdfedit_render_{Guid.NewGuid()}.pdf");
+                    
+                    bool saved = await _pdfManager.SaveAsAsync(_renderTempPath);
+                    if (!saved) 
+                    {
+                        // Fallback to original path if save fails
+                        _renderTempPath = _pdfManager.FilePath;
+                    }
+                    else if (oldPath != null && oldPath.Contains(Path.GetTempPath()))
+                    {
+                        // Cleanup old temp file
+                        try { File.Delete(oldPath); } catch { }
+                    }
+                }
+
+                if (_renderTempPath == null) return;
+
                 var ms = await PdfRenderHelper.RenderPageWithWindowsPdfAsync(
-                    filePath, _currentPageIndex, _renderScale);
+                    _renderTempPath, _currentPageIndex, _renderScale);
 
                 if (ms != null)
                 {
@@ -395,7 +465,7 @@ namespace PDF_simple_edit
                     await bitmap.SetSourceAsync(ms.AsRandomAccessStream());
                     PdfPageImage.Source = bitmap;
 
-                    var pageSize = await PdfRenderHelper.GetPageSizeAsync(filePath, _currentPageIndex);
+                    var pageSize = await PdfRenderHelper.GetPageSizeAsync(_renderTempPath, _currentPageIndex);
                     OverlayCanvas.Width = pageSize.width * _renderScale;
                     OverlayCanvas.Height = pageSize.height * _renderScale;
 
@@ -406,16 +476,17 @@ namespace PDF_simple_edit
             {
                 System.Diagnostics.Debug.WriteLine($"Render error: {ex.Message}");
             }
+            finally
+            {
+                TxtStatus.Text = oldStatus == "페이지 렌더링 중..." ? "준비" : oldStatus;
+            }
 
             UpdateUIState();
+            SyncPageListSelection();
         }
 
         private async Task SaveToTempAndRenderAsync()
         {
-            if (!_pdfManager.IsLoaded) return;
-
-            _tempFilePath = Path.Combine(Path.GetTempPath(), $"pdfedit_{Guid.NewGuid()}.pdf");
-            await _pdfManager.SaveAsAsync(_tempFilePath);
             await RenderCurrentPageAsync();
         }
 
@@ -425,7 +496,7 @@ namespace PDF_simple_edit
 
             if (!_pdfManager.IsLoaded) return;
 
-            string? filePath = _tempFilePath ?? _pdfManager.FilePath;
+            string? filePath = _renderTempPath ?? _pdfManager.FilePath;
             if (filePath == null) return;
 
             for (int i = 0; i < _pdfManager.PageCount; i++)
@@ -561,6 +632,11 @@ namespace PDF_simple_edit
             BtnHighlight.IsChecked = mode == EditToolMode.Highlight;
             BtnStickyNote.IsChecked = mode == EditToolMode.AddStickyNote;
 
+            // Sync menu items
+            if (MenuAddText != null) MenuAddText.IsChecked = mode == EditToolMode.AddText;
+            if (MenuHighlight != null) MenuHighlight.IsChecked = mode == EditToolMode.Highlight;
+            if (MenuStickyNote != null) MenuStickyNote.IsChecked = mode == EditToolMode.AddStickyNote;
+
             TxtToolMode.Text = mode switch
             {
                 EditToolMode.AddText => "도구: 텍스트 추가",
@@ -570,6 +646,36 @@ namespace PDF_simple_edit
                 EditToolMode.Select => "도구: 선택",
                 _ => ""
             };
+
+            // Change cursor based on tool mode
+            UpdateCursor(mode);
+        }
+
+        private void UpdateCursor(EditToolMode mode)
+        {
+            if (OverlayCanvas == null) return;
+
+            try
+            {
+                // In WinUI 3, ProtectedCursor is protected. To set cursor on specific element, 
+                // we'd need to subclass it or use Window.SetCursor (Win32) / InputCursor on Window.
+                // Removing this for now to fix build.
+                /*
+                OverlayCanvas.ProtectedCursor = mode switch
+                {
+                    EditToolMode.AddText => Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.IBeam),
+                    EditToolMode.Highlight => Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.Cross),
+                    EditToolMode.AddStickyNote => Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.Hand),
+                    EditToolMode.AddImage => Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.SizeAll),
+                    EditToolMode.Select => Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.Arrow),
+                    _ => Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.Arrow)
+                };
+                */
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to set cursor: {ex.Message}");
+            }
         }
 
         private void SelectTool_Click(object sender, RoutedEventArgs e)
@@ -625,6 +731,17 @@ namespace PDF_simple_edit
         private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEventArgs e)
         {
             if (!_pdfManager.IsLoaded) return;
+
+            // Ensure canvas has the correct size matching the current page if it was somehow lost
+            if (OverlayCanvas.Width == 0 || OverlayCanvas.Height == 0 || double.IsNaN(OverlayCanvas.Width))
+            {
+                var size = _pdfManager.GetPageSize(_currentPageIndex);
+                if (size.width > 0)
+                {
+                    OverlayCanvas.Width = size.width * _renderScale;
+                    OverlayCanvas.Height = size.height * _renderScale;
+                }
+            }
 
             var pos = e.GetCurrentPoint(OverlayCanvas).Position;
             double pdfX = pos.X / _renderScale;
@@ -689,11 +806,26 @@ namespace PDF_simple_edit
 
                 if (w > 5 && h > 5)
                 {
+                    // Add to PDF manager first
                     _pdfManager.AddHighlight(_currentPageIndex, x, y, w, h,
                         XColor.FromArgb(255, 255, 255, 0), 0.3);
 
-                    await SaveToTempAndRenderAsync();
+                    // Also add to local annotations for immediate display
+                    _annotations.Add(new PdfAnnotation
+                    {
+                        Type = AnnotationType.Highlight,
+                        PageIndex = _currentPageIndex,
+                        X = x,
+                        Y = y,
+                        Width = w,
+                        Height = h,
+                        Color = "#FFFF00",
+                        Opacity = 0.3,
+                        IsApplied = true // Mark as true since we already called _pdfManager.AddHighlight
+                    });
+
                     TxtStatus.Text = "텍스트 강조가 추가되었습니다";
+                    RenderAnnotationOverlays();
                 }
 
                 OverlayCanvas.Children.Remove(_dragRect);
@@ -705,28 +837,63 @@ namespace PDF_simple_edit
         {
             OverlayCanvas.Children.Clear();
 
-            var pageAnnotations = _annotations.Where(a =>
-                a.PageIndex == _currentPageIndex && !a.IsApplied).ToList();
+            // Render all annotations for the current page
+            // We show even the applied ones to ensure they are visible while re-rendering is in progress
+            var pageAnnotations = _annotations.Where(a => a.PageIndex == _currentPageIndex).ToList();
 
             foreach (var ann in pageAnnotations)
             {
-                if (ann.Type == AnnotationType.Text || ann.Type == AnnotationType.FreeText)
+                switch (ann.Type)
                 {
-                    var tb = new TextBlock
-                    {
-                        Text = ann.Content,
-                        FontSize = ann.FontSize * _renderScale,
-                        Foreground = new SolidColorBrush(ParseColor(ann.Color)),
-                        FontWeight = ann.IsBold
-                            ? Microsoft.UI.Text.FontWeights.Bold
-                            : Microsoft.UI.Text.FontWeights.Normal,
-                        FontStyle = ann.IsItalic
-                            ? Windows.UI.Text.FontStyle.Italic
-                            : Windows.UI.Text.FontStyle.Normal,
-                    };
-                    Canvas.SetLeft(tb, ann.X * _renderScale);
-                    Canvas.SetTop(tb, ann.Y * _renderScale);
-                    OverlayCanvas.Children.Add(tb);
+                    case AnnotationType.Text:
+                    case AnnotationType.FreeText:
+                        var tb = new TextBlock
+                        {
+                            Text = ann.Content,
+                            TextWrapping = TextWrapping.Wrap,
+                            FontSize = ann.FontSize * _renderScale,
+                            Foreground = new SolidColorBrush(ParseColor(ann.Color)),
+                            FontWeight = ann.IsBold
+                                ? Microsoft.UI.Text.FontWeights.Bold
+                                : Microsoft.UI.Text.FontWeights.Normal,
+                            FontStyle = ann.IsItalic
+                                ? Windows.UI.Text.FontStyle.Italic
+                                : Windows.UI.Text.FontStyle.Normal,
+                        };
+                        Canvas.SetLeft(tb, ann.X * _renderScale);
+                        Canvas.SetTop(tb, ann.Y * _renderScale);
+                        OverlayCanvas.Children.Add(tb);
+                        break;
+
+                    case AnnotationType.Highlight:
+                        var rect = new Microsoft.UI.Xaml.Shapes.Rectangle
+                        {
+                            Width = ann.Width * _renderScale,
+                            Height = ann.Height * _renderScale,
+                            Fill = new SolidColorBrush(ParseColor(ann.Color)),
+                            Opacity = ann.Opacity
+                        };
+                        Canvas.SetLeft(rect, ann.X * _renderScale);
+                        Canvas.SetTop(rect, ann.Y * _renderScale);
+                        OverlayCanvas.Children.Add(rect);
+                        break;
+
+                    case AnnotationType.StickyNote:
+                        // Simple visual for sticky note on canvas
+                        var snGrid = new Grid
+                        {
+                            Width = 24 * _renderScale,
+                            Height = 24 * _renderScale,
+                            Background = new SolidColorBrush(Microsoft.UI.Colors.Yellow),
+                            BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Orange),
+                            BorderThickness = new Thickness(1)
+                        };
+                        ToolTipService.SetToolTip(snGrid, ann.Content);
+                        snGrid.Children.Add(new FontIcon { Glyph = "\uE70B", FontSize = 12 * _renderScale });
+                        Canvas.SetLeft(snGrid, ann.X * _renderScale);
+                        Canvas.SetTop(snGrid, ann.Y * _renderScale);
+                        OverlayCanvas.Children.Add(snGrid);
+                        break;
                 }
             }
         }
@@ -737,14 +904,19 @@ namespace PDF_simple_edit
 
         private async Task ShowTextInputDialogAsync(double pdfX, double pdfY)
         {
-            var dialog = new ContentDialog
+            if (_isDialogOpen) return;
+            _isDialogOpen = true;
+
+            try
             {
-                Title = "텍스트 추가",
-                PrimaryButtonText = "추가",
-                CloseButtonText = "취소",
-                DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = Content.XamlRoot,
-            };
+                var dialog = new ContentDialog
+                {
+                    Title = "텍스트 추가",
+                    PrimaryButtonText = "추가",
+                    CloseButtonText = "취소",
+                    DefaultButton = ContentDialogButton.Primary,
+                    XamlRoot = Content.XamlRoot,
+                };
 
             var panel = new StackPanel { Spacing = 8, MinWidth = 400 };
 
@@ -756,6 +928,7 @@ namespace PDF_simple_edit
                 MinHeight = 80,
                 MaxHeight = 200
             };
+            txtContent.Loaded += (s, args) => txtContent.Focus(FocusState.Programmatic);
             panel.Children.Add(new TextBlock { Text = "텍스트:" });
             panel.Children.Add(txtContent);
 
@@ -832,27 +1005,62 @@ namespace PDF_simple_edit
                 _pdfManager.AddText(_currentPageIndex, pdfX, pdfY, txtContent.Text,
                     fontFamily, fontSize, xColor, isBold, isItalic);
 
+                // Add to local annotations for immediate display
+                var newAnn = new PdfAnnotation
+                {
+                    Type = AnnotationType.Text,
+                    PageIndex = _currentPageIndex,
+                    X = pdfX,
+                    Y = pdfY,
+                    Content = txtContent.Text,
+                    FontFamily = fontFamily,
+                    FontSize = fontSize,
+                    Color = selectedColor,
+                    IsBold = isBold,
+                    IsItalic = isItalic,
+                    IsApplied = true
+                };
+                
+                _annotations.Add(newAnn);
+
                 _fontSettings.FontFamily = fontFamily;
                 _fontSettings.FontSize = fontSize;
                 _fontSettings.IsBold = isBold;
                 _fontSettings.IsItalic = isItalic;
                 _fontSettings.Color = selectedColor;
 
-                await SaveToTempAndRenderAsync();
                 TxtStatus.Text = "텍스트가 추가되었습니다";
+                RenderAnnotationOverlays();
+
+                // Log for debugging
+                System.Diagnostics.Debug.WriteLine($"Text added at PDF coordinates: {pdfX:F2}, {pdfY:F2} on page {_currentPageIndex}");
+
+                // Trigger a background re-render of the PDF to confirm changes in the base layer
+                // This ensures that the PDF itself is updated visually
+                await RenderCurrentPageAsync();
+            }
+        }
+        finally
+            {
+                _isDialogOpen = false;
             }
         }
 
         private async Task ShowStickyNoteDialogAsync(double pdfX, double pdfY)
         {
-            var dialog = new ContentDialog
+            if (_isDialogOpen) return;
+            _isDialogOpen = true;
+
+            try
             {
-                Title = "스티커 노트 추가",
-                PrimaryButtonText = "추가",
-                CloseButtonText = "취소",
-                DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = Content.XamlRoot,
-            };
+                var dialog = new ContentDialog
+                {
+                    Title = "스티커 노트 추가",
+                    PrimaryButtonText = "추가",
+                    CloseButtonText = "취소",
+                    DefaultButton = ContentDialogButton.Primary,
+                    XamlRoot = Content.XamlRoot,
+                };
 
             var txtContent = new TextBox
             {
@@ -863,6 +1071,7 @@ namespace PDF_simple_edit
                 MaxHeight = 200,
                 MinWidth = 300
             };
+            txtContent.Loaded += (s, args) => txtContent.Focus(FocusState.Programmatic);
 
             dialog.Content = txtContent;
 
@@ -872,8 +1081,26 @@ namespace PDF_simple_edit
                 _pdfManager.AddStickyNote(_currentPageIndex, pdfX, pdfY, txtContent.Text,
                     _fontSettings.FontFamily, _fontSettings.FontSize);
 
-                await SaveToTempAndRenderAsync();
+                // Add to local annotations for immediate display
+                _annotations.Add(new PdfAnnotation
+                {
+                    Type = AnnotationType.StickyNote,
+                    PageIndex = _currentPageIndex,
+                    X = pdfX,
+                    Y = pdfY,
+                    Content = txtContent.Text,
+                    FontFamily = _fontSettings.FontFamily,
+                    FontSize = _fontSettings.FontSize,
+                    IsApplied = true
+                });
+
                 TxtStatus.Text = "스티커 노트가 추가되었습니다";
+                RenderAnnotationOverlays();
+            }
+        }
+        finally
+            {
+                _isDialogOpen = false;
             }
         }
 
@@ -908,7 +1135,7 @@ namespace PDF_simple_edit
             if (!_pdfManager.IsLoaded || string.IsNullOrWhiteSpace(TxtFindText.Text)) return;
 
             string searchText = TxtFindText.Text;
-            string? filePath = _tempFilePath ?? _pdfManager.FilePath;
+            string? filePath = _renderTempPath ?? _pdfManager.FilePath;
             if (filePath == null) return;
 
             try
@@ -1137,7 +1364,7 @@ namespace PDF_simple_edit
                 {
                     await _pdfManager.OpenAsync(file.Path);
                     _currentPageIndex = 0;
-                    _tempFilePath = file.Path;
+                    _renderTempPath = file.Path;
                     TxtStatus.Text = "PDF 합치기 완료";
                 }
                 else

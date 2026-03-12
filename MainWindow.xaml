@@ -15,7 +15,8 @@
     </Window.SystemBackdrop>
     -->
 
-    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+          AllowDrop="True" DragOver="Grid_DragOver" Drop="Grid_Drop">
         <Grid.RowDefinitions>
             <RowDefinition Height="48"/>
             <RowDefinition Height="Auto"/>
@@ -105,15 +106,15 @@
             </MenuBarItem>
 
             <MenuBarItem Title="도구">
-                <MenuFlyoutItem Text="텍스트 추가" x:Name="MenuAddText" Click="AddTextTool_Click" IsEnabled="False">
-                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8D2;"/></MenuFlyoutItem.Icon>
-                </MenuFlyoutItem>
-                <MenuFlyoutItem Text="텍스트 강조" x:Name="MenuHighlight" Click="HighlightTool_Click" IsEnabled="False">
-                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE7E6;"/></MenuFlyoutItem.Icon>
-                </MenuFlyoutItem>
-                <MenuFlyoutItem Text="스티커 노트" x:Name="MenuStickyNote" Click="StickyNoteTool_Click" IsEnabled="False">
-                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE70B;"/></MenuFlyoutItem.Icon>
-                </MenuFlyoutItem>
+                <ToggleMenuFlyoutItem Text="텍스트 추가" x:Name="MenuAddText" Click="AddTextTool_Click" IsEnabled="False">
+                    <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE8D2;"/></ToggleMenuFlyoutItem.Icon>
+                </ToggleMenuFlyoutItem>
+                <ToggleMenuFlyoutItem Text="텍스트 강조" x:Name="MenuHighlight" Click="HighlightTool_Click" IsEnabled="False">
+                    <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE7E6;"/></ToggleMenuFlyoutItem.Icon>
+                </ToggleMenuFlyoutItem>
+                <ToggleMenuFlyoutItem Text="스티커 노트" x:Name="MenuStickyNote" Click="StickyNoteTool_Click" IsEnabled="False">
+                    <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE70B;"/></ToggleMenuFlyoutItem.Icon>
+                </ToggleMenuFlyoutItem>
                 <MenuFlyoutItem Text="이미지 추가" x:Name="MenuAddImage" Click="AddImageTool_Click" IsEnabled="False">
                     <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B9;"/></MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
@@ -331,6 +332,7 @@
                         <Image x:Name="PdfPageImage" Stretch="None"
                                HorizontalAlignment="Center" VerticalAlignment="Top"/>
                         <Canvas x:Name="OverlayCanvas"
+                                HorizontalAlignment="Center" VerticalAlignment="Top"
                                 PointerPressed="OverlayCanvas_PointerPressed"
                                 PointerMoved="OverlayCanvas_PointerMoved"
                                 PointerReleased="OverlayCanvas_PointerReleased"
