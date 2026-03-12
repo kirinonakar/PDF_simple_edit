@@ -69,6 +69,7 @@ namespace PDF_simple_edit
 
                 LoadRecentFiles();
                 UpdateRecentFilesMenu();
+                InitializeZoomAccelerators();
 
                 Activated += MainWindow_Activated;
                 Closed += MainWindow_Closed;
@@ -683,6 +684,27 @@ private void FitToPage()
             }
         }
 
+        private void InitializeZoomAccelerators()
+        {
+            // 확대 (+ or =)
+            var keysIn = new[] { Windows.System.VirtualKey.Add, (Windows.System.VirtualKey)187 };
+            foreach (var key in keysIn)
+            {
+                var acc = new KeyboardAccelerator { Key = key };
+                acc.Invoked += ToolAccelerator_Invoked;
+                MenuZoomIn.KeyboardAccelerators.Add(acc);
+            }
+
+            // 축소 (-)
+            var keysOut = new[] { Windows.System.VirtualKey.Subtract, (Windows.System.VirtualKey)189 };
+            foreach (var key in keysOut)
+            {
+                var acc = new KeyboardAccelerator { Key = key };
+                acc.Invoked += ToolAccelerator_Invoked;
+                MenuZoomOut.KeyboardAccelerators.Add(acc);
+            }
+        }
+
         #endregion
 
         #region Tool Modes
@@ -1047,8 +1069,15 @@ private void AddInlineTextBox(double pdfX, double pdfY)
                 _annotations.Add(newAnn);
 
                 var xColor = ConvertToXColor(selectedColor);
-                _pdfManager.AddText(_currentPageIndex, pdfPos.X, pdfPos.Y, text,
-                    fontFamily, fontSize, xColor, isBold, isItalic);
+
+                // [추가] PDF 엔진이 글자를 밑으로 밀어내며 그리는 현상을 상쇄하기 위해
+// PDF 파일에 기록할 때만 Y좌표를 폰트 크기의 약 1.8배만큼 위로 끌어올립니다.
+double pdfEngineY = pdfPos.Y - (fontSize * 2.21);
+
+// pdfPos.Y 대신 pdfEngineY를 전달
+_pdfManager.AddText(_currentPageIndex, pdfPos.X, pdfEngineY, text,
+    fontFamily, fontSize, xColor, isBold, isItalic);
+
 
                 TxtStatus.Text = "텍스트가 추가되었습니다";
 
