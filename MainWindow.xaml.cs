@@ -738,6 +738,17 @@ private void FitToPage()
             SetToolMode(_currentTool == EditToolMode.AddStickyNote ? EditToolMode.None : EditToolMode.AddStickyNote);
         }
 
+        private void ToolAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+        {
+            // Focus check to prevent tool activation while typing
+            var focused = FocusManager.GetFocusedElement(this.Content.XamlRoot);
+            if (focused is TextBox || focused is NumberBox || _isInlineEditing)
+            {
+                args.Handled = true; // Consume the accelerator so it doesn't trigger the click, but let the key event continue if needed
+                return;
+            }
+        }
+
         private async void AddImageTool_Click(object sender, RoutedEventArgs e)
         {
             if (!_pdfManager.IsLoaded) return;
@@ -789,10 +800,9 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
     switch (_currentTool)
     {
         case EditToolMode.AddText:
-            // [수정됨] WinUI TextBox의 내부 여백과 폰트 높이를 고려하여 클릭한 위치에 정확히 입력되도록 보정
-            // 기존 0.15에서 1.2로 수치를 높여 마우스 클릭 위치와 텍스트 박스 상단을 일치시킵니다.
-            double textPdfY = Math.Max(0, pdfY - (_fontSettings.FontSize * 3.5));
-            AddInlineTextBox(pdfX, textPdfY);
+            // [수정] 폰트 크기에 따른 임의의 Y좌표 보정을 완전히 제거하여
+            // 클릭한 위치에 정확하게 텍스트 박스가 생성되도록 합니다.
+            AddInlineTextBox(pdfX, pdfY);
             break;
 
         case EditToolMode.AddStickyNote:
@@ -957,7 +967,7 @@ private void AddInlineTextBox(double pdfX, double pdfY)
         MinWidth = 0,
         MinHeight = 0, 
         Padding = new Thickness(0),
-        Margin = new Thickness(0),
+        Margin = new Thickness(-1, -1, 0, 0),
         BorderThickness = new Thickness(1),
         Background = new SolidColorBrush(Windows.UI.Color.FromArgb(160, 255, 255, 255)),
         BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
