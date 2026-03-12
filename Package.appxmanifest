@@ -10,14 +10,14 @@
 
   <Identity
     Name="f0add8a2-54f1-434e-b3e3-cd17a78ce2b1"
-    Publisher="CN=totor"
+    Publisher="kirinonakar"
     Version="1.0.0.0" />
 
   <mp:PhoneIdentity PhoneProductId="f0add8a2-54f1-434e-b3e3-cd17a78ce2b1" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
   <Properties>
     <DisplayName>PDF_simple_edit</DisplayName>
-    <PublisherDisplayName>totor</PublisherDisplayName>
+    <PublisherDisplayName>kirinonakar</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
