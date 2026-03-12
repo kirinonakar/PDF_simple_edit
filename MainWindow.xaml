@@ -54,6 +54,10 @@
                         <KeyboardAccelerator Modifiers="Control" Key="O"/>
                     </MenuFlyoutItem.KeyboardAccelerators>
                 </MenuFlyoutItem>
+                <MenuFlyoutSubItem x:Name="MenuRecentFiles" Text="최근 파일">
+                    <MenuFlyoutSubItem.Icon><FontIcon Glyph="&#xE81C;"/></MenuFlyoutSubItem.Icon>
+                    <MenuFlyoutItem Text="최근 파일 없음" IsEnabled="False"/>
+                </MenuFlyoutSubItem>
                 <MenuFlyoutItem Text="저장" x:Name="MenuSave" Click="SaveFile_Click" IsEnabled="False">
                     <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74E;"/></MenuFlyoutItem.Icon>
                     <MenuFlyoutItem.KeyboardAccelerators>

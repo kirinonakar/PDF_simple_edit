@@ -67,13 +67,15 @@ namespace PDF_simple_edit.Helpers
             if (_document == null || string.IsNullOrEmpty(_filePath))
                 return false;
 
-            return await SaveAsAsync(_filePath);
+            return await SaveAsAsync(_filePath, true);
         }
 
         /// <summary>
         /// Saves the current document to a new file path.
         /// </summary>
-        public async Task<bool> SaveAsAsync(string filePath)
+        /// <param name="filePath">Target path.</param>
+        /// <param name="isUserSave">If true, updates the primary file path and resets its modification state.</param>
+        public async Task<bool> SaveAsAsync(string filePath, bool isUserSave = true)
         {
             if (_document == null) return false;
 
@@ -82,9 +84,24 @@ namespace PDF_simple_edit.Helpers
                 try
                 {
                     _document.Save(filePath);
-                    _filePath = filePath;
-                    _isModified = false;
-                    ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                    
+                    // PDFsharp "freezes" the document after Save. 
+                    // To continue editing, we must reload it.
+                    var doc = PdfReader.Open(filePath, PdfDocumentOpenMode.Modify);
+                    
+                    // It's safe to assign new document here. 
+                    // The old _document's content stream is already saved.
+                    _document = doc;
+
+                    if (isUserSave)
+                    {
+                        _filePath = filePath;
+                        _isModified = false;
+                        ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                    }
+                    
+                    // We DO NOT fire DocumentChanged here to avoid recursive rendering loops 
+                    // when this is called from within a rendering pass.
                     return true;
                 }
                 catch (Exception ex)
@@ -124,8 +141,10 @@ namespace PDF_simple_edit.Helpers
 
                 for (int i = 0; i < lines.Length; i++)
                 {
-                    // PDFsharp XGraphics.FromPdfPage uses top-down coordinates by default
-                    gfx.DrawString(lines[i], font, brush, new XPoint(x, y + (i * lineSpacing)), XStringFormats.TopLeft);
+                    // Shifting Y to match WinUI's Top-Left layout exactly
+                    // font.Metrics.Ascent is in font units (usually 1000 or 2048)
+                    double fontAscentPoints = font.Metrics.Ascent * font.Size / 1000.0;
+                    gfx.DrawString(lines[i], font, brush, new XPoint(x, y + fontAscentPoints + (i * lineSpacing)), XStringFormats.TopLeft);
                 }
 
                 _isModified = true;
