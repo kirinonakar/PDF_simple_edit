@@ -49,5 +49,6 @@
     <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
     <PublishTrimmed>False</PublishTrimmed>
     <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
 </Project>
