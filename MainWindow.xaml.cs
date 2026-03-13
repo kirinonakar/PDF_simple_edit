@@ -22,17 +22,35 @@ namespace PDF_simple_edit
 {
     public sealed partial class MainWindow : Window
     {
-        private readonly PdfDocumentManager _pdfManager = new();
-        private readonly PrintHelper _printHelper = new();
-        private readonly ObservableCollection<PageThumbnailData> _pageThumbnails = new();
-        private readonly List<PdfAnnotation> _annotations = new();
-        private readonly TextFontSettings _fontSettings = new();
+        private readonly ObservableCollection<PdfDocumentTab> _tabs = new();
+        private PdfDocumentTab? _activeTab;
 
-        private int _currentPageIndex = 0;
-        private double _zoomLevel = 1.0;
+        private int _currentPageIndex
+        {
+            get => _activeTab?.CurrentPageIndex ?? 0;
+            set { if (_activeTab != null) _activeTab.CurrentPageIndex = value; }
+        }
+        private double _zoomLevel
+        {
+            get => _activeTab?.ZoomLevel ?? 1.0;
+            set { if (_activeTab != null) _activeTab.ZoomLevel = value; }
+        }
         private double _renderScale = 2.0;
         private EditToolMode _currentTool = EditToolMode.None;
-        private string? _renderTempPath;
+        private string? _renderTempPath
+        {
+            get => _activeTab?.RenderTempPath;
+            set { if (_activeTab != null) _activeTab.RenderTempPath = value; }
+        }
+        private bool _isFirstLoad
+        {
+            get => _activeTab?.IsFirstLoad ?? false;
+            set { if (_activeTab != null) _activeTab.IsFirstLoad = value; }
+        }
+        private PdfAnnotation? _selectedAnnotation;
+        private bool _isMovingAnnotation = false;
+        private Windows.Foundation.Point _lastMousePos;
+
         private readonly List<string> _recentFiles = new();
         private const int MaxRecentFiles = 10;
 
@@ -42,11 +60,15 @@ namespace PDF_simple_edit
         private Microsoft.UI.Xaml.Shapes.Rectangle? _dragRect;
         private bool _isDialogOpen = false;
         private bool _isInlineEditing = false;
-        private bool _isFirstLoad = false;
-        private PdfAnnotation? _selectedAnnotation;
-        private bool _isMovingAnnotation = false;
-        private Windows.Foundation.Point _lastMousePos;
         
+        private readonly PrintHelper _printHelper = new();
+        private readonly TextFontSettings _fontSettings = new();
+        
+        // Aliases to active tab for easier migration
+        private PdfDocumentManager _pdfManager => _activeTab?.PdfManager ?? new PdfDocumentManager();
+        private ObservableCollection<PageThumbnailData> _pageThumbnails => _activeTab?.PageThumbnails ?? new ObservableCollection<PageThumbnailData>();
+        private List<PdfAnnotation> _annotations => _activeTab?.Annotations ?? new List<PdfAnnotation>();
+
         // PDF는 72 DPI, Windows 논리 픽셀은 96 DPI입니다.
         private const double PdfToPixels = 96.0 / 72.0;
 
@@ -55,12 +77,7 @@ namespace PDF_simple_edit
             try
             {
                 InitializeComponent();
-
-                // Set up events
-                _pdfManager.DocumentChanged += PdfManager_DocumentChanged;
-                _pdfManager.ModifiedStateChanged += PdfManager_ModifiedStateChanged;
-
-                PageListView.ItemsSource = _pageThumbnails;
+                DocTabView.TabItemsSource = _tabs;
 
                 // Initialize font settings
                 _fontSettings.FontFamily = "맑은 고딕";
@@ -115,6 +132,63 @@ namespace PDF_simple_edit
                 }
             }
         }
+
+        #region Tab Management
+
+        private void DocTabView_AddTabButtonClick(TabView sender, object args)
+        {
+            NewDocument_Click(this, null);
+        }
+
+        private async void DocTabView_TabCloseRequested(TabView sender, TabViewTabCloseRequestedEventArgs args)
+        {
+            if (args.Item is PdfDocumentTab tab)
+            {
+                if (tab.IsModified)
+                {
+                    // Optionally ask to save
+                }
+                _tabs.Remove(tab);
+            }
+        }
+
+        private async void DocTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // Unhook old events if any
+            if (_activeTab != null)
+            {
+                _activeTab.PdfManager.DocumentChanged -= PdfManager_DocumentChanged;
+                _activeTab.PdfManager.ModifiedStateChanged -= PdfManager_ModifiedStateChanged;
+            }
+
+            _activeTab = DocTabView.SelectedItem as PdfDocumentTab;
+
+            if (_activeTab != null)
+            {
+                // Hook new events
+                _activeTab.PdfManager.DocumentChanged += PdfManager_DocumentChanged;
+                _activeTab.PdfManager.ModifiedStateChanged += PdfManager_ModifiedStateChanged;
+
+                PageListView.ItemsSource = _pageThumbnails;
+                
+                UpdateUIState();
+                UpdateTitleBar();
+                
+                if (_activeTab.PdfManager.IsLoaded)
+                {
+                    // Manually trigger the document change handler to update thumbnails and render
+                    PdfManager_DocumentChanged(_activeTab.PdfManager, EventArgs.Empty);
+                }
+            }
+            else
+            {
+                PageListView.ItemsSource = null;
+                UpdateUIState();
+                UpdateTitleBar();
+            }
+        }
+
+        #endregion
 
         private void InitializeColorPalette()
         {
@@ -193,7 +267,21 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
 
         private void PdfManager_ModifiedStateChanged(object? sender, EventArgs e)
         {
-            DispatcherQueue.TryEnqueue(UpdateTitleBar);
+            DispatcherQueue.TryEnqueue(() => {
+                UpdateTitleBar();
+                UpdateTabHeader();
+            });
+        }
+
+        private void UpdateTabHeader()
+        {
+            if (_activeTab != null)
+            {
+                string header = _activeTab.PdfManager.FilePath != null
+                    ? Path.GetFileName(_activeTab.PdfManager.FilePath) : "새 문서";
+                if (_activeTab.IsModified) header = "● " + header;
+                _activeTab.Header = header;
+            }
         }
 
         private void UpdateUIState()
@@ -276,16 +364,18 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
 
         #region File Operations
 
-        private async void NewDocument_Click(object sender, RoutedEventArgs e)
+        private async void NewDocument_Click(object sender, RoutedEventArgs? e)
         {
-            _pdfManager.NewDocument();
-            _currentPageIndex = 0;
-            _annotations.Clear();
-            await SaveToTempAndRenderAsync();
-            UpdateUIState();
+            var newTab = new PdfDocumentTab { Header = "새 문서" };
+            newTab.PdfManager.NewDocument();
+            
+            _tabs.Add(newTab);
+            DocTabView.SelectedItem = newTab;
+            
+            // SelectionChanged will handle the rest
         }
 
-        private async void OpenFile_Click(object sender, RoutedEventArgs e)
+        private async void OpenFile_Click(object sender, RoutedEventArgs? e)
         {
             var picker = new FileOpenPicker();
             picker.FileTypeFilter.Add(".pdf");
@@ -294,27 +384,34 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
             var hwnd = WindowNative.GetWindowHandle(this);
             InitializeWithWindow.Initialize(picker, hwnd);
 
-            var file = await picker.PickSingleFileAsync();
-            if (file != null)
+            var files = await picker.PickMultipleFilesAsync();
+            if (files != null && files.Count > 0)
             {
-                await OpenPdfFileAsync(file);
+                foreach (var file in files)
+                {
+                    await OpenPdfFileInNewTabAsync(file);
+                }
             }
         }
 
-        private async Task OpenPdfFileAsync(StorageFile file)
+        private async Task OpenPdfFileInNewTabAsync(StorageFile file)
         {
             LoadingRing.IsActive = true;
             TxtStatus.Text = "파일을 여는 중...";
 
             try
             {
-                bool success = await _pdfManager.OpenAsync(file.Path);
+                var newTab = new PdfDocumentTab 
+                { 
+                    Header = file.Name,
+                    FilePath = file.Path
+                };
+                
+                bool success = await newTab.PdfManager.OpenAsync(file.Path);
                 if (success)
                 {
-                    _currentPageIndex = 0;
-                    _annotations.Clear();
-                    _isFirstLoad = true;
-                    _renderTempPath = null;
+                    _tabs.Add(newTab);
+                    DocTabView.SelectedItem = newTab;
                     AddToRecentFiles(file.Path);
                 }
                 else
@@ -329,8 +426,13 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
             finally
             {
                 LoadingRing.IsActive = false;
-                UpdateUIState();
             }
+        }
+
+        // Keep this for compatibility if called elsewhere, but update to create tab
+        private async Task OpenPdfFileAsync(StorageFile file)
+        {
+            await OpenPdfFileInNewTabAsync(file);
         }
 
         private void Grid_DragOver(object sender, DragEventArgs e)
@@ -352,7 +454,7 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
             }
         }
 
-        private async void SaveFile_Click(object sender, RoutedEventArgs e)
+        private async void SaveFile_Click(object sender, RoutedEventArgs? e)
         {
             if (!_pdfManager.IsLoaded) return;
 
@@ -367,7 +469,7 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
             }
         }
 
-        private async void SaveAsFile_Click(object sender, RoutedEventArgs e)
+        private async void SaveAsFile_Click(object sender, RoutedEventArgs? e)
         {
             if (!_pdfManager.IsLoaded) return;
 
@@ -387,18 +489,15 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
             }
         }
 
-        private void CloseFile_Click(object sender, RoutedEventArgs e)
+        private void CloseFile_Click(object sender, RoutedEventArgs? e)
         {
-            _pdfManager.Close();
-            _currentPageIndex = 0;
-            _annotations.Clear();
-            _pageThumbnails.Clear();
-            SetToolMode(EditToolMode.None);
-            UpdateUIState();
-            UpdateTitleBar();
+            if (_activeTab != null)
+            {
+                _tabs.Remove(_activeTab);
+            }
         }
 
-        private async void Print_Click(object sender, RoutedEventArgs e)
+        private async void Print_Click(object sender, RoutedEventArgs? e)
         {
             if (!_pdfManager.IsLoaded || _pdfManager.Document == null) return;
 
