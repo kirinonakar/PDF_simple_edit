@@ -924,13 +924,35 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
             if (found == null)
             {
-                var existingTexts = await _pdfManager.ExtractTextObjectsAsync(_currentPageIndex);
-                var match = GetBestMatch(existingTexts, pdfX, pdfY);
+                // 원본 콘텐츠(텍스트/이미지) 추출 및 히트 테스트
+                var pageContents = await _pdfManager.ExtractPageContentsAsync(_currentPageIndex);
+                var match = GetBestContentMatch(pageContents, pdfX, pdfY);
                 if (match != null)
                 {
-                    found = ConvertExistingTextToAnnotation(match);
-                    _annotations.Add(found);
-                    _pdfManager.MarkModified();
+                    if (match.Type == PageContentType.Text)
+                    {
+                        // 텍스트는 기존 로직(OperatorId 연동)을 위해 한번 더 정밀 매칭 시도 가능
+                        var existingTexts = await _pdfManager.ExtractTextObjectsAsync(_currentPageIndex);
+                        var textMatch = GetBestMatch(existingTexts, pdfX, pdfY);
+                        if (textMatch != null)
+                        {
+                            found = ConvertExistingTextToAnnotation(textMatch);
+                        }
+                        else
+                        {
+                            found = ConvertExistingContentToAnnotation(match);
+                        }
+                    }
+                    else
+                    {
+                        found = ConvertExistingContentToAnnotation(match);
+                    }
+
+                    if (found != null)
+                    {
+                        _annotations.Add(found);
+                        _pdfManager.MarkModified();
+                    }
                 }
             }
 
@@ -946,24 +968,35 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 _lastMousePos = pos;
                 OverlayCanvas.CapturePointer(e.Pointer);
                 
-                // 아직 원래 텍스트가 제거되지 않았다면 매번 클릭 시마다 제거 시도 (재시도 기회 제공)
-                if (_selectedAnnotation.IsOriginalTextReplacement)
+                // 아직 원래 콘텐츠가 제거되지 않았다면 매번 클릭 시마다 제거 시도 (재시도 기회 제공)
+                if (_selectedAnnotation.IsOriginalTextReplacement || (_selectedAnnotation.IsOriginalImageReplacement && _selectedAnnotation.OriginalImageName != null))
                 {
                     var targetAnn = _selectedAnnotation;
+                    bool isText = targetAnn.IsOriginalTextReplacement;
+
                     _ = Task.Run(async () => {
-                        // OperatorId를 전달하여 좌표 정밀도와 상관없이 정확한 객체 삭제 보장
-                        bool removed = await _pdfManager.RemoveTextAsync(_currentPageIndex, targetAnn.OriginalPdfX, targetAnn.OriginalPdfY, targetAnn.OriginalText.Trim(), targetAnn.OperatorId);
+                        bool removed = false;
+                        if (isText)
+                        {
+                            removed = await _pdfManager.RemoveTextAsync(_currentPageIndex, targetAnn.OriginalPdfX, targetAnn.OriginalPdfY, targetAnn.OriginalText.Trim(), targetAnn.OperatorId);
+                        }
+                        else
+                        {
+                            removed = await _pdfManager.RemoveImageAsync(_currentPageIndex, targetAnn.OriginalImageName!);
+                        }
                         
                         DispatcherQueue.TryEnqueue(async () => {
                             if (removed)
                             {
-                                targetAnn.IsOriginalTextReplacement = false;
+                                if (isText) targetAnn.IsOriginalTextReplacement = false;
+                                else targetAnn.IsOriginalImageReplacement = false;
+
                                 await RenderCurrentPageAsync();
-                                TxtStatus.Text = "기존 텍스트 제거 성공";
+                                TxtStatus.Text = (isText ? "기존 텍스트" : "기존 이미지") + " 제거 성공";
                             }
                             else
                             {
-                                TxtStatus.Text = "제거 재시도 중... (좌표/객체 확인 필요)";
+                                TxtStatus.Text = "제거 재시도 중...";
                             }
                         });
                     });
@@ -1050,6 +1083,38 @@ private SearchResult? GetBestMatch(List<SearchResult> texts, double x, double y)
     return texts.FirstOrDefault(t => 
         x >= t.X - 2 && x <= t.X + t.Width + 2 &&
         y >= t.Y - 2 && y <= t.Y + t.Height + 2);
+}
+
+private PdfPageContent? GetBestContentMatch(List<PdfPageContent> contents, double x, double y)
+{
+    return contents.FirstOrDefault(c => 
+        x >= c.X - 2 && x <= c.X + c.Width + 2 &&
+        y >= c.Y - 2 && y <= c.Y + c.Height + 2);
+}
+
+private PdfAnnotation ConvertExistingContentToAnnotation(PdfPageContent content)
+{
+    bool isText = content.Type == PageContentType.Text;
+    return new PdfAnnotation
+    {
+        Type = isText ? AnnotationType.Text : AnnotationType.Image,
+        PageIndex = _currentPageIndex,
+        X = content.X,
+        Y = content.Y,
+        Content = content.Text,
+        Width = content.Width,
+        Height = content.Height,
+        IsOriginalTextReplacement = isText,
+        IsOriginalImageReplacement = !isText,
+        OriginalPdfX = content.OriginalPdfX,
+        OriginalPdfY = content.OriginalPdfY,
+        OriginalText = content.Text,
+        OriginalImageName = isText ? null : content.ImageId,
+        ImagePath = isText ? null : (string.IsNullOrEmpty(content.Text) ? null : content.Text),
+        OperatorId = content.OperatorId,
+        FontSize = isText && content.Height > 0 ? content.Height : 12,
+        IsApplied = false
+    };
 }
 
 private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
@@ -1164,12 +1229,20 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 _isMovingAnnotation = false;
                 OverlayCanvas.ReleasePointerCapture(e.Pointer);
                 
-                // If it's a replacement for original PDF text and it hasn't been removed yet
-                if (movedAnn != null && movedAnn.IsOriginalTextReplacement)
+                // If it's a replacement for original PDF content and it hasn't been removed yet
+                if (movedAnn != null)
                 {
-                    // Remove from original content stream immediately since it moved
-                    await _pdfManager.RemoveTextAsync(_currentPageIndex, movedAnn.OriginalPdfX, movedAnn.OriginalPdfY, movedAnn.OriginalText.Trim(), movedAnn.OperatorId);
-                    movedAnn.IsOriginalTextReplacement = false; // Now it's a normal annotation
+                    if (movedAnn.IsOriginalTextReplacement)
+                    {
+                        // Remove from original content stream immediately since it moved
+                        await _pdfManager.RemoveTextAsync(_currentPageIndex, movedAnn.OriginalPdfX, movedAnn.OriginalPdfY, movedAnn.OriginalText.Trim(), movedAnn.OperatorId);
+                        movedAnn.IsOriginalTextReplacement = false; // Now it's a normal annotation
+                    }
+                    else if (movedAnn.IsOriginalImageReplacement && movedAnn.OriginalImageName != null)
+                    {
+                        await _pdfManager.RemoveImageAsync(_currentPageIndex, movedAnn.OriginalImageName);
+                        movedAnn.IsOriginalImageReplacement = false;
+                    }
                 }
 
                 _pdfManager.MarkModified();
@@ -1322,6 +1395,18 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                                 Width = ann.Width * PdfToPixels,
                                 Height = ann.Height * PdfToPixels,
                                 Stretch = Stretch.Fill,
+                                IsHitTestVisible = false
+                            };
+                        }
+                        else if (ann.IsApplied == false)
+                        {
+                            // Original image or newly added but no path yet
+                            // Render a placeholder or just a transparent box for selection border
+                            element = new Microsoft.UI.Xaml.Shapes.Rectangle
+                            {
+                                Width = ann.Width * PdfToPixels,
+                                Height = ann.Height * PdfToPixels,
+                                Fill = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
                                 IsHitTestVisible = false
                             };
                         }

@@ -38,11 +38,13 @@ namespace PDF_simple_edit.Models
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public bool IsApplied { get; set; } = false;
         
-        // Fields for original text replacement
+        // Fields for original content replacement
         public bool IsOriginalTextReplacement { get; set; } = false;
+        public bool IsOriginalImageReplacement { get; set; } = false;
         public double OriginalPdfX { get; set; }
         public double OriginalPdfY { get; set; }
         public string OriginalText { get; set; } = string.Empty;
+        public string? OriginalImageName { get; set; }
         public Guid? OperatorId { get; set; }
     }
 
@@ -72,6 +74,33 @@ namespace PDF_simple_edit.Models
         public double Height { get; set; }
         public string FoundText { get; set; } = string.Empty;
         public Guid? OperatorId { get; set; }
+    }
+
+    public enum PageContentType
+    {
+        Text,
+        Image
+    }
+
+    /// <summary>
+    /// Represents selectable content from the original PDF (text or image).
+    /// </summary>
+    public class PdfPageContent
+    {
+        public PageContentType Type { get; set; }
+        public double X { get; set; } // UI coordinates (Top-Left)
+        public double Y { get; set; } // UI coordinates (Top-Left)
+        public double Width { get; set; }
+        public double Height { get; set; }
+        public string Text { get; set; } = string.Empty;
+        
+        // For text removal/editing
+        public double OriginalPdfX { get; set; }
+        public double OriginalPdfY { get; set; }
+        public Guid? OperatorId { get; set; }
+        
+        // For image handling (future use)
+        public string? ImageId { get; set; }
     }
 
     /// <summary>

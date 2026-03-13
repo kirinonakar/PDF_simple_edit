@@ -410,6 +410,80 @@ namespace PDF_simple_edit.Helpers
             catch { return null; }
         }
 
+        public async Task<List<PdfPageContent>> ExtractPageContentsAsync(int pageIndex)
+        {
+            if (string.IsNullOrEmpty(_filePath) || pageIndex < 0)
+                return new List<PdfPageContent>();
+
+            return await Task.Run(() =>
+            {
+                var contents = new List<PdfPageContent>();
+                try
+                {
+                    using (var pigDoc = UglyToad.PdfPig.PdfDocument.Open(_filePath))
+                    {
+                        var page = pigDoc.GetPage(pageIndex + 1);
+                        double pageHeight = page.Height;
+
+                        // 1. 텍스트 추출 (Words 단위)
+                        foreach (var word in page.GetWords())
+                        {
+                            contents.Add(new PdfPageContent
+                            {
+                                Type = PageContentType.Text,
+                                X = word.BoundingBox.Left,
+                                Y = pageHeight - word.BoundingBox.Top, // UI Y (Top-Left)
+                                Width = word.BoundingBox.Width,
+                                Height = word.BoundingBox.Height,
+                                Text = word.Text,
+                                OriginalPdfX = word.BoundingBox.Left,
+                                OriginalPdfY = word.BoundingBox.Bottom // PDF Bottom-Up Y
+                            });
+                        }
+
+                        // 2. 이미지 추출
+                        foreach (var image in page.GetImages())
+                        {
+                            string? tempImagePath = null;
+                            try
+                            {
+                                if (image.TryGetPng(out byte[]? pngBytes) && pngBytes != null)
+                                {
+                                    string tempPath = Path.Combine(Path.GetTempPath(), $"pdf_img_{Guid.NewGuid()}.png");
+                                    File.WriteAllBytes(tempPath, pngBytes);
+                                    tempImagePath = tempPath;
+                                }
+                            }
+                            catch { }
+
+                            contents.Add(new PdfPageContent
+                            {
+                                Type = PageContentType.Image,
+                                X = image.Bounds.Left,
+                                Y = pageHeight - image.Bounds.Top, // UI Y (Top-Left)
+                                Width = image.Bounds.Width,
+                                Height = image.Bounds.Height,
+                                OriginalPdfX = image.Bounds.Left,
+                                OriginalPdfY = image.Bounds.Bottom,
+                                ImageId = image.ToString(), // Try to get some ID string
+                                Text = tempImagePath ?? "" // Store path in Text field for simplicity or use a new field
+                            });
+                        }
+                    }
+
+                    // [한글/매핑 보완] PdfSharp의 Operator와 매핑하기 위해 
+                    // 기존 ExtractTextObjectsAsync 로직의 OperatorId를 가져와야 할 수 있음.
+                    // 간단한 구현을 위해 여기서는 PdfPig 데이터만 반환하고, 
+                    // 필요시 MainWindow에서 매칭 로직을 수행하도록 함.
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error extracting page contents: {ex.Message}");
+                }
+                return contents;
+            });
+        }
+
         public async Task<List<SearchResult>> ExtractTextObjectsAsync(int pageIndex)
         {
             if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount)
@@ -640,6 +714,68 @@ namespace PDF_simple_edit.Helpers
 
             WriteObj(sequence);
             return ms.ToArray();
+        }
+
+        public async Task<bool> RemoveImageAsync(int pageIndex, string imageName)
+        {
+            if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount || string.IsNullOrEmpty(imageName)) return false;
+
+            return await Task.Run(() =>
+            {
+                lock (_docLock)
+                {
+                    try
+                    {
+                        var page = _document.Pages[pageIndex];
+                        if (!_pageSequenceCache.TryGetValue(pageIndex, out var sequence))
+                        {
+                            sequence = ContentReader.ReadContent(page);
+                            _pageSequenceCache[pageIndex] = sequence;
+                        }
+
+                        // imageName은 보통 "Im1" 형식이지만 PDF 스트림에는 "/Im1"으로 기록됨
+                        string targetName = imageName.StartsWith("/") ? imageName : "/" + imageName;
+                        bool found = RemoveImageFromSequence(sequence, targetName);
+
+                        if (found)
+                        {
+                            byte[] newData = SerializeContent(sequence);
+                            ApplyForceOverwrite(page, newData);
+                            
+                            _isModified = true;
+                            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                            DocumentChanged?.Invoke(this, EventArgs.Empty);
+                            return true;
+                        }
+                    }
+                    catch { }
+                    return false;
+                }
+            });
+        }
+
+        private bool RemoveImageFromSequence(CSequence sequence, string imageName)
+        {
+            bool removed = false;
+            for (int i = 0; i < sequence.Count; i++)
+            {
+                var obj = sequence[i];
+                if (obj is COperator op && op.Name == "Do" && op.Operands.Count > 0)
+                {
+                    if (op.Operands[0].ToString() == imageName)
+                    {
+                        // 이미지 출력 명령 제거
+                        sequence.RemoveAt(i);
+                        removed = true;
+                        i--; // 인덱스 조정
+                    }
+                }
+                else if (obj is CSequence inner)
+                {
+                    if (RemoveImageFromSequence(inner, imageName)) removed = true;
+                }
+            }
+            return removed;
         }
 
         public async Task<bool> RemoveTextAsync(int pageIndex, double x, double y, string text, Guid? operatorId = null)
