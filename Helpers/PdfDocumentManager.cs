@@ -642,85 +642,53 @@ namespace PDF_simple_edit.Helpers
             state.TextMatrix *= m;
         }
 
-        // [핵심 해결] 라이브러리 버그 우회: PDF 스트림 수동 직렬화기
-        // MemoryStream 기반으로 변경하여 한글 등 비ASCII 문자를 UTF-16 BE hex 형식으로 안전하게 직렬화
         private byte[] SerializeContent(CSequence sequence)
+{
+    using var ms = new MemoryStream();
+
+    void WriteAscii(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return;
+        var bytes = System.Text.Encoding.Latin1.GetBytes(s);
+        ms.Write(bytes, 0, bytes.Length);
+    }
+
+    void WriteObj(CObject obj)
+    {
+        if (obj is COperator op)
         {
-            using var ms = new MemoryStream();
-
-            void WriteAscii(string s)
+            foreach (var opnd in op.Operands)
             {
-                if (string.IsNullOrEmpty(s)) return;
-                var bytes = System.Text.Encoding.Latin1.GetBytes(s);
-                ms.Write(bytes, 0, bytes.Length);
+                WriteObj(opnd);
+                ms.WriteByte((byte)' ');
             }
-
-            void WriteObj(CObject obj)
-            {
-                if (obj is COperator op)
-                {
-                    foreach (var opnd in op.Operands)
-                    {
-                        WriteObj(opnd);
-                        ms.WriteByte((byte)' ');
-                    }
-                    WriteAscii(op.Name);
-                    ms.WriteByte((byte)'\n');
-                }
-                else if (obj is CSequence seq)
-                {
-                    foreach (var child in seq) WriteObj(child);
-                }
-                else if (obj is CString str)
-                {
-                    // [한글 깨짐 수정] 비ASCII 문자가 있으면 UTF-16 BE hex 형식으로 직렬화
-                    string val = str.Value ?? "";
-                    bool hasNonAscii = val.Any(c => c > 127);
-
-                    if (hasNonAscii)
-                    {
-                        // <FEFF xxxx ...> 형식으로 직렬화 (PDF UTF-16 BE 표준)
-                        byte[] bom = { 0xFE, 0xFF };
-                        byte[] content = System.Text.Encoding.BigEndianUnicode.GetBytes(val);
-                        ms.WriteByte((byte)'<');
-                        foreach (byte b in bom)   WriteAscii(b.ToString("X2"));
-                        foreach (byte b in content) WriteAscii(b.ToString("X2"));
-                        ms.WriteByte((byte)'>');
-                    }
-                    else
-                    {
-                        // ASCII 범위: 괄호 형식으로 직렬화, 특수문자 이스케이프
-                        ms.WriteByte((byte)'(');
-                        foreach (char c in val)
-                        {
-                            byte b = (byte)(c & 0xFF);
-                            if (b == (byte)'(' || b == (byte)')' || b == (byte)'\\')
-                                ms.WriteByte((byte)'\\');
-                            ms.WriteByte(b);
-                        }
-                        ms.WriteByte((byte)')');
-                    }
-                }
-                else if (obj is CArray arr)
-                {
-                    ms.WriteByte((byte)'[');
-                    for (int i = 0; i < arr.Count; i++)
-                    {
-                        WriteObj(arr[i]);
-                        if (i < arr.Count - 1) ms.WriteByte((byte)' ');
-                    }
-                    ms.WriteByte((byte)']');
-                }
-                else
-                {
-                    // CNumber, CName 등: ToString()은 ASCII 범위이므로 Latin1 safe
-                    WriteAscii(obj.ToString() ?? "");
-                }
-            }
-
-            WriteObj(sequence);
-            return ms.ToArray();
+            WriteAscii(op.Name);
+            ms.WriteByte((byte)'\n');
         }
+        else if (obj is CSequence seq)
+        {
+            foreach (var child in seq) WriteObj(child);
+        }
+        else if (obj is CReal realObj)
+        {
+            // 소수점 스케일링(Matrix) 버그를 막기 위해 InvariantCulture 사용
+            WriteAscii(realObj.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        else if (obj is CInteger intObj)
+        {
+            WriteAscii(intObj.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        else
+        {
+            // [핵심 해결] CString, CName, CArray 등은 억지로 변환하지 않고
+            // PdfSharp 내부의 네이티브 포맷터를 호출하여 원본 바이트 구조를 유지합니다.
+            WriteAscii(obj.ToString() ?? "");
+        }
+    }
+
+    WriteObj(sequence);
+    return ms.ToArray();
+}
 
         public async Task<bool> RemoveImageAsync(int pageIndex, string imageName)
         {
@@ -1064,24 +1032,7 @@ namespace PDF_simple_edit.Helpers
 
                         if (newOp != null)
                         {
-                            // [수정됨] 다음번 이동을 위해 맵을 새 오퍼레이터로 업데이트
                             _operatorMap[operatorId] = newOp;
-
-                            // [추가된 핵심 방어 로직] 
-                            // 0.1pt 차이로 밑에 깔려있는 유령 텍스트(Simulated Bold) 색출 및 파괴
-                            if (targetOp is COperator op && op.Operands.Count > 0)
-                            {
-                                string targetRawText = "";
-                                if (op.Name == "Tj" || op.Name == "'" || op.Name == "\"")
-                                    targetRawText = op.Operands[op.Name == "\"" ? 2 : 0].ToString() ?? "";
-                                else if (op.Name == "TJ" && op.Operands[0] is CArray arr)
-                                    targetRawText = string.Join("", arr.Select(o => o.ToString()));
-
-                                // 좌표 기반 잔여물 싹쓸이 모드 가동 (반경 5 좌표 이내의 동일 텍스트 모두 비우기)
-                                // ExtractTextObjectsAsync에서 추출할 때의 state를 기반으로 해야 정확하지만,
-                                // 텍스트 내용 자체가 완벽히 일치한다면 RemoveMatchingTextFromSequence의 fallback으로 제거를 유도합니다.
-                                RemoveMatchingTextFromSequence(sequence, new PdfTextState(pageHeight), 0, 0, targetRawText); 
-                            }
 
                             byte[] newData = SerializeContent(sequence);
                             ApplyForceOverwrite(page, newData);
