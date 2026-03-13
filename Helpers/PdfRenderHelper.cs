@@ -1,5 +1,4 @@
-using PdfSharp.Drawing;
-using PdfSharp.Pdf;
+using iText.Kernel.Pdf;
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -11,9 +10,7 @@ namespace PDF_simple_edit.Helpers
     /// </summary>
     public class PdfRenderHelper
     {
-        /// <summary>
-        /// Renders a PDF page using Windows.Data.Pdf API for high quality rendering.
-        /// </summary>
+        // ... (rest of the class remains same as it uses Windows.Data.Pdf)
         public static async Task<MemoryStream?> RenderPageWithWindowsPdfAsync(
             string filePath, int pageIndex, double scale = 2.0)
         {
@@ -48,9 +45,6 @@ namespace PDF_simple_edit.Helpers
             }
         }
 
-        /// <summary>
-        /// Gets page dimensions from a PDF file using Windows.Data.Pdf.
-        /// </summary>
         public static async Task<(double width, double height)> GetPageSizeAsync(
             string filePath, int pageIndex)
         {
@@ -72,28 +66,17 @@ namespace PDF_simple_edit.Helpers
         }
     }
 
-    /// <summary>
-    /// Helper class for printing PDF documents using Windows print APIs.
-    /// </summary>
     public class PrintHelper
     {
-        /// <summary>
-        /// Prints a PDF by launching the system's default PDF print handler.
-        /// </summary>
         public async Task PrintAsync(PdfDocument document, string filePath, IntPtr windowHandle)
         {
             try
             {
-                // Use Windows LaunchFileAsync to open the system print dialog
                 var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(filePath);
-
-                // Launch with print verb
                 var options = new Windows.System.LauncherOptions
                 {
                     DisplayApplicationPicker = false,
                 };
-
-                // Try to print directly via Windows
                 await Windows.System.Launcher.LaunchFileAsync(file);
             }
             catch (Exception ex)
@@ -104,3 +87,4 @@ namespace PDF_simple_edit.Helpers
         }
     }
 }
+

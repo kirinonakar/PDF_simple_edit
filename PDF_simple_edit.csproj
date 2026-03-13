@@ -41,10 +41,9 @@
     <None Remove="CheckPDFSharp\**" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="itext" Version="9.5.0" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />
-    <PackageReference Include="PdfPig" Version="0.1.13" />
-    <PackageReference Include="PDFsharp-GDI" Version="6.2.4" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.5" />
   </ItemGroup>
 

@@ -14,16 +14,6 @@ namespace PDF_simple_edit
 
             // Global exception handling
             UnhandledException += App_UnhandledException;
-
-            // Initialize Korean font resolver
-            try
-            {
-                PdfFontResolver.Initialize();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Font resolver init error: {ex.Message}");
-            }
         }
 
         private void App_UnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
