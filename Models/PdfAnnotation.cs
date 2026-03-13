@@ -68,12 +68,14 @@ namespace PDF_simple_edit.Models
     public class SearchResult
     {
         public int PageIndex { get; set; }
-        public double X { get; set; }
-        public double Y { get; set; }
+        public double X { get; set; } // UI coordinates (Top-Left)
+        public double Y { get; set; } // UI coordinates (Top-Left)
         public double Width { get; set; }
         public double Height { get; set; }
         public string FoundText { get; set; } = string.Empty;
         public Guid? OperatorId { get; set; }
+        public double OriginalPdfX { get; set; }
+        public double OriginalPdfY { get; set; }
     }
 
     public enum PageContentType

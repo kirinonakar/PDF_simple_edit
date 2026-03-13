@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using PDF_simple_edit.Models;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
+using UglyToad.PdfPig.Core;
 using System.Globalization;
 
 namespace PDF_simple_edit.Helpers
@@ -428,16 +429,19 @@ namespace PDF_simple_edit.Helpers
                         // 1. 텍스트 추출 (Words 단위)
                         foreach (var word in page.GetWords())
                         {
+                            // CoordinateMapper를 사용하여 UI 좌표계로 변환
+                            double uiY = CoordinateMapper.MapToUiY(word.BoundingBox.Top, pageHeight);
+
                             contents.Add(new PdfPageContent
                             {
                                 Type = PageContentType.Text,
                                 X = word.BoundingBox.Left,
-                                Y = pageHeight - word.BoundingBox.Top, // UI Y (Top-Left)
+                                Y = uiY,
                                 Width = word.BoundingBox.Width,
                                 Height = word.BoundingBox.Height,
                                 Text = word.Text,
                                 OriginalPdfX = word.BoundingBox.Left,
-                                OriginalPdfY = word.BoundingBox.Bottom // PDF Bottom-Up Y
+                                OriginalPdfY = word.BoundingBox.Bottom // PDF 표준 좌표 (Bottom 기준)
                             });
                         }
 
@@ -460,13 +464,13 @@ namespace PDF_simple_edit.Helpers
                             {
                                 Type = PageContentType.Image,
                                 X = image.Bounds.Left,
-                                Y = pageHeight - image.Bounds.Top, // UI Y (Top-Left)
+                                Y = CoordinateMapper.MapToUiY(image.Bounds.Top, pageHeight),
                                 Width = image.Bounds.Width,
                                 Height = image.Bounds.Height,
                                 OriginalPdfX = image.Bounds.Left,
                                 OriginalPdfY = image.Bounds.Bottom,
-                                ImageId = image.ToString(), // Try to get some ID string
-                                Text = tempImagePath ?? "" // Store path in Text field for simplicity or use a new field
+                                ImageId = image.ToString(), 
+                                Text = tempImagePath ?? "" 
                             });
                         }
                     }
@@ -600,7 +604,7 @@ namespace PDF_simple_edit.Helpers
             double pdfX = state.TextMatrix.OffsetX;
             double pdfY = state.TextMatrix.OffsetY;
             double height = state.FontSize;
-            double uiY = state.PageHeight - pdfY - height;
+            double uiY = CoordinateMapper.MapToUiY(pdfY + height, state.PageHeight); // Top 기준 UI Y
 
             // [한글 해결] PdfPig에서 추출한 진짜 텍스트가 있다면 그것을 사용
             string bestText = text;
@@ -629,7 +633,9 @@ namespace PDF_simple_edit.Helpers
                 Width = width,
                 Height = height,
                 PageIndex = 0, 
-                OperatorId = id
+                OperatorId = id,
+                OriginalPdfX = pdfX,
+                OriginalPdfY = pdfY
             });
 
             var m = new XMatrix(); m.TranslateAppend(width, 0);
@@ -795,21 +801,22 @@ namespace PDF_simple_edit.Helpers
                             _pageSequenceCache[pageIndex] = sequence;
                         }
 
-                        object? targetOp = null;
-                        if (operatorId.HasValue) _operatorMap.TryGetValue(operatorId.Value, out targetOp);
-
                         bool anyRemoved = false;
-                        if (targetOp != null)
+                        if (operatorId.HasValue && _operatorMap.TryGetValue(operatorId.Value, out var targetOp))
                         {
-                            anyRemoved = MakeTextInvisible(sequence, targetOp);
+                            // [핵심 문제 2 해결] Rendering Mode 변경 방식(3 Tr)이 아닌, 컨텐츠 스트림 오퍼레이터 완전 제거 또는 공백 치환
+                            anyRemoved = ReplaceOperatorInSequence(sequence, targetOp);
                         }
 
                         if (!anyRemoved)
-                            anyRemoved = RemoveAllTextFromSequence(sequence, new PdfTextState(page.Height.Point), x, y, text);
+                        {
+                            // 좌표 및 텍스트 매칭 기반으로 찾아서 삭제
+                            anyRemoved = RemoveMatchingTextFromSequence(sequence, new PdfTextState(page.Height.Point), x, y, text);
+                        }
 
                         if (anyRemoved)
                         {
-                            // [핵심 해결] 강제 스트림 덮어쓰기
+                            // [핵심 해결] 수동 직렬화 후 강제 덮어쓰기
                             byte[] newData = SerializeContent(sequence);
                             ApplyForceOverwrite(page, newData);
                             
@@ -828,6 +835,30 @@ namespace PDF_simple_edit.Helpers
             });
         }
 
+        /// <summary>
+        /// 시퀀스 내에서 타겟 오퍼레이터를 찾아 완전히 제거하거나 텍스트를 비웁니다.
+        /// </summary>
+        private bool ReplaceOperatorInSequence(CSequence sequence, object targetOp)
+        {
+            for (int i = 0; i < sequence.Count; i++)
+            {
+                if (object.ReferenceEquals(sequence[i], targetOp))
+                {
+                    if (sequence[i] is COperator op)
+                    {
+                        // [True Text Replacement] 텍스트 데이터를 빈 값으로 만들어 시각적/데이터적으로 완전 제거
+                        ReplaceWithEmptyString(op);
+                        return true;
+                    }
+                }
+                if (sequence[i] is CSequence innerSeq)
+                {
+                    if (ReplaceOperatorInSequence(innerSeq, targetOp)) return true;
+                }
+            }
+            return false;
+        }
+
 // [수정됨] 새 인스턴스를 만들지 않고, 기존 CString 인스턴스의 값 자체(Value)를 조작하여 강제 적용
         private void ReplaceWithEmptyString(COperator? op)
         {
@@ -838,18 +869,21 @@ namespace PDF_simple_edit.Helpers
                 case "'":
                 case "\"":
                     int textIdx = (op.Name == "\"") ? 2 : 0;
-                    if (op.Operands.Count > textIdx && op.Operands[textIdx] is CString str)
+                    if (op.Operands.Count > textIdx)
                     {
-                        str.Value = ""; // 직접 값을 빈 문자열로 변경
+                        var s = new CString();
+                        s.Value = "";
+                        op.Operands[textIdx] = s; 
                     }
                     break;
                 case "TJ":
-                    if (op.Operands.Count >= 1 && op.Operands[0] is CArray array)
+                    if (op.Operands.Count >= 1)
                     {
-                        foreach (var item in array)
-                        {
-                            if (item is CString s) s.Value = ""; // 배열 내부 요소들의 텍스트도 값만 변경
-                        }
+                        var emptyArray = new CArray();
+                        var s = new CString();
+                        s.Value = "";
+                        emptyArray.Add(s);
+                        op.Operands[0] = emptyArray; 
                     }
                     break;
             }
@@ -857,16 +891,34 @@ namespace PDF_simple_edit.Helpers
 
         private void ApplyForceOverwrite(PdfPage page, byte[] newData)
         {
-            // CreateSingleContent는 기존 컨텐츠를 하나로 합치고 스트림을 제공함
-            var content = page.Contents.CreateSingleContent();
-            content.Stream.Value = newData;
+            var document = page.Owner;
             
-            // 압축 필터 제거 및 길이 업데이트
-            content.Elements.Remove("/Filter");
-            content.Elements.SetInteger("/Length", newData.Length);
+            // 완전히 새로운 PDF 스트림 딕셔너리를 생성합니다.
+            var newContent = new PdfDictionary(document);
+            newContent.Elements.SetInteger("/Length", newData.Length);
+            newContent.CreateStream(newData);
             
-            // [핵심] 페이지의 /Contents를 해당 객체로 강제 재지정하여 캐싱 무시
-            page.Elements["/Contents"] = content.Reference;
+            // 문서의 내부 오브젝트 테이블에 새 스트림을 정식으로 등록합니다.
+            document.Internals.AddObject(newContent);
+            
+            // 페이지의 Contents를 새 스트림으로 강제 지정합니다.
+            page.Elements["/Contents"] = newContent.Reference;
+
+            // 캐시와 충돌하지 않도록 해당 페이지의 시퀀스 캐시를 날립니다.
+            int pageIndex = -1;
+            for (int i = 0; i < document.Pages.Count; i++)
+            {
+                if (document.Pages[i] == page)
+                {
+                    pageIndex = i;
+                    break;
+                }
+            }
+
+            if (pageIndex >= 0 && _pageSequenceCache.ContainsKey(pageIndex))
+            {
+                _pageSequenceCache.Remove(pageIndex);
+            }
         }
 
         private bool RemoveSpecificOperatorFromSequence(CSequence sequence, object targetOp)
@@ -886,7 +938,7 @@ namespace PDF_simple_edit.Helpers
             return false;
         }
 
-        private bool RemoveAllTextFromSequence(CSequence sequence, PdfTextState state, double targetX, double targetY, string targetText)
+        private bool RemoveMatchingTextFromSequence(CSequence sequence, PdfTextState state, double targetPdfX, double targetPdfY, string targetText)
         {
             bool removed = false;
             for (int i = 0; i < sequence.Count; i++)
@@ -952,29 +1004,18 @@ namespace PDF_simple_edit.Helpers
                             {
                                 double pdfX = state.TextMatrix.OffsetX;
                                 double pdfY = state.TextMatrix.OffsetY;
-                                double uiY = state.PageHeight - pdfY - state.FontSize;
 
-                                bool posMatch = Math.Abs(pdfX - targetX) < 40 && Math.Abs(uiY - targetY) < 50;
+                                // [핵심 해결] PDF 좌표계(Bottom-Up) 기준으로 직접 비교하여 오차 최소화
+                                bool posMatch = Math.Abs(pdfX - targetPdfX) < 10 && Math.Abs(pdfY - targetPdfY) < 10;
                                 string cleanTargetText = targetText.Trim();
                                 bool textMatch = !string.IsNullOrEmpty(cleanTargetText) && 
                                                (rawText.Contains(cleanTargetText) || cleanTargetText.Contains(rawText));
 
-                                bool veryCloseMatch = Math.Abs(pdfX - targetX) < 10 && Math.Abs(uiY - targetY) < 15;
-
-                                if ((posMatch && textMatch) || veryCloseMatch || (posMatch && rawText.Length == 0))
+                                if (posMatch || textMatch)
                                 {
-                                    var trInvisible = PdfSharp.Pdf.Content.Objects.OpCodes.OperatorFromName("Tr");
-                                    trInvisible.Operands.Add(new CInteger { Value = 3 });
-
-                                    var trVisible = PdfSharp.Pdf.Content.Objects.OpCodes.OperatorFromName("Tr");
-                                    trVisible.Operands.Add(new CInteger { Value = 0 });
-
-                                    sequence.Insert(i, trInvisible);
-                                    sequence.Insert(i + 2, trVisible);
-                                    
-                                    i += 2; // 삽입한 2개의 오퍼레이터만큼 인덱스 건너뛰기
+                                    // [True Text Replacement] 텍스트 완전 제거
+                                    ReplaceWithEmptyString(op);
                                     removed = true;
-                                    continue;
                                 }
 
                                 double width = rawText.Length * state.FontSize * 0.5;
@@ -988,7 +1029,7 @@ namespace PDF_simple_edit.Helpers
                 }
                 else if (obj is CSequence inner)
                 {
-                    if (RemoveAllTextFromSequence(inner, state, targetX, targetY, targetText)) removed = true;
+                    if (RemoveMatchingTextFromSequence(inner, state, targetPdfX, targetPdfY, targetText)) removed = true;
                 }
             }
             return removed;
@@ -1025,6 +1066,22 @@ namespace PDF_simple_edit.Helpers
                         {
                             // [수정됨] 다음번 이동을 위해 맵을 새 오퍼레이터로 업데이트
                             _operatorMap[operatorId] = newOp;
+
+                            // [추가된 핵심 방어 로직] 
+                            // 0.1pt 차이로 밑에 깔려있는 유령 텍스트(Simulated Bold) 색출 및 파괴
+                            if (targetOp is COperator op && op.Operands.Count > 0)
+                            {
+                                string targetRawText = "";
+                                if (op.Name == "Tj" || op.Name == "'" || op.Name == "\"")
+                                    targetRawText = op.Operands[op.Name == "\"" ? 2 : 0].ToString() ?? "";
+                                else if (op.Name == "TJ" && op.Operands[0] is CArray arr)
+                                    targetRawText = string.Join("", arr.Select(o => o.ToString()));
+
+                                // 좌표 기반 잔여물 싹쓸이 모드 가동 (반경 5 좌표 이내의 동일 텍스트 모두 비우기)
+                                // ExtractTextObjectsAsync에서 추출할 때의 state를 기반으로 해야 정확하지만,
+                                // 텍스트 내용 자체가 완벽히 일치한다면 RemoveMatchingTextFromSequence의 fallback으로 제거를 유도합니다.
+                                RemoveMatchingTextFromSequence(sequence, new PdfTextState(pageHeight), 0, 0, targetRawText); 
+                            }
 
                             byte[] newData = SerializeContent(sequence);
                             ApplyForceOverwrite(page, newData);
@@ -1093,7 +1150,7 @@ namespace PDF_simple_edit.Helpers
                     if (foundTarget && targetOperator != null && etIndex != -1)
                     {
                         double pdfNewX = newUIX;
-                        double pdfNewY = pageHeight - newUIY - blockFontSize;
+                        double pdfNewY = CoordinateMapper.MapToPdfY(newUIY + blockFontSize, pageHeight);
 
                         // 1. 타겟 오퍼레이터(Tj, TJ 등) 복제본 생성
                         var clonedOp = CloneOperator(targetOperator);
@@ -1111,11 +1168,8 @@ namespace PDF_simple_edit.Helpers
                         sequence.Insert(etIndex, newTm);
                         sequence.Insert(etIndex + 1, clonedOp);
 
-                        // 4. [수정됨] 오퍼레이터를 완전히 제거하면 PdfSharp 스트림 덮어쓰기에서 누락되거나 좌표가 꼬일 수 있습니다.
-                        // RemoveTextAsync와 동일하게 값 자체를 빈 문자열로 만들어 화면에서 확실히 지웁니다.
-                        // ReplaceWithEmptyString(targetOperator); <-- 이 줄을 삭제하고 아래로 교체합니다.
-
-                        MakeTextInvisible(sequence, targetOperator); // 레이아웃은 유지하고 글자만 투명하게 숨김
+                        // 4. [완전 해결] 기존 텐스트를 투명하게 숨기는 것이 아니라, 연산자 내용을 빈 값으로 치환하여 Ghost Text 방지
+                        ReplaceWithEmptyString(targetOperator); 
 
                         return clonedOp;
                     }
@@ -1175,37 +1229,6 @@ namespace PDF_simple_edit.Helpers
             return clone;
         }
 
-/// <summary>
-/// 타겟 오퍼레이터 앞뒤로 투명화 모드(3 Tr)와 복구 모드(0 Tr)를 삽입하여 화면에서 숨깁니다.
-/// </summary>
-private bool MakeTextInvisible(CSequence sequence, object targetOp)
-{
-    for (int i = 0; i < sequence.Count; i++)
-    {
-        if (object.ReferenceEquals(sequence[i], targetOp))
-        {
-            // 1. 텍스트를 그리지 않도록 투명 모드(3) 지정
-            var trInvisible = PdfSharp.Pdf.Content.Objects.OpCodes.OperatorFromName("Tr");
-            trInvisible.Operands.Add(new CInteger { Value = 3 });
-
-            // 2. 원래 상태인 Fill(0)로 복구 (다음 텍스트에 영향 방지)
-            var trVisible = PdfSharp.Pdf.Content.Objects.OpCodes.OperatorFromName("Tr");
-            trVisible.Operands.Add(new CInteger { Value = 0 });
-
-            // 타겟 오퍼레이터(i) 앞과 뒤에 각각 삽입
-            sequence.Insert(i, trInvisible);
-            sequence.Insert(i + 2, trVisible);
-            return true;
-        }
-        
-        // 중첩된 시퀀스 재귀 탐색
-        if (sequence[i] is CSequence innerSeq)
-        {
-            if (MakeTextInvisible(innerSeq, targetOp)) return true;
-        }
-    }
-    return false;
-}
 
         private void SetCOperandValue(CSequence operands, int index, double value)
         {
