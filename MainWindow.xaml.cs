@@ -904,7 +904,6 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
         case EditToolMode.Select:
             var found = FindAnnotationAt(pdfX, pdfY);
 
-            // If no annotation found, try to find existing PDF text
             if (found == null)
             {
                 var existingTexts = await _pdfManager.ExtractTextObjectsAsync(_currentPageIndex);
@@ -914,7 +913,6 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                     found = ConvertExistingTextToAnnotation(match);
                     _annotations.Add(found);
                     _pdfManager.MarkModified();
-                    TxtStatus.Text = "기존 텍스트 선택됨 (더블 클릭하여 편집)";
                 }
             }
 
@@ -929,8 +927,33 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 _isMovingAnnotation = true;
                 _lastMousePos = pos;
                 OverlayCanvas.CapturePointer(e.Pointer);
-                if (!_selectedAnnotation.IsOriginalTextReplacement)
+                
+                // 아직 원래 텍스트가 제거되지 않았다면 매번 클릭 시마다 제거 시도 (재시도 기회 제공)
+                if (_selectedAnnotation.IsOriginalTextReplacement)
+                {
+                    var targetAnn = _selectedAnnotation;
+                    _ = Task.Run(async () => {
+                        // OperatorId를 전달하여 좌표 정밀도와 상관없이 정확한 객체 삭제 보장
+                        bool removed = await _pdfManager.RemoveTextAsync(_currentPageIndex, targetAnn.OriginalPdfX, targetAnn.OriginalPdfY, targetAnn.OriginalText.Trim(), targetAnn.OperatorId);
+                        
+                        DispatcherQueue.TryEnqueue(async () => {
+                            if (removed)
+                            {
+                                targetAnn.IsOriginalTextReplacement = false;
+                                await RenderCurrentPageAsync();
+                                TxtStatus.Text = "기존 텍스트 제거 성공";
+                            }
+                            else
+                            {
+                                TxtStatus.Text = "제거 재시도 중... (좌표/객체 확인 필요)";
+                            }
+                        });
+                    });
+                }
+                else
+                {
                     TxtStatus.Text = "객체 선택됨 (드래그하여 이동)";
+                }
             }
             else
             {
@@ -1026,6 +1049,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         OriginalPdfX = textObj.X,
         OriginalPdfY = textObj.Y,
         OriginalText = textObj.FoundText,
+        OperatorId = textObj.OperatorId,
         FontSize = textObj.Height > 0 ? textObj.Height : 12,
         IsApplied = false
     };
@@ -1073,7 +1097,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 if (movedAnn != null && movedAnn.IsOriginalTextReplacement)
                 {
                     // Remove from original content stream immediately since it moved
-                    await _pdfManager.RemoveTextAsync(_currentPageIndex, movedAnn.OriginalPdfX, movedAnn.OriginalPdfY, movedAnn.OriginalText);
+                    await _pdfManager.RemoveTextAsync(_currentPageIndex, movedAnn.OriginalPdfX, movedAnn.OriginalPdfY, movedAnn.OriginalText.Trim(), movedAnn.OperatorId);
                     movedAnn.IsOriginalTextReplacement = false; // Now it's a normal annotation
                 }
 
@@ -1376,7 +1400,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         if (existingAnn.IsOriginalTextReplacement)
                         {
                             textWasRemoved = await _pdfManager.RemoveTextAsync(_currentPageIndex, 
-                                existingAnn.OriginalPdfX, existingAnn.OriginalPdfY, existingAnn.OriginalText);
+                                existingAnn.OriginalPdfX, existingAnn.OriginalPdfY, existingAnn.OriginalText.Trim(), existingAnn.OperatorId);
                         }
                         _annotations.Remove(existingAnn);
                         if (_selectedAnnotation == existingAnn) _selectedAnnotation = null;
@@ -1387,7 +1411,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         if (existingAnn.IsOriginalTextReplacement)
                         {
                             textWasRemoved = await _pdfManager.RemoveTextAsync(_currentPageIndex, 
-                                existingAnn.OriginalPdfX, existingAnn.OriginalPdfY, existingAnn.OriginalText);
+                                existingAnn.OriginalPdfX, existingAnn.OriginalPdfY, existingAnn.OriginalText.Trim(), existingAnn.OperatorId);
                             existingAnn.IsOriginalTextReplacement = false;
                         }
                         

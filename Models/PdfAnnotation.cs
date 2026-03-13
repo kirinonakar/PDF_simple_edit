@@ -43,6 +43,7 @@ namespace PDF_simple_edit.Models
         public double OriginalPdfX { get; set; }
         public double OriginalPdfY { get; set; }
         public string OriginalText { get; set; } = string.Empty;
+        public Guid? OperatorId { get; set; }
     }
 
     /// <summary>
@@ -70,6 +71,7 @@ namespace PDF_simple_edit.Models
         public double Width { get; set; }
         public double Height { get; set; }
         public string FoundText { get; set; } = string.Empty;
+        public Guid? OperatorId { get; set; }
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 using PdfSharp.Drawing;
 using PdfSharp.Pdf;
+using PdfDocument = PdfSharp.Pdf.PdfDocument;
 using PdfSharp.Pdf.IO;
 using PdfSharp.Pdf.Content;
 using PdfSharp.Pdf.Content.Objects;
@@ -9,17 +10,21 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using PDF_simple_edit.Models;
+using UglyToad.PdfPig;
+using UglyToad.PdfPig.Content;
+using System.Globalization;
 
 namespace PDF_simple_edit.Helpers
 {
-    /// <summary>
-    /// Manages PDF document operations: open, save, merge, split, text operations.
-    /// </summary>
     public class PdfDocumentManager
     {
         private PdfDocument? _document;
         private string? _filePath;
         private bool _isModified;
+        private readonly object _docLock = new();
+        private readonly Dictionary<Guid, object> _operatorMap = new();
+        
+        private readonly Dictionary<int, CSequence> _pageSequenceCache = new();
 
         public PdfDocument? Document => _document;
         public string? FilePath => _filePath;
@@ -42,94 +47,83 @@ namespace PDF_simple_edit.Helpers
             PdfFontResolver.Initialize();
         }
 
-        /// <summary>
-        /// Opens a PDF file from the given path.
-        /// </summary>
+        private void ClearCache()
+        {
+            _pageSequenceCache.Clear();
+            _operatorMap.Clear();
+        }
+
         public async Task<bool> OpenAsync(string filePath)
         {
             return await Task.Run(() =>
             {
-                try
+                lock (_docLock)
                 {
-                    var doc = PdfReader.Open(filePath, PdfDocumentOpenMode.Modify);
-                    _document = doc;
-                    _filePath = filePath;
-                    _isModified = false;
-                    DocumentChanged?.Invoke(this, EventArgs.Empty);
-                    ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Error opening PDF: {ex.Message}");
-                    return false;
+                    try
+                    {
+                        var doc = PdfReader.Open(filePath, PdfDocumentOpenMode.Modify);
+                        _document = doc;
+                        _filePath = filePath;
+                        _isModified = false;
+                        ClearCache(); 
+                        DocumentChanged?.Invoke(this, EventArgs.Empty);
+                        ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error opening PDF: {ex.Message}");
+                        return false;
+                    }
                 }
             });
         }
 
-        /// <summary>
-        /// Saves the current document to the original file path.
-        /// </summary>
         public async Task<bool> SaveAsync()
         {
             if (_document == null || string.IsNullOrEmpty(_filePath))
                 return false;
-
             return await SaveAsAsync(_filePath, true);
         }
 
-        /// <summary>
-        /// Saves the current document to a new file path.
-        /// </summary>
-        /// <param name="filePath">Target path.</param>
-        /// <param name="isUserSave">If true, updates the primary file path and resets its modification state.</param>
         public async Task<bool> SaveAsAsync(string filePath, bool isUserSave = true)
         {
             if (_document == null) return false;
 
             return await Task.Run(() =>
             {
-                try
+                lock (_docLock)
                 {
-                    _document.Save(filePath);
-                    
-                    // PDFsharp "freezes" the document after Save. 
-                    // To continue editing, we must reload it.
-                    var doc = PdfReader.Open(filePath, PdfDocumentOpenMode.Modify);
-                    
-                    // It's safe to assign new document here. 
-                    // The old _document's content stream is already saved.
-                    _document = doc;
-
-                    if (isUserSave)
+                    try
                     {
-                        _filePath = filePath;
-                        _isModified = false;
-                        ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                        _document.Save(filePath);
+                        var doc = PdfReader.Open(filePath, PdfDocumentOpenMode.Modify);
+                        _document = doc;
+                        ClearCache();
+
+                        if (isUserSave)
+                        {
+                            _filePath = filePath;
+                            _isModified = false;
+                            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                        }
+                        return true;
                     }
-                    
-                    // We DO NOT fire DocumentChanged here to avoid recursive rendering loops 
-                    // when this is called from within a rendering pass.
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Error saving PDF: {ex.Message}");
-                    return false;
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error saving PDF: {ex.Message}");
+                        return false;
+                    }
                 }
             });
         }
 
-        /// <summary>
-        /// Adds text to a page at a specific position with font settings.
-        /// </summary>
         public void AddText(int pageIndex, double x, double y, string text,
             string fontFamily, double fontSize, XColor color,
             bool isBold = false, bool isItalic = false, PdfDocument? targetDoc = null)
         {
             var doc = targetDoc ?? _document;
-            if (doc == null || pageIndex < 0 || pageIndex >= doc.PageCount)
-                return;
+            if (doc == null || pageIndex < 0 || pageIndex >= doc.PageCount) return;
 
             var page = doc.Pages[pageIndex];
             using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
@@ -141,20 +135,13 @@ namespace PDF_simple_edit.Helpers
 
             try
             {
-                // Add Unicode option for better Korean/International character support
                 var font = new XFont(fontFamily, fontSize, style, new XPdfFontOptions(PdfFontEncoding.Unicode));
                 var brush = new XSolidBrush(color);
-
-                // Handle multi-line text by splitting into lines
                 string[] lines = text.Replace("\r", "").Split('\n');
-                double lineSpacing = font.GetHeight(); // Use font height for line spacing
+                double lineSpacing = font.GetHeight();
 
                 for (int i = 0; i < lines.Length; i++)
-                {
-                    // Using TopLeft format directly with the provided Y coordinate
-                    // ensures alignment with the UI overlay.
                     gfx.DrawString(lines[i], font, brush, new XPoint(x, y + (i * lineSpacing)), XStringFormats.TopLeft);
-                }
 
                 if (targetDoc == null)
                 {
@@ -165,28 +152,20 @@ namespace PDF_simple_edit.Helpers
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error adding text to PDF: {ex.Message}");
-                throw; // Rethrow to let the UI know if needed, or handle it
+                System.Diagnostics.Debug.WriteLine($"Error adding text: {ex.Message}");
+                throw;
             }
         }
 
-        /// <summary>
-        /// Adds a highlight rectangle on a page.
-        /// </summary>
         public void AddHighlight(int pageIndex, double x, double y, double width, double height,
             XColor color, double opacity = 0.3, PdfDocument? targetDoc = null)
         {
             var doc = targetDoc ?? _document;
-            if (doc == null || pageIndex < 0 || pageIndex >= doc.PageCount)
-                return;
+            if (doc == null || pageIndex < 0 || pageIndex >= doc.PageCount) return;
 
             var page = doc.Pages[pageIndex];
             using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
-
-            var brush = new XSolidBrush(XColor.FromArgb((int)(opacity * 255), color));
-            
-            // Top-down coordinates
-            gfx.DrawRectangle(brush, x, y, width, height);
+            gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb((int)(opacity * 255), color)), x, y, width, height);
 
             if (targetDoc == null)
             {
@@ -196,22 +175,15 @@ namespace PDF_simple_edit.Helpers
             }
         }
 
-        /// <summary>
-        /// Adds an image to a page at a specific position.
-        /// </summary>
         public void AddImage(int pageIndex, string imagePath, double x, double y,
             double width, double height, PdfDocument? targetDoc = null)
         {
             var doc = targetDoc ?? _document;
-            if (doc == null || pageIndex < 0 || pageIndex >= doc.PageCount)
-                return;
+            if (doc == null || pageIndex < 0 || pageIndex >= doc.PageCount) return;
 
             var page = doc.Pages[pageIndex];
             using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
-
-            var image = XImage.FromFile(imagePath);
-            // Top-down coordinates
-            gfx.DrawImage(image, x, y, width, height);
+            gfx.DrawImage(XImage.FromFile(imagePath), x, y, width, height);
 
             if (targetDoc == null)
             {
@@ -221,50 +193,28 @@ namespace PDF_simple_edit.Helpers
             }
         }
 
-        /// <summary>
-        /// Adds a sticky note annotation to a page.
-        /// </summary>
         public void AddStickyNote(int pageIndex, double x, double y, string noteText,
             string fontFamily = "맑은 고딕", double fontSize = 10, PdfDocument? targetDoc = null)
         {
             var doc = targetDoc ?? _document;
-            if (doc == null || pageIndex < 0 || pageIndex >= doc.PageCount)
-                return;
+            if (doc == null || pageIndex < 0 || pageIndex >= doc.PageCount) return;
 
             var page = doc.Pages[pageIndex];
             using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
 
-            // Draw sticky note background
-            double noteWidth = 150;
-            double noteHeight = 100;
-            double padding = 8;
-
-            // Shadow
-            gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(40, 0, 0, 0)),
-                x + 3, y + 3, noteWidth, noteHeight);
-
-            // Note background (yellow)
-            gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(255, 255, 255, 200)),
-                x, y, noteWidth, noteHeight);
+            double noteWidth = 150, noteHeight = 100, padding = 8;
+            gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(40, 0, 0, 0)), x + 3, y + 3, noteWidth, noteHeight);
+            gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(255, 255, 255, 200)), x, y, noteWidth, noteHeight);
             gfx.DrawRectangle(XPens.DarkGoldenrod, x, y, noteWidth, noteHeight);
-
-            // Note header
-            gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(255, 255, 230, 100)),
-                x, y, noteWidth, 20);
+            gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(255, 255, 230, 100)), x, y, noteWidth, 20);
             gfx.DrawLine(XPens.DarkGoldenrod, x, y + 20, x + noteWidth, y + 20);
 
-            // Header text
             var headerFont = new XFont(fontFamily, 8, XFontStyleEx.Bold);
-            gfx.DrawString("📝 메모", headerFont, XBrushes.DarkSlateGray,
-                new XPoint(x + padding, y + 14), XStringFormats.TopLeft);
+            gfx.DrawString("📝 메모", headerFont, XBrushes.DarkSlateGray, new XPoint(x + padding, y + 14), XStringFormats.TopLeft);
 
-            // Note text
             var font = new XFont(fontFamily, fontSize, XFontStyleEx.Regular);
-            var textRect = new XRect(x + padding, y + 24,
-                noteWidth - padding * 2, noteHeight - 28);
-
-            var tf = new PdfSharp.Drawing.Layout.XTextFormatter(gfx);
-            tf.DrawString(noteText, font, XBrushes.Black, textRect);
+            var textRect = new XRect(x + padding, y + 24, noteWidth - padding * 2, noteHeight - 28);
+            new PdfSharp.Drawing.Layout.XTextFormatter(gfx).DrawString(noteText, font, XBrushes.Black, textRect);
 
             if (targetDoc == null)
             {
@@ -274,13 +224,9 @@ namespace PDF_simple_edit.Helpers
             }
         }
 
-        /// <summary>
-        /// Merges multiple PDF files into the current document.
-        /// </summary>
         public async Task<bool> MergeAsync(IEnumerable<string> filePaths)
         {
             if (_document == null) return false;
-
             return await Task.Run(() =>
             {
                 try
@@ -288,27 +234,18 @@ namespace PDF_simple_edit.Helpers
                     foreach (var path in filePaths)
                     {
                         using var src = PdfReader.Open(path, PdfDocumentOpenMode.Import);
-                        for (int i = 0; i < src.PageCount; i++)
-                        {
-                            _document.AddPage(src.Pages[i]);
-                        }
+                        for (int i = 0; i < src.PageCount; i++) _document.AddPage(src.Pages[i]);
                     }
+                    ClearCache();
                     _isModified = true;
                     ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
                     DocumentChanged?.Invoke(this, EventArgs.Empty);
                     return true;
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Error merging PDFs: {ex.Message}");
-                    return false;
-                }
+                catch { return false; }
             });
         }
 
-        /// <summary>
-        /// Merges multiple PDF files into a new document.
-        /// </summary>
         public static async Task<bool> MergeFilesAsync(IEnumerable<string> filePaths, string outputPath)
         {
             return await Task.Run(() =>
@@ -319,164 +256,149 @@ namespace PDF_simple_edit.Helpers
                     foreach (var path in filePaths)
                     {
                         using var src = PdfReader.Open(path, PdfDocumentOpenMode.Import);
-                        for (int i = 0; i < src.PageCount; i++)
-                        {
-                            output.AddPage(src.Pages[i]);
-                        }
+                        for (int i = 0; i < src.PageCount; i++) output.AddPage(src.Pages[i]);
                     }
                     output.Save(outputPath);
                     return true;
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Error merging PDFs: {ex.Message}");
-                    return false;
-                }
+                catch { return false; }
             });
         }
 
-        /// <summary>
-        /// Splits the current document into multiple files.
-        /// </summary>
         public async Task<bool> SplitAsync(string outputDir, int pagesPerFile = 1)
         {
             if (_document == null) return false;
-
             return await Task.Run(() =>
             {
                 try
                 {
                     Directory.CreateDirectory(outputDir);
-                    int totalPages = _document.PageCount;
                     int fileIndex = 1;
-
-                    for (int i = 0; i < totalPages; i += pagesPerFile)
+                    for (int i = 0; i < _document.PageCount; i += pagesPerFile)
                     {
                         using var newDoc = new PdfDocument();
-                        int endPage = Math.Min(i + pagesPerFile, totalPages);
-
-                        for (int j = i; j < endPage; j++)
+                        for (int j = i; j < Math.Min(i + pagesPerFile, _document.PageCount); j++)
                         {
-                            // Re-open for import
                             using var src = PdfReader.Open(_filePath!, PdfDocumentOpenMode.Import);
                             newDoc.AddPage(src.Pages[j]);
                         }
-
-                        string outputPath = Path.Combine(outputDir,
-                            $"{Path.GetFileNameWithoutExtension(_filePath)}_part{fileIndex:D3}.pdf");
-                        newDoc.Save(outputPath);
-                        fileIndex++;
+                        newDoc.Save(Path.Combine(outputDir, $"{Path.GetFileNameWithoutExtension(_filePath)}_part{fileIndex++:D3}.pdf"));
                     }
                     return true;
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Error splitting PDF: {ex.Message}");
-                    return false;
-                }
+                catch { return false; }
             });
         }
 
-        /// <summary>
-        /// Splits the current document by page ranges.
-        /// </summary>
         public async Task<bool> SplitByRangesAsync(string outputDir, List<(int start, int end)> ranges)
         {
             if (_document == null || string.IsNullOrEmpty(_filePath)) return false;
-
             return await Task.Run(() =>
             {
                 try
                 {
                     Directory.CreateDirectory(outputDir);
-                    int fileIndex = 1;
-
                     foreach (var (start, end) in ranges)
                     {
                         using var newDoc = new PdfDocument();
                         using var src = PdfReader.Open(_filePath!, PdfDocumentOpenMode.Import);
-
-                        for (int j = start - 1; j < end && j < src.PageCount; j++)
-                        {
-                            newDoc.AddPage(src.Pages[j]);
-                        }
-
-                        string outputPath = Path.Combine(outputDir,
-                            $"{Path.GetFileNameWithoutExtension(_filePath)}_{start}-{end}.pdf");
-                        newDoc.Save(outputPath);
-                        fileIndex++;
+                        for (int j = start - 1; j < end && j < src.PageCount; j++) newDoc.AddPage(src.Pages[j]);
+                        newDoc.Save(Path.Combine(outputDir, $"{Path.GetFileNameWithoutExtension(_filePath)}_{start}-{end}.pdf"));
                     }
                     return true;
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Error splitting PDF: {ex.Message}");
-                    return false;
-                }
+                catch { return false; }
             });
         }
 
-        /// <summary>
-        /// Deletes a page from the document.
-        /// </summary>
         public void DeletePage(int pageIndex)
         {
-            if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount)
-                return;
-
+            if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount) return;
             _document.Pages.RemoveAt(pageIndex);
+            ClearCache();
             _isModified = true;
             ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
             DocumentChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        /// <summary>
-        /// Creates a new empty document.
-        /// </summary>
         public void NewDocument()
         {
             _document = new PdfDocument();
             _document.AddPage();
             _filePath = null;
             _isModified = false;
+            ClearCache();
             DocumentChanged?.Invoke(this, EventArgs.Empty);
             ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        /// <summary>
-        /// Closes the current document.
-        /// </summary>
         public void Close()
         {
             _document?.Close();
             _document = null;
             _filePath = null;
             _isModified = false;
+            ClearCache();
             DocumentChanged?.Invoke(this, EventArgs.Empty);
             ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        /// <summary>
-        /// Gets page dimensions.
-        /// </summary>
         public (double width, double height) GetPageSize(int pageIndex)
         {
-            if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount)
-                return (0, 0);
-
-            var page = _document.Pages[pageIndex];
-            return (page.Width.Point, page.Height.Point);
+            if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount) return (0, 0);
+            return (_document.Pages[pageIndex].Width.Point, _document.Pages[pageIndex].Height.Point);
         }
 
-        public void MarkModified()
+        // [강화] 현존하는 디코딩 방법을 모두 시도
+        private string DecodePdfString(string pdfStr)
         {
-            _isModified = true;
-            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+            if (string.IsNullOrEmpty(pdfStr)) return "";
+
+            try
+            {
+                System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+
+                if (pdfStr.StartsWith("<") && pdfStr.EndsWith(">"))
+                {
+                    string hex = pdfStr.Substring(1, pdfStr.Length - 2);
+                    if (hex.Length % 2 != 0) hex += "0";
+
+                    byte[] bytes = new byte[hex.Length / 2];
+                    for (int i = 0; i < bytes.Length; i++)
+                        bytes[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
+
+                    if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+                        return System.Text.Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+                    if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+                        return System.Text.Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+
+                    string cp949 = System.Text.Encoding.GetEncoding(949).GetString(bytes);
+                    if (cp949.Count(c => c >= 0xAC00 && c <= 0xD7A3) > 0) return cp949;
+
+                    if (bytes.Length % 2 == 0)
+                    {
+                        string utf16 = System.Text.Encoding.BigEndianUnicode.GetString(bytes);
+                        if (utf16.Count(c => c >= 0xAC00 && c <= 0xD7A3) > 0) return utf16;
+                    }
+
+                    return System.Text.Encoding.UTF8.GetString(bytes);
+                }
+                else if (pdfStr.StartsWith("(") && pdfStr.EndsWith(")"))
+                {
+                    string text = pdfStr.Substring(1, pdfStr.Length - 2)
+                        .Replace("\\(", "(").Replace("\\)", ")").Replace("\\\\", "\\");
+                    
+                    byte[] bytes = text.Select(c => (byte)c).ToArray();
+                    string cp949 = System.Text.Encoding.GetEncoding(949).GetString(bytes);
+                    if (cp949.Count(c => c >= 0xAC00 && c <= 0xD7A3) > 0) return cp949;
+
+                    return text;
+                }
+            }
+            catch { }
+            return pdfStr;
         }
 
-        /// <summary>
-        /// Extracts all text objects from a page with their bounding boxes.
-        /// </summary>
         public async Task<List<SearchResult>> ExtractTextObjectsAsync(int pageIndex)
         {
             if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount)
@@ -484,24 +406,41 @@ namespace PDF_simple_edit.Helpers
 
             return await Task.Run(() =>
             {
-                var results = new List<SearchResult>();
-                try
+                lock (_docLock)
                 {
-                    var page = _document.Pages[pageIndex];
-                    var sequence = ContentReader.ReadContent(page);
-                    var textState = new PdfTextState(page.Height.Point);
+                    var results = new List<SearchResult>();
+                    try
+                    {
+                        var page = _document.Pages[pageIndex];
+                        if (!_pageSequenceCache.TryGetValue(pageIndex, out var sequence))
+                        {
+                            sequence = ContentReader.ReadContent(page);
+                            _pageSequenceCache[pageIndex] = sequence;
+                        }
 
-                    ProcessContent(sequence, textState, results);
+                        // [한글 해결] PdfPig를 사용하여 정확한 유니코드 텍스트 추출
+                        List<UglyToad.PdfPig.Content.Word>? pigWords = null;
+                        if (!string.IsNullOrEmpty(_filePath))
+                        {
+                            try
+                            {
+                                using var pigDoc = UglyToad.PdfPig.PdfDocument.Open(_filePath);
+                                var pigPage = pigDoc.GetPage(pageIndex + 1);
+                                pigWords = pigPage.GetWords().ToList();
+                            }
+                            catch { }
+                        }
+                        
+                        var textState = new PdfTextState(page.Height.Point);
+                        ProcessContent(sequence, textState, results, pigWords);
+                    }
+                    catch { }
+                    return results;
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Error extracting text: {ex.Message}");
-                }
-                return results;
             });
         }
 
-        private void ProcessContent(CSequence sequence, PdfTextState state, List<SearchResult> results)
+        private void ProcessContent(CSequence sequence, PdfTextState state, List<SearchResult> results, List<UglyToad.PdfPig.Content.Word>? pigWords)
         {
             foreach (var obj in sequence)
             {
@@ -513,250 +452,515 @@ namespace PDF_simple_edit.Helpers
                         case "ET": state.InTextObject = false; break;
                         case "Tf": 
                             if (op.Operands.Count >= 2) 
-                                state.FontSize = (op.Operands[1] is CReal || op.Operands[1] is CInteger)
-                                    ? double.Parse(op.Operands[1].ToString() ?? "12") : 12;
+                                state.FontSize = (op.Operands[1] is CReal || op.Operands[1] is CInteger) ? double.Parse(op.Operands[1].ToString() ?? "12") : 12;
                             break;
                         case "Tm":
                             if (op.Operands.Count >= 6)
-                            {
                                 state.TextMatrix = state.LineMatrix = new XMatrix(
                                     double.Parse(op.Operands[0].ToString() ?? "0"), double.Parse(op.Operands[1].ToString() ?? "0"),
                                     double.Parse(op.Operands[2].ToString() ?? "0"), double.Parse(op.Operands[3].ToString() ?? "0"),
                                     double.Parse(op.Operands[4].ToString() ?? "0"), double.Parse(op.Operands[5].ToString() ?? "0"));
-                            }
                             break;
                         case "Td":
-                            if (op.Operands.Count >= 2)
-                            {
-                                var tx = double.Parse(op.Operands[0].ToString() ?? "0");
-                                var ty = double.Parse(op.Operands[1].ToString() ?? "0");
-                                var m = new XMatrix(); m.TranslateAppend(tx, ty);
-                                state.LineMatrix *= m;
-                                state.TextMatrix = state.LineMatrix;
-                            }
-                            break;
                         case "TD":
                             if (op.Operands.Count >= 2)
                             {
-                                var tx = double.Parse(op.Operands[0].ToString() ?? "0");
-                                var ty = double.Parse(op.Operands[1].ToString() ?? "0");
-                                // Sets leading as well, but we ignore it for now
-                                var m = new XMatrix(); m.TranslateAppend(tx, ty);
+                                var m = new XMatrix(); 
+                                m.TranslateAppend(double.Parse(op.Operands[0].ToString() ?? "0"), double.Parse(op.Operands[1].ToString() ?? "0"));
                                 state.LineMatrix *= m;
                                 state.TextMatrix = state.LineMatrix;
                             }
                             break;
                         case "T*":
-                            {
-                                var m = new XMatrix(); m.TranslateAppend(0, -state.FontSize * 1.2); // Default leading
-                                state.LineMatrix *= m;
-                                state.TextMatrix = state.LineMatrix;
-                            }
+                            var mLine = new XMatrix(); mLine.TranslateAppend(0, -state.FontSize * 1.2);
+                            state.LineMatrix *= mLine;
+                            state.TextMatrix = state.LineMatrix;
                             break;
                         case "Tj":
-                            if (op.Operands.Count >= 1)
-                            {
-                                AddTextToResults(op.Operands[0].ToString(), state, results);
-                            }
+                            if (op.Operands.Count >= 1) AddTextToResultsWithOp(DecodePdfString(op.Operands[0].ToString() ?? ""), state, results, op, pigWords);
                             break;
                         case "TJ":
                             if (op.Operands.Count >= 1 && op.Operands[0] is CArray array)
                             {
                                 var sb = new System.Text.StringBuilder();
-                                foreach (var item in array) if (item is CString) sb.Append(item.ToString());
-                                AddTextToResults(sb.ToString(), state, results);
+                                foreach (var item in array) if (item is CString) sb.Append(DecodePdfString(item.ToString() ?? ""));
+                                AddTextToResultsWithOp(sb.ToString(), state, results, op, pigWords);
                             }
                             break;
                         case "'":
-                            {
-                                var m = new XMatrix(); m.TranslateAppend(0, -state.FontSize * 1.2);
-                                state.LineMatrix *= m;
-                                state.TextMatrix = state.LineMatrix;
-                                if (op.Operands.Count >= 1) AddTextToResults(op.Operands[0].ToString(), state, results);
-                            }
+                            var mQuote = new XMatrix(); mQuote.TranslateAppend(0, -state.FontSize * 1.2);
+                            state.LineMatrix *= mQuote;
+                            state.TextMatrix = state.LineMatrix;
+                            if (op.Operands.Count >= 1) AddTextToResultsWithOp(DecodePdfString(op.Operands[0].ToString() ?? ""), state, results, op, pigWords);
+                            break;
+                        case "\"":
+                            var mDQuote = new XMatrix(); mDQuote.TranslateAppend(0, -state.FontSize * 1.2);
+                            state.LineMatrix *= mDQuote;
+                            state.TextMatrix = state.LineMatrix;
+                            if (op.Operands.Count >= 3) AddTextToResultsWithOp(DecodePdfString(op.Operands[2].ToString() ?? ""), state, results, op, pigWords);
                             break;
                     }
                 }
                 else if (obj is CSequence inner)
                 {
-                    ProcessContent(inner, state, results);
+                    ProcessContent(inner, state, results, pigWords);
                 }
             }
         }
 
-        private void AddTextToResults(string? text, PdfTextState state, List<SearchResult> results)
+        private void AddTextToResultsWithOp(string? text, PdfTextState state, List<SearchResult> results, object op, List<UglyToad.PdfPig.Content.Word>? pigWords)
         {
             if (string.IsNullOrEmpty(text)) return;
-            
-            // Basic cleaning of PDF string (remove parentheses if they are there)
-            if (text.StartsWith("(") && text.EndsWith(")")) text = text.Substring(1, text.Length - 2);
-            // PDF Coordinate (x, y) is at the bottom-left of the text base line.
-            // Our UI Coordinate (x, y) is at the top-left of the text.
+
             double pdfX = state.TextMatrix.OffsetX;
             double pdfY = state.TextMatrix.OffsetY;
             double height = state.FontSize;
-
-            // Convert PDF y (bottom-up) to UI y (top-down)
             double uiY = state.PageHeight - pdfY - height;
 
-            // Simple width estimate. 0.6 is a magic number, but Malgun Gothic is usually around 0.5-0.7
-            // Multi-byte characters (Korean) are wider.
-            double width = text.Length * state.FontSize * 0.6;
-            if (text.Any(c => c > 255)) width = text.Length * state.FontSize * 1.0; 
+            // [한글 해결] PdfPig에서 추출한 진짜 텍스트가 있다면 그것을 사용
+            string bestText = text;
+            if (pigWords != null)
+            {
+                // PDF 좌표계 (Bottom-Up) 기준으로 매칭 시도
+                var match = pigWords.FirstOrDefault(w => 
+                    Math.Abs(w.BoundingBox.Left - pdfX) < 5 && 
+                    Math.Abs(w.BoundingBox.Bottom - pdfY) < 15);
+                
+                if (match != null)
+                    bestText = match.Text;
+            }
+
+            var id = Guid.NewGuid();
+            _operatorMap[id] = op;
+            
+            double width = bestText.Length * state.FontSize * 0.5; 
+            if (bestText.Any(c => c > 255)) width = bestText.Length * state.FontSize * 0.9; 
 
             results.Add(new SearchResult
             {
-                FoundText = text,
+                FoundText = bestText,
                 X = pdfX,
                 Y = uiY,
                 Width = width,
                 Height = height,
-                PageIndex = 0 // Will be set by caller
+                PageIndex = 0, 
+                OperatorId = id
             });
 
-            // Advance text matrix roughly (assume horizontal text)
             var m = new XMatrix(); m.TranslateAppend(width, 0);
             state.TextMatrix *= m;
         }
 
-        /// <summary>
-        /// Removes text at a specific coordinate from the PDF content stream.
-        /// </summary>
-        public async Task<bool> RemoveTextAsync(int pageIndex, double x, double y, string text)
+        // [핵심 해결] 라이브러리 버그 우회: PDF 스트림 수동 직렬화기
+        // MemoryStream 기반으로 변경하여 한글 등 비ASCII 문자를 UTF-16 BE hex 형식으로 안전하게 직렬화
+        private byte[] SerializeContent(CSequence sequence)
         {
-            if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount)
-                return false;
+            using var ms = new MemoryStream();
+
+            void WriteAscii(string s)
+            {
+                if (string.IsNullOrEmpty(s)) return;
+                var bytes = System.Text.Encoding.Latin1.GetBytes(s);
+                ms.Write(bytes, 0, bytes.Length);
+            }
+
+            void WriteObj(CObject obj)
+            {
+                if (obj is COperator op)
+                {
+                    foreach (var opnd in op.Operands)
+                    {
+                        WriteObj(opnd);
+                        ms.WriteByte((byte)' ');
+                    }
+                    WriteAscii(op.Name);
+                    ms.WriteByte((byte)'\n');
+                }
+                else if (obj is CSequence seq)
+                {
+                    foreach (var child in seq) WriteObj(child);
+                }
+                else if (obj is CString str)
+                {
+                    // [한글 깨짐 수정] 비ASCII 문자가 있으면 UTF-16 BE hex 형식으로 직렬화
+                    string val = str.Value ?? "";
+                    bool hasNonAscii = val.Any(c => c > 127);
+
+                    if (hasNonAscii)
+                    {
+                        // <FEFF xxxx ...> 형식으로 직렬화 (PDF UTF-16 BE 표준)
+                        byte[] bom = { 0xFE, 0xFF };
+                        byte[] content = System.Text.Encoding.BigEndianUnicode.GetBytes(val);
+                        ms.WriteByte((byte)'<');
+                        foreach (byte b in bom)   WriteAscii(b.ToString("X2"));
+                        foreach (byte b in content) WriteAscii(b.ToString("X2"));
+                        ms.WriteByte((byte)'>');
+                    }
+                    else
+                    {
+                        // ASCII 범위: 괄호 형식으로 직렬화, 특수문자 이스케이프
+                        ms.WriteByte((byte)'(');
+                        foreach (char c in val)
+                        {
+                            byte b = (byte)(c & 0xFF);
+                            if (b == (byte)'(' || b == (byte)')' || b == (byte)'\\')
+                                ms.WriteByte((byte)'\\');
+                            ms.WriteByte(b);
+                        }
+                        ms.WriteByte((byte)')');
+                    }
+                }
+                else if (obj is CArray arr)
+                {
+                    ms.WriteByte((byte)'[');
+                    for (int i = 0; i < arr.Count; i++)
+                    {
+                        WriteObj(arr[i]);
+                        if (i < arr.Count - 1) ms.WriteByte((byte)' ');
+                    }
+                    ms.WriteByte((byte)']');
+                }
+                else
+                {
+                    // CNumber, CName 등: ToString()은 ASCII 범위이므로 Latin1 safe
+                    WriteAscii(obj.ToString() ?? "");
+                }
+            }
+
+            WriteObj(sequence);
+            return ms.ToArray();
+        }
+
+        public async Task<bool> RemoveTextAsync(int pageIndex, double x, double y, string text, Guid? operatorId = null)
+        {
+            if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount) return false;
 
             return await Task.Run(() =>
             {
-                try
+                lock (_docLock)
                 {
-                    var page = _document.Pages[pageIndex];
-                    var sequence = ContentReader.ReadContent(page);
-                    var state = new PdfTextState(page.Height.Point);
-
-                    if (RemoveTextFromSequence(sequence, state, x, y, text))
+                    try
                     {
-                        using var ms = new MemoryStream();
-                        
-                        // ContentWriter is internal in PDFsharp 6.0, use reflection as a workaround
-                        var contentWriterType = typeof(ContentReader).Assembly.GetType("PdfSharp.Pdf.Content.ContentWriter");
-                        if (contentWriterType != null)
+                        var page = _document.Pages[pageIndex];
+                        if (!_pageSequenceCache.TryGetValue(pageIndex, out var sequence))
                         {
-                            var writer = Activator.CreateInstance(contentWriterType, new object[] { ms });
-                            var writeMethod = contentWriterType.GetMethod("Write", new[] { typeof(CSequence) });
-                            if (writeMethod != null)
-                            {
-                                writeMethod.Invoke(writer, new object[] { sequence });
-                                
-                                var closeMethod = contentWriterType.GetMethod("Close");
-                                closeMethod?.Invoke(writer, null);
-                                
-                                page.Contents.CreateSingleContent().Stream.Value = ms.ToArray();
-                                _isModified = true;
-                                return true;
-                            }
+                            sequence = ContentReader.ReadContent(page);
+                            _pageSequenceCache[pageIndex] = sequence;
+                        }
+
+                        object? targetOp = null;
+                        if (operatorId.HasValue) _operatorMap.TryGetValue(operatorId.Value, out targetOp);
+
+                        bool anyRemoved = false;
+                        if (targetOp != null)
+                        {
+                            ReplaceWithEmptyString(targetOp as COperator);
+                            anyRemoved = true;
+                        }
+
+                        if (!anyRemoved)
+                            anyRemoved = RemoveAllTextFromSequence(sequence, new PdfTextState(page.Height.Point), x, y, text);
+
+                        if (anyRemoved)
+                        {
+                            // [핵심 해결] 강제 스트림 덮어쓰기
+                            byte[] newData = SerializeContent(sequence);
+                            ApplyForceOverwrite(page, newData);
+                            
+                            _isModified = true;
+                            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                            DocumentChanged?.Invoke(this, EventArgs.Empty);
+                            return true;
                         }
                     }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error removing text: {ex.Message}");
+                    }
+                    return false;
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Error removing text: {ex.Message}");
-                }
-                return false;
             });
         }
 
-        private bool RemoveTextFromSequence(CSequence sequence, PdfTextState state, double targetX, double targetY, string targetText)
+        private void ReplaceWithEmptyString(COperator? op)
         {
+            if (op == null) return;
+            switch (op.Name)
+            {
+                case "Tj":
+                case "'":
+                case "\"":
+                    int textIdx = (op.Name == "\"") ? 2 : 0;
+                    if (op.Operands.Count > textIdx)
+                        op.Operands[textIdx] = new CString { Value = "" };
+                    break;
+                case "TJ":
+                    if (op.Operands.Count >= 1 && op.Operands[0] is CArray array)
+                        array.Clear();
+                    break;
+            }
+        }
+
+        private void ApplyForceOverwrite(PdfPage page, byte[] newData)
+        {
+            // CreateSingleContent는 기존 컨텐츠를 하나로 합치고 스트림을 제공함
+            var content = page.Contents.CreateSingleContent();
+            content.Stream.Value = newData;
+            
+            // 압축 필터 제거 및 길이 업데이트
+            content.Elements.Remove("/Filter");
+            content.Elements.SetInteger("/Length", newData.Length);
+            
+            // [핵심] 페이지의 /Contents를 해당 객체로 강제 재지정하여 캐싱 무시
+            page.Elements["/Contents"] = content.Reference;
+        }
+
+        private bool RemoveSpecificOperatorFromSequence(CSequence sequence, object targetOp)
+        {
+            for (int i = 0; i < sequence.Count; i++)
+            {
+                if (object.ReferenceEquals(sequence[i], targetOp))
+                {
+                    sequence.RemoveAt(i);
+                    return true;
+                }
+                if (sequence[i] is CSequence inner)
+                {
+                    if (RemoveSpecificOperatorFromSequence(inner, targetOp)) return true;
+                }
+            }
+            return false;
+        }
+
+        private bool RemoveAllTextFromSequence(CSequence sequence, PdfTextState state, double targetX, double targetY, string targetText)
+        {
+            bool removed = false;
             for (int i = 0; i < sequence.Count; i++)
             {
                 var obj = sequence[i];
                 if (obj is COperator op)
                 {
-                    // Update state (Tm, Td, etc.) - same as in ExtractTextObjects
                     switch (op.Name)
                     {
                         case "BT": state.InTextObject = true; state.TextMatrix = state.LineMatrix = new XMatrix(); break;
                         case "ET": state.InTextObject = false; break;
                         case "Tf": 
-                            if (op.Operands.Count >= 2) 
-                                state.FontSize = (op.Operands[1] is CReal || op.Operands[1] is CInteger)
-                                    ? double.Parse(op.Operands[1].ToString() ?? "12") : 12;
+                            if (op.Operands.Count >= 2) state.FontSize = (op.Operands[1] is CReal || op.Operands[1] is CInteger) ? double.Parse(op.Operands[1].ToString() ?? "12") : 12;
                             break;
                         case "Tm":
                             if (op.Operands.Count >= 6)
-                            {
                                 state.TextMatrix = state.LineMatrix = new XMatrix(
                                     double.Parse(op.Operands[0].ToString() ?? "0"), double.Parse(op.Operands[1].ToString() ?? "0"),
                                     double.Parse(op.Operands[2].ToString() ?? "0"), double.Parse(op.Operands[3].ToString() ?? "0"),
                                     double.Parse(op.Operands[4].ToString() ?? "0"), double.Parse(op.Operands[5].ToString() ?? "0"));
-                            }
                             break;
                         case "Td":
                         case "TD":
                             if (op.Operands.Count >= 2)
                             {
-                                var tx = double.Parse(op.Operands[0].ToString() ?? "0");
-                                var ty = double.Parse(op.Operands[1].ToString() ?? "0");
-                                var m = new XMatrix(); m.TranslateAppend(tx, ty);
+                                var m = new XMatrix(); m.TranslateAppend(double.Parse(op.Operands[0].ToString() ?? "0"), double.Parse(op.Operands[1].ToString() ?? "0"));
                                 state.LineMatrix *= m;
                                 state.TextMatrix = state.LineMatrix;
                             }
                             break;
+                        case "T*":
+                            var mLine = new XMatrix(); mLine.TranslateAppend(0, -state.FontSize * 1.2);
+                            state.LineMatrix *= mLine;
+                            state.TextMatrix = state.LineMatrix;
+                            break;
                         case "Tj":
                         case "TJ":
                         case "'":
+                        case "\"":
+                            if (op.Name == "'" || op.Name == "\"")
                             {
-                                string? opText = "";
-                                if (op.Name == "TJ")
+                                var mQuote = new XMatrix(); mQuote.TranslateAppend(0, -state.FontSize * 1.2);
+                                state.LineMatrix *= mQuote;
+                                state.TextMatrix = state.LineMatrix;
+                            }
+
+                            string rawText = "";
+                            if (op.Name == "TJ")
+                            {
+                                var sb = new System.Text.StringBuilder();
+                                if (op.Operands.Count >= 1 && op.Operands[0] is CArray array)
+                                    foreach (var item in array) if (item is CString) sb.Append(DecodePdfString(item.ToString() ?? ""));
+                                rawText = sb.ToString();
+                            }
+                            else
+                            {
+                                int textIdx = (op.Name == "\"") ? 2 : 0;
+                                string txt = op.Operands.Count > textIdx ? op.Operands[textIdx].ToString() ?? "" : "";
+                                rawText = DecodePdfString(txt);
+                            }
+
+                            if (!string.IsNullOrEmpty(rawText))
+                            {
+                                double pdfX = state.TextMatrix.OffsetX;
+                                double pdfY = state.TextMatrix.OffsetY;
+                                double uiY = state.PageHeight - pdfY - state.FontSize;
+
+                                bool posMatch = Math.Abs(pdfX - targetX) < 40 && Math.Abs(uiY - targetY) < 50;
+                                string cleanTargetText = targetText.Trim();
+                                bool textMatch = !string.IsNullOrEmpty(cleanTargetText) && 
+                                               (rawText.Contains(cleanTargetText) || cleanTargetText.Contains(rawText));
+
+                                bool veryCloseMatch = Math.Abs(pdfX - targetX) < 10 && Math.Abs(uiY - targetY) < 15;
+
+                                if ((posMatch && textMatch) || veryCloseMatch || (posMatch && rawText.Length == 0))
                                 {
-                                    var sb = new System.Text.StringBuilder();
-                                    if (op.Operands.Count >= 1 && op.Operands[0] is CArray array)
-                                        foreach (var item in array) if (item is CString) sb.Append(item.ToString());
-                                    opText = sb.ToString();
-                                }
-                                else
-                                {
-                                    opText = op.Operands.Count >= 1 ? op.Operands[0].ToString() : "";
+                                    ReplaceWithEmptyString(op);
+                                    removed = true;
+                                    continue; 
                                 }
 
-                                if (!string.IsNullOrEmpty(opText))
-                                {
-                                    if (opText.StartsWith("(") && opText.EndsWith(")")) opText = opText.Substring(1, opText.Length - 2);
-                                    
-                                    double pdfX = state.TextMatrix.OffsetX;
-                                    double pdfY = state.TextMatrix.OffsetY;
-                                    double uiY = state.PageHeight - pdfY - state.FontSize;
-
-                                    // Match by text and approximate position
-                                    // Being more lenient: if the coordinates are almost identical, remove it even if text slightly different
-                                    bool posMatch = Math.Abs(pdfX - targetX) < 2 && Math.Abs(uiY - targetY) < 5;
-                                    bool textMatch = !string.IsNullOrEmpty(targetText) && opText.Contains(targetText);
-                                    
-                                    // If text is broken (contains many non-printable chars), rely more on position
-                                    bool isBroken = opText.Any(c => c < 32 && c != 10 && c != 13);
-
-                                    if ((textMatch && posMatch) || (posMatch && isBroken))
-                                    {
-                                        sequence.RemoveAt(i);
-                                        return true;
-                                    }
-
-                                    // Advance matrix
-                                    var m = new XMatrix(); m.TranslateAppend(opText.Length * state.FontSize * 0.6, 0);
-                                    state.TextMatrix *= m;
-                                }
+                                double width = rawText.Length * state.FontSize * 0.5;
+                                if (rawText.Any(c => c > 255)) width = rawText.Length * state.FontSize * 0.9;
+                                
+                                var m = new XMatrix(); m.TranslateAppend(width, 0);
+                                state.TextMatrix *= m;
                             }
                             break;
                     }
                 }
                 else if (obj is CSequence inner)
                 {
-                    if (RemoveTextFromSequence(inner, state, targetX, targetY, targetText)) return true;
+                    if (RemoveAllTextFromSequence(inner, state, targetX, targetY, targetText)) removed = true;
+                }
+            }
+            return removed;
+        }
+
+        /// <summary>
+        /// [이동 수정] 텍스트를 새 위치로 이동합니다.
+        /// 원본 operator의 Tm 행렬을 직접 수정하여 복사 없이 이동합니다.
+        /// </summary>
+        public async Task<bool> MoveTextAsync(int pageIndex, Guid operatorId, double newUIX, double newUIY)
+        {
+            if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount) return false;
+
+            return await Task.Run(() =>
+            {
+                lock (_docLock)
+                {
+                    try
+                    {
+                        var page = _document.Pages[pageIndex];
+                        if (!_pageSequenceCache.TryGetValue(pageIndex, out var sequence))
+                        {
+                            sequence = ContentReader.ReadContent(page);
+                            _pageSequenceCache[pageIndex] = sequence;
+                        }
+
+                        if (!_operatorMap.TryGetValue(operatorId, out var targetOp)) return false;
+
+                        double pageHeight = page.Height.Point;
+
+                        // BT..ET 블록에서 타겟 op를 포함하는 Tm을 찾아 새 좌표로 수정
+                        bool moved = UpdatePositionInSequence(sequence, targetOp, newUIX, newUIY, pageHeight);
+
+                        if (moved)
+                        {
+                            byte[] newData = SerializeContent(sequence);
+                            ApplyForceOverwrite(page, newData);
+
+                            _isModified = true;
+                            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                            DocumentChanged?.Invoke(this, EventArgs.Empty);
+                            return true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error moving text: {ex.Message}");
+                    }
+                    return false;
+                }
+            });
+        }
+
+        /// <summary>
+        /// sequence를 순회하며 targetOp를 포함하는 BT..ET 블록의 Tm 좌표를 새 UI 좌표로 수정합니다.
+        /// </summary>
+        private bool UpdatePositionInSequence(CSequence sequence, object targetOp, double newUIX, double newUIY, double pageHeight)
+        {
+            for (int i = 0; i < sequence.Count; i++)
+            {
+                var obj = sequence[i];
+
+                if (obj is COperator op && op.Name == "BT")
+                {
+                    // BT..ET 블록 범위 추출
+                    COperator? lastTm = null;
+                    double blockFontSize = 12;
+                    bool foundTarget = false;
+                    int etIndex = i;
+
+                    for (int j = i + 1; j < sequence.Count; j++)
+                    {
+                        if (sequence[j] is COperator inner)
+                        {
+                            if (inner.Name == "ET") { etIndex = j; break; }
+
+                            if (inner.Name == "Tm" && inner.Operands.Count >= 6)
+                                lastTm = inner;
+
+                            if (inner.Name == "Tf" && inner.Operands.Count >= 2)
+                                double.TryParse(inner.Operands[1].ToString(), System.Globalization.NumberStyles.Any,
+                                    System.Globalization.CultureInfo.InvariantCulture, out blockFontSize);
+
+                            if (object.ReferenceEquals(sequence[j], targetOp))
+                                foundTarget = true;
+                        }
+                        else if (sequence[j] is CSequence innerSeq && ContainsOperatorRef(innerSeq, targetOp))
+                        {
+                            foundTarget = true;
+                        }
+                    }
+
+                    if (foundTarget && lastTm != null)
+                    {
+                        // UI Y → PDF Y 변환: uiY = pageHeight - pdfY - fontSize  →  pdfY = pageHeight - uiY - fontSize
+                        double pdfNewX = newUIX;
+                        double pdfNewY = pageHeight - newUIY - blockFontSize;
+
+                        SetCOperandValue(lastTm.Operands, 4, pdfNewX);
+                        SetCOperandValue(lastTm.Operands, 5, pdfNewY);
+                        return true;
+                    }
+
+                    i = etIndex; // BT..ET 블록 건너뜀
+                }
+                else if (obj is CSequence innerSeq)
+                {
+                    if (UpdatePositionInSequence(innerSeq, targetOp, newUIX, newUIY, pageHeight))
+                        return true;
                 }
             }
             return false;
+        }
+
+        private bool ContainsOperatorRef(CSequence sequence, object targetOp)
+        {
+            foreach (var obj in sequence)
+            {
+                if (object.ReferenceEquals(obj, targetOp)) return true;
+                if (obj is CSequence inner && ContainsOperatorRef(inner, targetOp)) return true;
+            }
+            return false;
+        }
+
+        private void SetCOperandValue(CSequence operands, int index, double value)
+        {
+            if (index < 0 || index >= operands.Count) return;
+            if (operands[index] is CReal real)
+                real.Value = value;
+            else
+            {
+                // CInteger 등 다른 숫자 타입은 CReal로 교체
+                operands.RemoveAt(index);
+                operands.Insert(index, new CReal { Value = value });
+            }
         }
 
         private class PdfTextState
