@@ -1321,21 +1321,23 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
         private void RenderAnnotationOverlays()
         {
-            // 편집 중인 TextBox가 있으면 임시로 보관
-            TextBox? activeBox = OverlayCanvas.Children.OfType<TextBox>().FirstOrDefault();
-            
-            OverlayCanvas.Children.Clear();
-
-            // TextBox가 있었다면 다시 복구 (삭제 방지)
-            if (activeBox != null)
+            // 기존 TextBox(편집창)가 있으면 제거하지 않고 유지하여 포커스 상실(편집 종료) 방지
+            var activeBox = OverlayCanvas.Children.OfType<TextBox>().FirstOrDefault();
+            var toRemove = OverlayCanvas.Children.Where(c => !(c is TextBox)).ToList();
+            foreach (var child in toRemove)
             {
-                OverlayCanvas.Children.Add(activeBox);
+                OverlayCanvas.Children.Remove(child);
             }
 
+            // 편집 중인 어노테이션 객체 식별 (skip rendering base text while editing)
+            var editingAnn = activeBox?.Tag as PdfAnnotation;
+
             var pageAnnotations = _annotations.Where(a => a.PageIndex == _currentPageIndex).ToList();
+            int insertIndex = 0;
 
             foreach (var ann in pageAnnotations)
             {
+                if (ann == editingAnn) continue;
                 FrameworkElement? element = null;
 
                 switch (ann.Type)
@@ -1413,42 +1415,42 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         break;
                 }
 
-                if (element != null)
-                {
-                    Canvas.SetLeft(element, ann.X * PdfToPixels);
-                    Canvas.SetTop(element, ann.Y * PdfToPixels);
-                    
-                    // 선택 시 시각적 표시
-                    if (ann == _selectedAnnotation)
+                    if (element != null)
                     {
-                        var border = new Border
+                        Canvas.SetLeft(element, ann.X * PdfToPixels);
+                        Canvas.SetTop(element, ann.Y * PdfToPixels);
+                        
+                        // 선택 시 시각적 표시
+                        if (ann == _selectedAnnotation)
                         {
-                            BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
-                            BorderThickness = new Thickness(1),
-                            Margin = new Thickness(-2),
-                            Child = element,
-                            IsHitTestVisible = false
-                        };
+                            var border = new Border
+                            {
+                                BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
+                                BorderThickness = new Thickness(1),
+                                Margin = new Thickness(-2),
+                                Child = element,
+                                IsHitTestVisible = false
+                            };
 
-                        Canvas.SetLeft(border, ann.X * PdfToPixels);
-                        Canvas.SetTop(border, ann.Y * PdfToPixels);
-                        OverlayCanvas.Children.Add(border);
+                            Canvas.SetLeft(border, ann.X * PdfToPixels);
+                            Canvas.SetTop(border, ann.Y * PdfToPixels);
+                            OverlayCanvas.Children.Insert(insertIndex++, border);
 
-                        // 이미지나 하이라이트는 크기 조정 핸들 표시
-                        if (ann.Type == AnnotationType.Image || ann.Type == AnnotationType.Highlight)
+                            // 이미지나 하이라이트는 크기 조정 핸들 표시
+                            if (ann.Type == AnnotationType.Image || ann.Type == AnnotationType.Highlight)
+                            {
+                                AddResizeHandles(ann, ref insertIndex);
+                            }
+                        }
+                        else
                         {
-                            AddResizeHandles(ann);
+                            OverlayCanvas.Children.Insert(insertIndex++, element);
                         }
                     }
-                    else
-                    {
-                        OverlayCanvas.Children.Add(element);
-                    }
-                }
             }
         }
 
-        private void AddResizeHandles(PdfAnnotation ann)
+        private void AddResizeHandles(PdfAnnotation ann, ref int insertIndex)
         {
             double x = ann.X * PdfToPixels;
             double y = ann.Y * PdfToPixels;
@@ -1498,7 +1500,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 };
                 rect.PointerExited += (s, e) => SetElementCursor(OverlayCanvas, Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.Arrow));
 
-                OverlayCanvas.Children.Add(rect);
+                OverlayCanvas.Children.Insert(insertIndex++, rect);
             }
         }
 
@@ -1506,7 +1508,9 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         {
             if (ann.Type == AnnotationType.Text || ann.Type == AnnotationType.FreeText || ann.Type == AnnotationType.StickyNote)
             {
-                // Dispatcher를 통해 지연 실행하여 현재 이벤트 사이클과의 충돌 방지
+                // 레이스 컨디션 방지를 위해 플래그를 즉시 설정
+                _isInlineEditing = true;
+                
                 DispatcherQueue.TryEnqueue(() =>
                 {
                     AddInlineTextBox(ann.X, ann.Y, ann);
@@ -1520,7 +1524,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
         private void AddInlineTextBox(double pdfX, double pdfY, PdfAnnotation? existingAnn = null)
         {
-            if (_isInlineEditing) return;
+            // 실제 TextBox가 이미 있는지 확인하여 중복 생성 방지
+            if (OverlayCanvas.Children.OfType<TextBox>().Any()) return;
             _isInlineEditing = true;
 
             var canvasX = pdfX * PdfToPixels;
