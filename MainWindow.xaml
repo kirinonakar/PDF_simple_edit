@@ -379,7 +379,28 @@
                                 PointerMoved="OverlayCanvas_PointerMoved"
                                 PointerReleased="OverlayCanvas_PointerReleased"
                                 DoubleTapped="OverlayCanvas_DoubleTapped"
-                                Background="Transparent"/>
+                                Background="Transparent">
+                            <Canvas.ContextFlyout>
+                                <MenuFlyout>
+                                    <MenuFlyoutItem Text="왼쪽 맞춤" Click="AlignLeft_Click">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E4;"/></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem Text="오른쪽 맞춤" Click="AlignRight_Click">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E2;"/></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem Text="위쪽 맞춤" Click="AlignTop_Click">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E3;"/></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem Text="아래쪽 맞춤" Click="AlignBottom_Click">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E1;"/></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutSeparator/>
+                                    <MenuFlyoutItem Text="삭제" Click="DeleteAnnotation_Click">
+                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74D;"/></MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                </MenuFlyout>
+                            </Canvas.ContextFlyout>
+                        </Canvas>
                     </Grid>
                 </ScrollViewer>
 

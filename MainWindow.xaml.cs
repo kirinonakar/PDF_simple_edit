@@ -48,6 +48,7 @@ namespace PDF_simple_edit
             set { if (_activeTab != null) _activeTab.IsFirstLoad = value; }
         }
         private PdfAnnotation? _selectedAnnotation;
+        private readonly List<PdfAnnotation> _selectedAnnotations = new();
         private bool _isMovingAnnotation = false;
         private bool _isResizingAnnotation = false;
         private string? _resizeHandle = null; // "NW", "N", "NE", "W", "E", "SW", "S", "SE"
@@ -806,6 +807,7 @@ private void FitToPage()
 
             UpdateCursor(mode);
             _selectedAnnotation = null;
+            _selectedAnnotations.Clear();
             RenderAnnotationOverlays();
         }
 
@@ -902,9 +904,14 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
         }
     }
 
-    var pos = e.GetCurrentPoint(OverlayCanvas).Position;
+    var ptrPt = e.GetCurrentPoint(OverlayCanvas);
+    var pos = ptrPt.Position;
+    bool isLeft = ptrPt.Properties.IsLeftButtonPressed;
+
     double pdfX = pos.X / PdfToPixels;
     double pdfY = pos.Y / PdfToPixels;
+
+    if (!isLeft && _currentTool == EditToolMode.Select) return;
 
     switch (_currentTool)
     {
@@ -956,10 +963,39 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 }
             }
 
-            if (found != _selectedAnnotation)
+            var ctrlPressed = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+            if (found != null)
             {
-                _selectedAnnotation = found;
+                if (ctrlPressed)
+                {
+                    if (_selectedAnnotations.Contains(found))
+                    {
+                        _selectedAnnotations.Remove(found);
+                        if (_selectedAnnotation == found) _selectedAnnotation = _selectedAnnotations.LastOrDefault();
+                    }
+                    else
+                    {
+                        _selectedAnnotations.Add(found);
+                        _selectedAnnotation = found;
+                    }
+                }
+                else
+                {
+                    _selectedAnnotations.Clear();
+                    _selectedAnnotations.Add(found);
+                    _selectedAnnotation = found;
+                }
                 RenderAnnotationOverlays();
+            }
+            else
+            {
+                if (!ctrlPressed)
+                {
+                    _selectedAnnotations.Clear();
+                    _selectedAnnotation = null;
+                    RenderAnnotationOverlays();
+                }
             }
 
             if (_selectedAnnotation != null)
@@ -968,7 +1004,7 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 _lastMousePos = pos;
                 OverlayCanvas.CapturePointer(e.Pointer);
                 
-                // 아직 원래 콘텐츠가 제거되지 않았다면 매번 클릭 시마다 제거 시도 (재시도 기회 제공)
+                // ... (existing original content removal logic)
                 if (_selectedAnnotation.IsOriginalTextReplacement || (_selectedAnnotation.IsOriginalImageReplacement && _selectedAnnotation.OriginalImageName != null))
                 {
                     var targetAnn = _selectedAnnotation;
@@ -1003,7 +1039,7 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 }
                 else
                 {
-                    TxtStatus.Text = "객체 선택됨 (드래그하여 이동)";
+                    TxtStatus.Text = _selectedAnnotations.Count > 1 ? $"{_selectedAnnotations.Count}개 객체 선택됨" : "객체 선택됨 (드래그하여 이동)";
                 }
             }
             else
@@ -1191,9 +1227,12 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 double dx = (pos.X - _lastMousePos.X) / PdfToPixels;
                 double dy = (pos.Y - _lastMousePos.Y) / PdfToPixels;
 
-                _selectedAnnotation.X += dx;
-                _selectedAnnotation.Y += dy;
-                _selectedAnnotation.IsApplied = false;
+                foreach (var ann in _selectedAnnotations)
+                {
+                    ann.X += dx;
+                    ann.Y += dy;
+                    ann.IsApplied = false;
+                }
 
                 _lastMousePos = pos;
                 RenderAnnotationOverlays();
@@ -1421,7 +1460,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         Canvas.SetTop(element, ann.Y * PdfToPixels);
                         
                         // 선택 시 시각적 표시
-                        if (ann == _selectedAnnotation)
+                        if (_selectedAnnotations.Contains(ann))
                         {
                             var border = new Border
                             {
@@ -1436,8 +1475,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                             Canvas.SetTop(border, ann.Y * PdfToPixels);
                             OverlayCanvas.Children.Insert(insertIndex++, border);
 
-                            // 이미지나 하이라이트는 크기 조정 핸들 표시
-                            if (ann.Type == AnnotationType.Image || ann.Type == AnnotationType.Highlight)
+                            // 이미지나 하이라이트는 크기 조정 핸들 표시 (단일 선택 시에만 또는 가장 최근 선택 항목)
+                            if (ann == _selectedAnnotation && (ann.Type == AnnotationType.Image || ann.Type == AnnotationType.Highlight))
                             {
                                 AddResizeHandles(ann, ref insertIndex);
                             }
@@ -1651,6 +1690,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         }
                         
                         existingAnn.Content = text;
+                        existingAnn.Width = (text.Length * existingAnn.FontSize * 0.8) + 10;
+                        existingAnn.Height = existingAnn.FontSize * 1.4;
                         existingAnn.IsApplied = false;
                         _pdfManager.MarkModified();
                         TxtStatus.Text = "텍스트가 수정되었습니다 (저장 시 반영)";
@@ -1673,6 +1714,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         Color = _fontSettings.Color,
                         IsBold = _fontSettings.IsBold,
                         IsItalic = _fontSettings.IsItalic,
+                        Width = (text.Length * _fontSettings.FontSize * 0.8) + 10,
+                        Height = _fontSettings.FontSize * 1.4,
                         IsApplied = false
                     };
                     _annotations.Add(newAnn);
@@ -2766,6 +2809,77 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                     UpdateRecentFilesMenu();
                 }
             }
+        }
+
+        #endregion
+
+        #region Alignment & Editing
+
+        private void AlignLeft_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedAnnotations.Count < 2) return;
+            double minX = _selectedAnnotations.Min(a => a.X);
+            foreach (var ann in _selectedAnnotations)
+            {
+                ann.X = minX;
+                ann.IsApplied = false;
+            }
+            _pdfManager.MarkModified();
+            RenderAnnotationOverlays();
+        }
+
+        private void AlignRight_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedAnnotations.Count < 2) return;
+            double maxX = _selectedAnnotations.Max(a => a.X + a.Width);
+            foreach (var ann in _selectedAnnotations)
+            {
+                ann.X = maxX - ann.Width;
+                ann.IsApplied = false;
+            }
+            _pdfManager.MarkModified();
+            RenderAnnotationOverlays();
+        }
+
+        private void AlignTop_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedAnnotations.Count < 2) return;
+            double minY = _selectedAnnotations.Min(a => a.Y);
+            foreach (var ann in _selectedAnnotations)
+            {
+                ann.Y = minY;
+                ann.IsApplied = false;
+            }
+            _pdfManager.MarkModified();
+            RenderAnnotationOverlays();
+        }
+
+        private void AlignBottom_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedAnnotations.Count < 2) return;
+            double maxY = _selectedAnnotations.Max(a => a.Y + a.Height);
+            foreach (var ann in _selectedAnnotations)
+            {
+                ann.Y = maxY - ann.Height;
+                ann.IsApplied = false;
+            }
+            _pdfManager.MarkModified();
+            RenderAnnotationOverlays();
+        }
+
+        private void DeleteAnnotation_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedAnnotations.Count == 0) return;
+
+            foreach (var ann in _selectedAnnotations.ToList())
+            {
+                _annotations.Remove(ann);
+            }
+
+            _selectedAnnotations.Clear();
+            _selectedAnnotation = null;
+            _pdfManager.MarkModified();
+            RenderAnnotationOverlays();
         }
 
         #endregion
