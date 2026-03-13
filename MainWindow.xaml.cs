@@ -49,6 +49,8 @@ namespace PDF_simple_edit
         }
         private PdfAnnotation? _selectedAnnotation;
         private bool _isMovingAnnotation = false;
+        private bool _isResizingAnnotation = false;
+        private string? _resizeHandle = null; // "NW", "N", "NE", "W", "E", "SW", "S", "SE"
         private Windows.Foundation.Point _lastMousePos;
 
         private readonly List<string> _recentFiles = new();
@@ -907,6 +909,17 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
     switch (_currentTool)
     {
         case EditToolMode.Select:
+            // 리사이즈 핸들 클릭 확인
+            if (e.OriginalSource is Microsoft.UI.Xaml.Shapes.Rectangle handle && handle.Tag is string dir)
+            {
+                _isResizingAnnotation = true;
+                _resizeHandle = dir;
+                _lastMousePos = pos;
+                OverlayCanvas.CapturePointer(e.Pointer);
+                TxtStatus.Text = "크기 조정 중...";
+                return;
+            }
+
             var found = FindAnnotationAt(pdfX, pdfY);
 
             if (found == null)
@@ -1064,14 +1077,58 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         {
             var pos = e.GetCurrentPoint(OverlayCanvas).Position;
 
-            if (_isMovingAnnotation && _selectedAnnotation != null)
+            if (_isResizingAnnotation && _selectedAnnotation != null)
+            {
+                double dx = (pos.X - _lastMousePos.X) / PdfToPixels;
+                double dy = (pos.Y - _lastMousePos.Y) / PdfToPixels;
+
+                var ann = _selectedAnnotation;
+                double minSize = 10;
+
+                switch (_resizeHandle)
+                {
+                    case "NW":
+                        if (ann.Width - dx > minSize) { ann.X += dx; ann.Width -= dx; }
+                        if (ann.Height - dy > minSize) { ann.Y += dy; ann.Height -= dy; }
+                        break;
+                    case "N":
+                        if (ann.Height - dy > minSize) { ann.Y += dy; ann.Height -= dy; }
+                        break;
+                    case "NE":
+                        if (ann.Width + dx > minSize) { ann.Width += dx; }
+                        if (ann.Height - dy > minSize) { ann.Y += dy; ann.Height -= dy; }
+                        break;
+                    case "W":
+                        if (ann.Width - dx > minSize) { ann.X += dx; ann.Width -= dx; }
+                        break;
+                    case "E":
+                        if (ann.Width + dx > minSize) { ann.Width += dx; }
+                        break;
+                    case "SW":
+                        if (ann.Width - dx > minSize) { ann.X += dx; ann.Width -= dx; }
+                        if (ann.Height + dy > minSize) { ann.Height += dy; }
+                        break;
+                    case "S":
+                        if (ann.Height + dy > minSize) { ann.Height += dy; }
+                        break;
+                    case "SE":
+                        if (ann.Width + dx > minSize) { ann.Width += dx; }
+                        if (ann.Height + dy > minSize) { ann.Height += dy; }
+                        break;
+                }
+
+                ann.IsApplied = false;
+                _lastMousePos = pos;
+                RenderAnnotationOverlays();
+            }
+            else if (_isMovingAnnotation && _selectedAnnotation != null)
             {
                 double dx = (pos.X - _lastMousePos.X) / PdfToPixels;
                 double dy = (pos.Y - _lastMousePos.Y) / PdfToPixels;
 
                 _selectedAnnotation.X += dx;
                 _selectedAnnotation.Y += dy;
-                _selectedAnnotation.IsApplied = false; // 위치가 바뀌었으므로 문서 재적용 필요
+                _selectedAnnotation.IsApplied = false;
 
                 _lastMousePos = pos;
                 RenderAnnotationOverlays();
@@ -1092,7 +1149,16 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
         private async void OverlayCanvas_PointerReleased(object sender, PointerRoutedEventArgs e)
         {
-            if (_isMovingAnnotation)
+            if (_isResizingAnnotation)
+            {
+                _isResizingAnnotation = false;
+                _resizeHandle = null;
+                OverlayCanvas.ReleasePointerCapture(e.Pointer);
+                _pdfManager.MarkModified();
+                TxtStatus.Text = "크기 조정됨 (저장 시 반영)";
+                RenderAnnotationOverlays();
+            }
+            else if (_isMovingAnnotation)
             {
                 var movedAnn = _selectedAnnotation;
                 _isMovingAnnotation = false;
@@ -1163,6 +1229,20 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             if (ann != null)
             {
                 EditAnnotationContent(ann);
+            }
+        }
+
+        private void SetElementCursor(UIElement element, Microsoft.UI.Input.InputCursor cursor)
+        {
+            try
+            {
+                var type = typeof(UIElement);
+                var property = type.GetProperty("ProtectedCursor", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                property?.SetValue(element, cursor);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error setting cursor: {ex.Message}");
             }
         }
 
@@ -1268,12 +1348,72 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         Canvas.SetLeft(border, ann.X * PdfToPixels);
                         Canvas.SetTop(border, ann.Y * PdfToPixels);
                         OverlayCanvas.Children.Add(border);
+
+                        // 이미지나 하이라이트는 크기 조정 핸들 표시
+                        if (ann.Type == AnnotationType.Image || ann.Type == AnnotationType.Highlight)
+                        {
+                            AddResizeHandles(ann);
+                        }
                     }
                     else
                     {
                         OverlayCanvas.Children.Add(element);
                     }
                 }
+            }
+        }
+
+        private void AddResizeHandles(PdfAnnotation ann)
+        {
+            double x = ann.X * PdfToPixels;
+            double y = ann.Y * PdfToPixels;
+            double w = ann.Width * PdfToPixels;
+            double h = ann.Height * PdfToPixels;
+            double handleSize = 8;
+            double offset = handleSize / 2;
+
+            var handles = new Dictionary<string, Windows.Foundation.Point>
+            {
+                { "NW", new Windows.Foundation.Point(x - offset, y - offset) },
+                { "N",  new Windows.Foundation.Point(x + w/2 - offset, y - offset) },
+                { "NE", new Windows.Foundation.Point(x + w - offset, y - offset) },
+                { "W",  new Windows.Foundation.Point(x - offset, y + h/2 - offset) },
+                { "E",  new Windows.Foundation.Point(x + w - offset, y + h/2 - offset) },
+                { "SW", new Windows.Foundation.Point(x - offset, y + h - offset) },
+                { "S",  new Windows.Foundation.Point(x + w/2 - offset, y + h - offset) },
+                { "SE", new Windows.Foundation.Point(x + w - offset, y + h - offset) }
+            };
+
+            foreach (var kvp in handles)
+            {
+                var rect = new Microsoft.UI.Xaml.Shapes.Rectangle
+                {
+                    Width = handleSize,
+                    Height = handleSize,
+                    Fill = new SolidColorBrush(Microsoft.UI.Colors.White),
+                    Stroke = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
+                    StrokeThickness = 1,
+                    Tag = kvp.Key,
+                    IsHitTestVisible = true // 핸들은 클릭 가능해야 함
+                };
+
+                Canvas.SetLeft(rect, kvp.Value.X);
+                Canvas.SetTop(rect, kvp.Value.Y);
+                
+                // 핸들에 마우스 커서 설정
+                rect.PointerEntered += (s, e) => {
+                    string dir = (string)((FrameworkElement)s).Tag;
+                    SetElementCursor(OverlayCanvas, Microsoft.UI.Input.InputSystemCursor.Create(dir switch {
+                        "NW" or "SE" => Microsoft.UI.Input.InputSystemCursorShape.SizeNorthwestSoutheast,
+                        "NE" or "SW" => Microsoft.UI.Input.InputSystemCursorShape.SizeNortheastSouthwest,
+                        "N" or "S" => Microsoft.UI.Input.InputSystemCursorShape.SizeNorthSouth,
+                        "E" or "W" => Microsoft.UI.Input.InputSystemCursorShape.SizeWestEast,
+                        _ => Microsoft.UI.Input.InputSystemCursorShape.Arrow
+                    }));
+                };
+                rect.PointerExited += (s, e) => SetElementCursor(OverlayCanvas, Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.Arrow));
+
+                OverlayCanvas.Children.Add(rect);
             }
         }
 

@@ -693,6 +693,7 @@ namespace PDF_simple_edit.Helpers
             });
         }
 
+// [수정됨] 새 인스턴스를 만들지 않고, 기존 CString 인스턴스의 값 자체(Value)를 조작하여 강제 적용
         private void ReplaceWithEmptyString(COperator? op)
         {
             if (op == null) return;
@@ -702,12 +703,19 @@ namespace PDF_simple_edit.Helpers
                 case "'":
                 case "\"":
                     int textIdx = (op.Name == "\"") ? 2 : 0;
-                    if (op.Operands.Count > textIdx)
-                        op.Operands[textIdx] = new CString { Value = "" };
+                    if (op.Operands.Count > textIdx && op.Operands[textIdx] is CString str)
+                    {
+                        str.Value = ""; // 직접 값을 빈 문자열로 변경
+                    }
                     break;
                 case "TJ":
                     if (op.Operands.Count >= 1 && op.Operands[0] is CArray array)
-                        array.Clear();
+                    {
+                        foreach (var item in array)
+                        {
+                            if (item is CString s) s.Value = ""; // 배열 내부 요소들의 텍스트도 값만 변경
+                        }
+                    }
                     break;
             }
         }
@@ -842,9 +850,8 @@ namespace PDF_simple_edit.Helpers
             return removed;
         }
 
-        /// <summary>
-        /// [이동 수정] 텍스트를 새 위치로 이동합니다.
-        /// 원본 operator의 Tm 행렬을 직접 수정하여 복사 없이 이동합니다.
+  /// <summary>
+        /// 텍스트를 새 위치로 이동합니다.
         /// </summary>
         public async Task<bool> MoveTextAsync(int pageIndex, Guid operatorId, double newUIX, double newUIY)
         {
@@ -867,11 +874,14 @@ namespace PDF_simple_edit.Helpers
 
                         double pageHeight = page.Height.Point;
 
-                        // BT..ET 블록에서 타겟 op를 포함하는 Tm을 찾아 새 좌표로 수정
-                        bool moved = UpdatePositionInSequence(sequence, targetOp, newUIX, newUIY, pageHeight);
+                        // BT..ET 블록에서 타겟 op를 찾아 새 위치에 복제하고 원본은 비움
+                        var newOp = UpdatePositionInSequence(sequence, targetOp, newUIX, newUIY, pageHeight);
 
-                        if (moved)
+                        if (newOp != null)
                         {
+                            // [수정됨] 다음번 이동을 위해 맵을 새 오퍼레이터로 업데이트
+                            _operatorMap[operatorId] = newOp;
+
                             byte[] newData = SerializeContent(sequence);
                             ApplyForceOverwrite(page, newData);
 
@@ -892,9 +902,10 @@ namespace PDF_simple_edit.Helpers
 
 /// <summary>
         /// sequence를 순회하며 targetOp를 포함하는 BT..ET 블록을 찾고, 
-        /// 원래 텍스트를 빈 문자열로 만든 뒤 새 위치에 텍스트를 복제하여 추가합니다.
+        /// 새 위치에 텍스트를 복제하여 추가한 뒤, 원본 텍스트 오퍼레이터는 완전히 삭제합니다.
+        /// 성공 시 복제된 오퍼레이터를 반환합니다.
         /// </summary>
-        private bool UpdatePositionInSequence(CSequence sequence, object targetOp, double newUIX, double newUIY, double pageHeight)
+        private COperator? UpdatePositionInSequence(CSequence sequence, object targetOp, double newUIX, double newUIY, double pageHeight)
         {
             for (int i = 0; i < sequence.Count; i++)
             {
@@ -902,16 +913,16 @@ namespace PDF_simple_edit.Helpers
 
                 if (obj is COperator op && op.Name == "BT")
                 {
-                    // BT..ET 블록 범위 추출
                     double blockFontSize = 12;
                     bool foundTarget = false;
-                    int etIndex = i;
+                    int etIndex = -1;
                     COperator? targetOperator = null;
 
                     for (int j = i + 1; j < sequence.Count; j++)
                     {
                         if (sequence[j] is COperator inner)
                         {
+                            // ET 위치 파악
                             if (inner.Name == "ET") { etIndex = j; break; }
 
                             if (inner.Name == "Tf" && inner.Operands.Count >= 2)
@@ -935,19 +946,15 @@ namespace PDF_simple_edit.Helpers
                         }
                     }
 
-                    if (foundTarget && targetOperator != null)
+                    if (foundTarget && targetOperator != null && etIndex != -1)
                     {
-                        // UI Y → PDF Y 변환: pdfY = pageHeight - uiY - fontSize
                         double pdfNewX = newUIX;
                         double pdfNewY = pageHeight - newUIY - blockFontSize;
 
-                        // 1. 타겟 오퍼레이터(Tj, TJ 등) 복제하여 새 텍스트 객체 생성
+                        // 1. 타겟 오퍼레이터(Tj, TJ 등) 복제본 생성
                         var clonedOp = CloneOperator(targetOperator);
 
-                        // 2. 원래 오퍼레이터의 텍스트를 빈 문자열로 변경 (사용자 제안 반영: 잔상/복사 방지)
-                        ReplaceWithEmptyString(targetOperator);
-
-                        // 3. 새 위치를 지정할 새로운 Tm 오퍼레이터 생성
+                        // 2. 새 위치를 지정할 새로운 Tm 오퍼레이터 생성
                         var newTm = PdfSharp.Pdf.Content.Objects.OpCodes.OperatorFromName("Tm");
                         newTm.Operands.Add(new CReal { Value = 1 });
                         newTm.Operands.Add(new CReal { Value = 0 });
@@ -956,22 +963,26 @@ namespace PDF_simple_edit.Helpers
                         newTm.Operands.Add(new CReal { Value = pdfNewX });
                         newTm.Operands.Add(new CReal { Value = pdfNewY });
 
-                        // 4. ET(블록 종료) 바로 앞에 새 좌표(Tm)와 복제한 텍스트(Tj) 삽입
+                        // 3. ET(블록 종료) 바로 앞에 새 좌표(Tm)와 복제한 텍스트 삽입
                         sequence.Insert(etIndex, newTm);
                         sequence.Insert(etIndex + 1, clonedOp);
 
-                        return true;
+                        // 4. [수정됨] 오퍼레이터를 완전히 제거하면 PdfSharp 스트림 덮어쓰기에서 누락되거나 좌표가 꼬일 수 있습니다.
+                        // RemoveTextAsync와 동일하게 값 자체를 빈 문자열로 만들어 화면에서 확실히 지웁니다.
+                        ReplaceWithEmptyString(targetOperator);
+
+                        return clonedOp;
                     }
 
-                    i = etIndex; // BT..ET 블록 건너뜀
+                    if (etIndex != -1) i = etIndex;
                 }
                 else if (obj is CSequence innerSeq)
                 {
-                    if (UpdatePositionInSequence(innerSeq, targetOp, newUIX, newUIY, pageHeight))
-                        return true;
+                    var result = UpdatePositionInSequence(innerSeq, targetOp, newUIX, newUIY, pageHeight);
+                    if (result != null) return result;
                 }
             }
-            return false;
+            return null;
         }
 
         // 기존 ContainsOperatorRef를 대체하여 실제 Operator 객체를 반환하도록 수정
