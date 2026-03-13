@@ -34,6 +34,12 @@
   <ItemGroup Condition="'$(DisableMsixProjectCapabilityAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
     <ProjectCapability Include="Msix" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="CheckPDFSharp\**" />
+    <EmbeddedResource Remove="CheckPDFSharp\**" />
+    <None Remove="CheckPDFSharp\**" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />

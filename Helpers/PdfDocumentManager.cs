@@ -399,6 +399,17 @@ namespace PDF_simple_edit.Helpers
             return pdfStr;
         }
 
+        public UglyToad.PdfPig.Content.Page? GetPigPage(int pageNumber)
+        {
+            if (string.IsNullOrEmpty(_filePath)) return null;
+            try
+            {
+                var pigDoc = UglyToad.PdfPig.PdfDocument.Open(_filePath);
+                return pigDoc.GetPage(pageNumber);
+            }
+            catch { return null; }
+        }
+
         public async Task<List<SearchResult>> ExtractTextObjectsAsync(int pageIndex)
         {
             if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount)
@@ -879,8 +890,9 @@ namespace PDF_simple_edit.Helpers
             });
         }
 
-        /// <summary>
-        /// sequence를 순회하며 targetOp를 포함하는 BT..ET 블록의 Tm 좌표를 새 UI 좌표로 수정합니다.
+/// <summary>
+        /// sequence를 순회하며 targetOp를 포함하는 BT..ET 블록을 찾고, 
+        /// 원래 텍스트를 빈 문자열로 만든 뒤 새 위치에 텍스트를 복제하여 추가합니다.
         /// </summary>
         private bool UpdatePositionInSequence(CSequence sequence, object targetOp, double newUIX, double newUIY, double pageHeight)
         {
@@ -891,10 +903,10 @@ namespace PDF_simple_edit.Helpers
                 if (obj is COperator op && op.Name == "BT")
                 {
                     // BT..ET 블록 범위 추출
-                    COperator? lastTm = null;
                     double blockFontSize = 12;
                     bool foundTarget = false;
                     int etIndex = i;
+                    COperator? targetOperator = null;
 
                     for (int j = i + 1; j < sequence.Count; j++)
                     {
@@ -902,30 +914,52 @@ namespace PDF_simple_edit.Helpers
                         {
                             if (inner.Name == "ET") { etIndex = j; break; }
 
-                            if (inner.Name == "Tm" && inner.Operands.Count >= 6)
-                                lastTm = inner;
-
                             if (inner.Name == "Tf" && inner.Operands.Count >= 2)
                                 double.TryParse(inner.Operands[1].ToString(), System.Globalization.NumberStyles.Any,
                                     System.Globalization.CultureInfo.InvariantCulture, out blockFontSize);
 
                             if (object.ReferenceEquals(sequence[j], targetOp))
+                            {
                                 foundTarget = true;
+                                targetOperator = inner;
+                            }
                         }
-                        else if (sequence[j] is CSequence innerSeq && ContainsOperatorRef(innerSeq, targetOp))
+                        else if (sequence[j] is CSequence innerSeq)
                         {
-                            foundTarget = true;
+                            var found = FindOperatorRef(innerSeq, targetOp);
+                            if (found != null)
+                            {
+                                foundTarget = true;
+                                targetOperator = found;
+                            }
                         }
                     }
 
-                    if (foundTarget && lastTm != null)
+                    if (foundTarget && targetOperator != null)
                     {
-                        // UI Y → PDF Y 변환: uiY = pageHeight - pdfY - fontSize  →  pdfY = pageHeight - uiY - fontSize
+                        // UI Y → PDF Y 변환: pdfY = pageHeight - uiY - fontSize
                         double pdfNewX = newUIX;
                         double pdfNewY = pageHeight - newUIY - blockFontSize;
 
-                        SetCOperandValue(lastTm.Operands, 4, pdfNewX);
-                        SetCOperandValue(lastTm.Operands, 5, pdfNewY);
+                        // 1. 타겟 오퍼레이터(Tj, TJ 등) 복제하여 새 텍스트 객체 생성
+                        var clonedOp = CloneOperator(targetOperator);
+
+                        // 2. 원래 오퍼레이터의 텍스트를 빈 문자열로 변경 (사용자 제안 반영: 잔상/복사 방지)
+                        ReplaceWithEmptyString(targetOperator);
+
+                        // 3. 새 위치를 지정할 새로운 Tm 오퍼레이터 생성
+                        var newTm = PdfSharp.Pdf.Content.Objects.OpCodes.OperatorFromName("Tm");
+                        newTm.Operands.Add(new CReal { Value = 1 });
+                        newTm.Operands.Add(new CReal { Value = 0 });
+                        newTm.Operands.Add(new CReal { Value = 0 });
+                        newTm.Operands.Add(new CReal { Value = 1 });
+                        newTm.Operands.Add(new CReal { Value = pdfNewX });
+                        newTm.Operands.Add(new CReal { Value = pdfNewY });
+
+                        // 4. ET(블록 종료) 바로 앞에 새 좌표(Tm)와 복제한 텍스트(Tj) 삽입
+                        sequence.Insert(etIndex, newTm);
+                        sequence.Insert(etIndex + 1, clonedOp);
+
                         return true;
                     }
 
@@ -940,15 +974,50 @@ namespace PDF_simple_edit.Helpers
             return false;
         }
 
-        private bool ContainsOperatorRef(CSequence sequence, object targetOp)
+        // 기존 ContainsOperatorRef를 대체하여 실제 Operator 객체를 반환하도록 수정
+        private COperator? FindOperatorRef(CSequence sequence, object targetOp)
         {
             foreach (var obj in sequence)
             {
-                if (object.ReferenceEquals(obj, targetOp)) return true;
-                if (obj is CSequence inner && ContainsOperatorRef(inner, targetOp)) return true;
+                if (object.ReferenceEquals(obj, targetOp)) return obj as COperator;
+                if (obj is CSequence inner)
+                {
+                    var result = FindOperatorRef(inner, targetOp);
+                    if (result != null) return result;
+                }
             }
-            return false;
+            return null;
         }
+
+        // 텍스트 오퍼레이터(Tj, TJ)를 안전하게 깊은 복사(Deep Copy)하는 헬퍼 메서드
+        private COperator CloneOperator(COperator op)
+        {
+            var clone = PdfSharp.Pdf.Content.Objects.OpCodes.OperatorFromName(op.Name);
+            foreach (var operand in op.Operands)
+            {
+                if (operand is CString str)
+                {
+                    clone.Operands.Add(new CString { Value = str.Value });
+                }
+                else if (operand is CArray arr)
+                {
+                    var newArr = new CArray();
+                    foreach (var item in arr)
+                    {
+                        if (item is CString s) newArr.Add(new CString { Value = s.Value });
+                        else if (item is CReal r) newArr.Add(new CReal { Value = r.Value });
+                        else if (item is CInteger i) newArr.Add(new CInteger { Value = i.Value });
+                        else newArr.Add(item); // Fallback
+                    }
+                    clone.Operands.Add(newArr);
+                }
+                else if (operand is CReal r) clone.Operands.Add(new CReal { Value = r.Value });
+                else if (operand is CInteger i) clone.Operands.Add(new CInteger { Value = i.Value });
+                else clone.Operands.Add(operand); // Fallback
+            }
+            return clone;
+        }
+
 
         private void SetCOperandValue(CSequence operands, int index, double value)
         {

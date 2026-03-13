@@ -90,12 +90,6 @@
                         <KeyboardAccelerator Modifiers="Control" Key="F"/>
                     </MenuFlyoutItem.KeyboardAccelerators>
                 </MenuFlyoutItem>
-                <MenuFlyoutItem Text="찾기 및 바꾸기..." x:Name="MenuFindReplace" Click="FindReplace_Click" IsEnabled="False">
-                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8EE;"/></MenuFlyoutItem.Icon>
-                    <MenuFlyoutItem.KeyboardAccelerators>
-                        <KeyboardAccelerator Modifiers="Control" Key="H"/>
-                    </MenuFlyoutItem.KeyboardAccelerators>
-                </MenuFlyoutItem>
             </MenuBarItem>
 
             <MenuBarItem Title="보기" x:Name="MenuViewItem">
@@ -112,7 +106,13 @@
             </MenuBarItem>
 
             <MenuBarItem Title="도구">
-                <ToggleMenuFlyoutItem Text="텍스트 추가 (A)" x:Name="MenuAddText" Click="AddTextTool_Click" IsEnabled="False">
+                <ToggleMenuFlyoutItem Text="선택" x:Name="MenuSelect" Click="SelectTool_Click" IsEnabled="False">
+                    <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xEF20;"/></ToggleMenuFlyoutItem.Icon>
+                    <ToggleMenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Key="S" Invoked="ToolAccelerator_Invoked"/>
+                    </ToggleMenuFlyoutItem.KeyboardAccelerators>
+                </ToggleMenuFlyoutItem>
+                <ToggleMenuFlyoutItem Text="텍스트 추가" x:Name="MenuAddText" Click="AddTextTool_Click" IsEnabled="False">
                     <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE8D2;"/></ToggleMenuFlyoutItem.Icon>
                     <ToggleMenuFlyoutItem.KeyboardAccelerators>
                         <KeyboardAccelerator Key="A" Invoked="ToolAccelerator_Invoked"/>
@@ -179,7 +179,7 @@
 
             <!-- Edit tools -->
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
-                <ToggleButton x:Name="BtnSelect" Click="SelectTool_Click" ToolTipService.ToolTip="선택"
+                <ToggleButton x:Name="BtnSelect" Click="SelectTool_Click" ToolTipService.ToolTip="선택 (S)"
                               IsEnabled="False" Padding="8,6">
                     <FontIcon Glyph="&#xEF20;" FontSize="16"/>
                 </ToggleButton>
@@ -387,7 +387,7 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="찾기 및 바꾸기" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Text="찾기" FontWeight="SemiBold" VerticalAlignment="Center"/>
                     <Button Grid.Column="1" Click="CloseFindPanel_Click"
                             Background="Transparent" BorderThickness="0" Padding="6">
                         <FontIcon Glyph="&#xE711;" FontSize="12"/>
@@ -395,18 +395,13 @@
                 </Grid>
                 <StackPanel Grid.Row="1" Padding="12,0,12,12" Spacing="8">
                     <TextBox x:Name="TxtFindText" PlaceholderText="찾을 텍스트..."
-                             TextChanged="FindText_Changed"/>
+                             TextChanged="FindText_Changed"
+                             KeyDown="TxtFindText_KeyDown"/>
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <Button Content="이전" Click="FindPrevious_Click" Padding="12,6"/>
                         <Button Content="다음" Click="FindNext_Click" Padding="12,6"/>
                         <TextBlock x:Name="TxtFindCount" VerticalAlignment="Center"
                                    Margin="8,0" Opacity="0.6" FontSize="12"/>
-                    </StackPanel>
-                    <AppBarSeparator HorizontalAlignment="Stretch"/>
-                    <TextBox x:Name="TxtReplaceText" PlaceholderText="바꿀 텍스트..."/>
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <Button Content="바꾸기" Click="Replace_Click" Padding="12,6"/>
-                        <Button Content="모두 바꾸기" Click="ReplaceAll_Click" Padding="12,6"/>
                     </StackPanel>
                     <CheckBox x:Name="ChkMatchCase" Content="대소문자 구분"/>
                 </StackPanel>

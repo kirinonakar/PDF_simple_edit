@@ -60,6 +60,10 @@ namespace PDF_simple_edit
         private Microsoft.UI.Xaml.Shapes.Rectangle? _dragRect;
         private bool _isDialogOpen = false;
         private bool _isInlineEditing = false;
+
+        private string? _lastSearchQuery;
+        private int _lastFoundPage = -1;
+        private int _lastFoundWordIndex = -1;
         
         private readonly PrintHelper _printHelper = new();
         private readonly TextFontSettings _fontSettings = new();
@@ -296,7 +300,7 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
             MenuPrint.IsEnabled = hasDoc;
             MenuClose.IsEnabled = hasDoc;
             MenuFind.IsEnabled = hasDoc;
-            MenuFindReplace.IsEnabled = hasDoc;
+            MenuSelect.IsEnabled = hasDoc;
             MenuAddText.IsEnabled = hasDoc;
             MenuHighlight.IsEnabled = hasDoc;
             MenuStickyNote.IsEnabled = hasDoc;
@@ -782,7 +786,8 @@ private void FitToPage()
             BtnAddText.IsChecked = mode == EditToolMode.AddText;
             BtnHighlight.IsChecked = mode == EditToolMode.Highlight;
             BtnStickyNote.IsChecked = mode == EditToolMode.AddStickyNote;
-
+            
+            if (MenuSelect != null) MenuSelect.IsChecked = mode == EditToolMode.Select;
             if (MenuAddText != null) MenuAddText.IsChecked = mode == EditToolMode.AddText;
             if (MenuHighlight != null) MenuHighlight.IsChecked = mode == EditToolMode.Highlight;
             if (MenuStickyNote != null) MenuStickyNote.IsChecked = mode == EditToolMode.AddStickyNote;
@@ -809,7 +814,7 @@ private void FitToPage()
 
         private void SelectTool_Click(object sender, RoutedEventArgs e)
         {
-            SetToolMode(BtnSelect.IsChecked == true ? EditToolMode.Select : EditToolMode.None);
+            SetToolMode(_currentTool == EditToolMode.Select ? EditToolMode.None : EditToolMode.Select);
         }
 
         private void AddTextTool_Click(object sender, RoutedEventArgs e)
@@ -1661,15 +1666,13 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
         #region Find & Replace
 
-        private void Find_Click(object sender, RoutedEventArgs e) => OpenFindPanel(false);
-        private void FindReplace_Click(object sender, RoutedEventArgs e) => OpenFindPanel(true);
+        private void Find_Click(object sender, RoutedEventArgs e) => OpenFindPanel();
 
-        private void OpenFindPanel(bool showReplace)
+        private void OpenFindPanel()
         {
             FindPanel.Visibility = Visibility.Visible;
             FindPanelColumn.Width = new GridLength(300);
             TxtFindText.Focus(FocusState.Programmatic);
-            TxtReplaceText.Visibility = showReplace ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void CloseFindPanel_Click(object sender, RoutedEventArgs e)
@@ -1678,7 +1681,23 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             FindPanelColumn.Width = new GridLength(0);
         }
 
-        private void FindText_Changed(object sender, TextChangedEventArgs e) => TxtFindCount.Text = "";
+        private void FindText_Changed(object sender, TextChangedEventArgs e)
+        {
+            TxtFindCount.Text = "";
+            // 검색어가 바뀌면 상태 초기화
+            _lastSearchQuery = null;
+            _lastFoundPage = -1;
+            _lastFoundWordIndex = -1;
+        }
+
+        private async void TxtFindText_KeyDown(object sender, KeyRoutedEventArgs e)
+        {
+            if (e.Key == Windows.System.VirtualKey.Enter)
+            {
+                await SearchInDocumentAsync(true);
+                e.Handled = true;
+            }
+        }
 
         private async void FindNext_Click(object sender, RoutedEventArgs e) => await SearchInDocumentAsync(true);
         private async void FindPrevious_Click(object sender, RoutedEventArgs e) => await SearchInDocumentAsync(false);
@@ -1698,23 +1717,65 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
                 int startPage = _currentPageIndex;
                 int totalPages = (int)pdfDoc.PageCount;
+                string query = searchText.ToLower().Trim();
 
-                if (totalPages > 1)
+                // 현재 페이지부터 시작하여 한 바퀴 돌며 검색
+                for (int i = 0; i < totalPages; i++)
                 {
-                    int pageIdx = forward
-                        ? (startPage + 1) % totalPages
-                        : (startPage - 1 + totalPages) % totalPages;
+                    int pageIdx = forward 
+                        ? (startPage + i) % totalPages 
+                        : (startPage - i + totalPages) % totalPages;
 
-                    _currentPageIndex = pageIdx;
-                    await RenderCurrentPageAsync();
-                    SyncPageListSelection();
-                    TxtFindCount.Text = $"페이지 {pageIdx + 1}";
-                    TxtStatus.Text = $"'{searchText}' - 페이지 {pageIdx + 1}(으)로 이동";
+                    var pigPage = _pdfManager.GetPigPage(pageIdx + 1);
+                    if (pigPage != null)
+                    {
+                        var words = pigPage.GetWords().ToList();
+                        
+                        int startIndex;
+                        int step = forward ? 1 : -1;
+                        
+                        if (pageIdx == _lastFoundPage && query == _lastSearchQuery)
+                        {
+                            // 같은 페이지에서 다음/이전 단어 찾기
+                            startIndex = forward ? _lastFoundWordIndex + 1 : _lastFoundWordIndex - 1;
+                        }
+                        else
+                        {
+                            // 새 페이지 진입 시 시작 위치
+                            startIndex = forward ? 0 : words.Count - 1;
+                        }
+
+                        // 범위 체크 및 루프
+                        for (int wIdx = startIndex; forward ? (wIdx < words.Count) : (wIdx >= 0); wIdx += step)
+                        {
+                            var word = words[wIdx];
+                            if (word.Text.ToLower().Contains(query))
+                            {
+                                _lastSearchQuery = query;
+                                _lastFoundPage = pageIdx;
+                                _lastFoundWordIndex = wIdx;
+
+                                _currentPageIndex = pageIdx;
+                                await RenderCurrentPageAsync();
+                                SyncPageListSelection();
+
+                                // 시각적 강조 (Canvas 좌표로 변환)
+                                HighlightSearchMatch(word.BoundingBox);
+
+                                TxtFindCount.Text = $"페이지 {pageIdx + 1}";
+                                TxtStatus.Text = forward ? $"'{searchText}' 검색 완료" : $"'{searchText}' 이전 검색 완료";
+                                return;
+                            }
+                        }
+                    }
                 }
-                else
-                {
-                    TxtFindCount.Text = "결과 없음";
-                }
+
+                // 끝까지 갔는데 못 찾았으면 상태 초기화
+                _lastFoundPage = -1;
+                _lastFoundWordIndex = -1;
+                
+                TxtFindCount.Text = "결과 없음";
+                TxtStatus.Text = "텍스트를 찾을 수 없습니다";
             }
             catch (Exception ex)
             {
@@ -1723,84 +1784,32 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             }
         }
 
-        private async void Replace_Click(object sender, RoutedEventArgs e)
+        private void HighlightSearchMatch(UglyToad.PdfPig.Core.PdfRectangle rect)
         {
-            if (!_pdfManager.IsLoaded || _pdfManager.Document == null) return;
-            if (string.IsNullOrEmpty(TxtFindText.Text)) return;
+            // PDF 좌표 (Bottom-Up) -> Canvas 좌표 (Top-Down) 변환
+            var pageSize = _pdfManager.GetPageSize(_currentPageIndex);
+            double x = rect.Left * PdfToPixels;
+            double height = (rect.Top - rect.Bottom) * PdfToPixels;
+            double y = (pageSize.height - rect.Top) * PdfToPixels;
+            double width = (rect.Right - rect.Left) * PdfToPixels;
 
-            TxtStatus.Text = "텍스트 바꾸기 중...";
-            try
+            var highlight = new Microsoft.UI.Xaml.Shapes.Rectangle
             {
-                await PerformTextReplacementAsync(TxtFindText.Text, TxtReplaceText.Text ?? "", false);
-                TxtStatus.Text = "바꾸기 완료";
-            }
-            catch (Exception ex)
-            {
-                await ShowErrorDialogAsync("바꾸기 오류", ex.Message);
-            }
-        }
+                Width = width,
+                Height = height,
+                Fill = new SolidColorBrush(Microsoft.UI.Colors.Yellow),
+                Opacity = 0.5,
+                Stroke = new SolidColorBrush(Microsoft.UI.Colors.Orange),
+                StrokeThickness = 1,
+                IsHitTestVisible = false
+            };
 
-        private async void ReplaceAll_Click(object sender, RoutedEventArgs e)
-        {
-            if (!_pdfManager.IsLoaded || _pdfManager.Document == null) return;
-            if (string.IsNullOrEmpty(TxtFindText.Text)) return;
+            Canvas.SetLeft(highlight, x);
+            Canvas.SetTop(highlight, y);
+            OverlayCanvas.Children.Add(highlight);
 
-            TxtStatus.Text = "모두 바꾸기 중...";
-            try
-            {
-                await PerformTextReplacementAsync(TxtFindText.Text, TxtReplaceText.Text ?? "", true);
-                TxtStatus.Text = "모두 바꾸기 완료";
-            }
-            catch (Exception ex)
-            {
-                await ShowErrorDialogAsync("바꾸기 오류", ex.Message);
-            }
-        }
-
-        private async Task PerformTextReplacementAsync(string findText, string replaceText, bool replaceAll)
-        {
-            if (_pdfManager.Document == null) return;
-
-            bool found = false;
-
-            for (int i = 0; i < _pdfManager.Document.PageCount; i++)
-            {
-                var page = _pdfManager.Document.Pages[i];
-                try
-                {
-                    var contentStream = page.Contents.CreateSingleContent();
-                    if (contentStream?.Stream?.Value != null)
-                    {
-                        string contentStr = System.Text.Encoding.Latin1.GetString(contentStream.Stream.Value);
-                        if (contentStr.Contains(findText))
-                        {
-                            contentStr = replaceAll
-                                ? contentStr.Replace(findText, replaceText)
-                                : ReplaceFirst(contentStr, findText, replaceText);
-                            contentStream.Stream.Value = System.Text.Encoding.Latin1.GetBytes(contentStr);
-                            found = true;
-                            _pdfManager.MarkModified();
-                            if (!replaceAll) break;
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Replace error page {i}: {ex.Message}");
-                }
-            }
-
-            if (found)
-                await SaveToTempAndRenderAsync();
-            else
-                TxtStatus.Text = "텍스트를 찾을 수 없습니다";
-        }
-
-        private static string ReplaceFirst(string text, string search, string replace)
-        {
-            int pos = text.IndexOf(search, StringComparison.Ordinal);
-            if (pos < 0) return text;
-            return text.Substring(0, pos) + replace + text.Substring(pos + search.Length);
+            // 해당 위치로 스크롤
+            PdfScrollViewer.ChangeView(x * _zoomLevel, y * _zoomLevel, null);
         }
 
         #endregion
