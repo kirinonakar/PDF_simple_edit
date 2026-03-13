@@ -883,7 +883,7 @@ private void FitToPage()
 
 private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEventArgs e)
 {
-    if (!_pdfManager.IsLoaded) return;
+    if (!_pdfManager.IsLoaded || _isInlineEditing) return;
 
     // 안전장치: 캔버스 크기가 없을 경우 이미지 크기로 동기화
     if (OverlayCanvas.Width == 0 || double.IsNaN(OverlayCanvas.Width))
@@ -902,7 +902,13 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
     switch (_currentTool)
     {
         case EditToolMode.Select:
-            _selectedAnnotation = FindAnnotationAt(pdfX, pdfY);
+            var found = FindAnnotationAt(pdfX, pdfY);
+            if (found != _selectedAnnotation)
+            {
+                _selectedAnnotation = found;
+                RenderAnnotationOverlays();
+            }
+
             if (_selectedAnnotation != null)
             {
                 _isMovingAnnotation = true;
@@ -914,7 +920,6 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             {
                 TxtStatus.Text = "준비";
             }
-            RenderAnnotationOverlays();
             break;
 
         case EditToolMode.AddText:
@@ -953,12 +958,11 @@ private PdfAnnotation? FindAnnotationAt(double pdfX, double pdfY)
 
         if (ann.Type == AnnotationType.Text || ann.Type == AnnotationType.FreeText)
         {
-            // 텍스트의 경우 대략적인 범위 계산 (정확한 높이는 폰트 크기에 따라 다름)
-            double width = (ann.Content.Length * ann.FontSize * 0.6); // 근사치
-            double height = ann.FontSize * 1.2;
-            // UI상으로는 [ann.X, ann.Y] ~ [ann.X+W, ann.Y+H] 범위에 그려집니다.
-            if (pdfX >= ann.X && pdfX <= ann.X + width &&
-                pdfY >= ann.Y && pdfY <= ann.Y + height)
+            // 텍스트의 경우 대략적인 범위 계산 (패딩 넉넉히)
+            double width = (ann.Content.Length * ann.FontSize * 0.8) + 10;
+            double height = ann.FontSize * 1.4;
+            if (pdfX >= ann.X - 5 && pdfX <= ann.X + width &&
+                pdfY >= ann.Y - 5 && pdfY <= ann.Y + height)
             {
                 return ann;
             }
@@ -973,8 +977,8 @@ private PdfAnnotation? FindAnnotationAt(double pdfX, double pdfY)
         }
         else if (ann.Type == AnnotationType.StickyNote)
         {
-            if (pdfX >= ann.X && pdfX <= ann.X + 24 &&
-                pdfY >= ann.Y && pdfY <= ann.Y + 24)
+            if (pdfX >= ann.X && pdfX <= ann.X + 30 &&
+                pdfY >= ann.Y && pdfY <= ann.Y + 30) // 영역 약간 확장
             {
                 return ann;
             }
@@ -1022,7 +1026,12 @@ private PdfAnnotation? FindAnnotationAt(double pdfX, double pdfY)
                 
                 _pdfManager.MarkModified();
                 TxtStatus.Text = "위치 이동됨 (저장 시 반영)";
-                RenderAnnotationOverlays();
+                
+                // 인라인 편집 중이 아닐 때만 리렌더링 (편집창 소멸 방지)
+                if (!_isInlineEditing)
+                {
+                    RenderAnnotationOverlays();
+                }
             }
             else if (_isDragging && _dragRect != null && _currentTool == EditToolMode.Highlight)
             {
@@ -1059,9 +1068,33 @@ private PdfAnnotation? FindAnnotationAt(double pdfX, double pdfY)
             }
         }
 
+        private void OverlayCanvas_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+        {
+            if (_isInlineEditing) return;
+
+            var pos = e.GetPosition(OverlayCanvas);
+            double pdfX = pos.X / PdfToPixels;
+            double pdfY = pos.Y / PdfToPixels;
+
+            var ann = FindAnnotationAt(pdfX, pdfY);
+            if (ann != null)
+            {
+                EditAnnotationContent(ann);
+            }
+        }
+
         private void RenderAnnotationOverlays()
         {
+            // 편집 중인 TextBox가 있으면 임시로 보관
+            TextBox? activeBox = OverlayCanvas.Children.OfType<TextBox>().FirstOrDefault();
+            
             OverlayCanvas.Children.Clear();
+
+            // TextBox가 있었다면 다시 복구 (삭제 방지)
+            if (activeBox != null)
+            {
+                OverlayCanvas.Children.Add(activeBox);
+            }
 
             var pageAnnotations = _annotations.Where(a => a.PageIndex == _currentPageIndex).ToList();
 
@@ -1073,7 +1106,7 @@ private PdfAnnotation? FindAnnotationAt(double pdfX, double pdfY)
                 {
                     case AnnotationType.Text:
                     case AnnotationType.FreeText:
-                        var tb = new TextBlock
+                        element = new TextBlock
                         {
                             Text = ann.Content,
                             TextWrapping = TextWrapping.NoWrap,
@@ -1086,9 +1119,9 @@ private PdfAnnotation? FindAnnotationAt(double pdfX, double pdfY)
                                 ? Windows.UI.Text.FontStyle.Italic
                                 : Windows.UI.Text.FontStyle.Normal,
                             Padding = new Thickness(0),
-                            Margin = new Thickness(0)
+                            Margin = new Thickness(0),
+                            IsHitTestVisible = false
                         };
-                        element = tb;
                         break;
 
                     case AnnotationType.Highlight:
@@ -1097,7 +1130,8 @@ private PdfAnnotation? FindAnnotationAt(double pdfX, double pdfY)
                             Width = ann.Width * PdfToPixels,
                             Height = ann.Height * PdfToPixels,
                             Fill = new SolidColorBrush(ParseColor(ann.Color)),
-                            Opacity = ann.Opacity
+                            Opacity = ann.Opacity,
+                            IsHitTestVisible = false
                         };
                         break;
 
@@ -1108,10 +1142,11 @@ private PdfAnnotation? FindAnnotationAt(double pdfX, double pdfY)
                             Height = 24 * PdfToPixels,
                             Background = new SolidColorBrush(Microsoft.UI.Colors.Yellow),
                             BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Orange),
-                            BorderThickness = new Thickness(1)
+                            BorderThickness = new Thickness(1),
+                            IsHitTestVisible = false
                         };
-                        ToolTipService.SetToolTip(snGrid, ann.Content);
-                        snGrid.Children.Add(new FontIcon { Glyph = "\uE70B", FontSize = 12 * PdfToPixels });
+                        // ToolTipService.SetToolTip(snGrid, ann.Content); // HitTestVisible=false면 툴팁도 안 뜰 수 있음
+                        snGrid.Children.Add(new FontIcon { Glyph = "\uE70B", FontSize = 12 * PdfToPixels, IsHitTestVisible = false });
                         element = snGrid;
                         break;
 
@@ -1123,7 +1158,8 @@ private PdfAnnotation? FindAnnotationAt(double pdfX, double pdfY)
                                 Source = new BitmapImage(new Uri(ann.ImagePath)),
                                 Width = ann.Width * PdfToPixels,
                                 Height = ann.Height * PdfToPixels,
-                                Stretch = Stretch.Fill
+                                Stretch = Stretch.Fill,
+                                IsHitTestVisible = false
                             };
                         }
                         break;
@@ -1142,14 +1178,9 @@ private PdfAnnotation? FindAnnotationAt(double pdfX, double pdfY)
                             BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
                             BorderThickness = new Thickness(1),
                             Margin = new Thickness(-2),
-                            Child = element
+                            Child = element,
+                            IsHitTestVisible = false
                         };
-                        
-                        // 더블 클릭 시 편집 (텍스트만)
-                        if (ann.Type == AnnotationType.Text || ann.Type == AnnotationType.FreeText)
-                        {
-                            border.DoubleTapped += (s, e) => EditAnnotationContent(ann);
-                        }
 
                         Canvas.SetLeft(border, ann.X * PdfToPixels);
                         Canvas.SetTop(border, ann.Y * PdfToPixels);
@@ -1163,47 +1194,15 @@ private PdfAnnotation? FindAnnotationAt(double pdfX, double pdfY)
             }
         }
 
-        private async void EditAnnotationContent(PdfAnnotation ann)
+        private void EditAnnotationContent(PdfAnnotation ann)
         {
-            if (ann.Type == AnnotationType.Text || ann.Type == AnnotationType.FreeText)
+            if (ann.Type == AnnotationType.Text || ann.Type == AnnotationType.FreeText || ann.Type == AnnotationType.StickyNote)
             {
-                var dialog = new ContentDialog
+                // Dispatcher를 통해 지연 실행하여 현재 이벤트 사이클과의 충돌 방지
+                DispatcherQueue.TryEnqueue(() =>
                 {
-                    Title = "텍스트 편집",
-                    PrimaryButtonText = "확인",
-                    SecondaryButtonText = "삭제",
-                    CloseButtonText = "취소",
-                    DefaultButton = ContentDialogButton.Primary,
-                    XamlRoot = Content.XamlRoot,
-                };
-
-                var textBox = new TextBox
-                {
-                    Text = ann.Content,
-                    AcceptsReturn = true,
-                    TextWrapping = TextWrapping.Wrap,
-                    MinHeight = 100,
-                    MinWidth = 300
-                };
-                textBox.Loaded += (s, e) => textBox.Focus(FocusState.Programmatic);
-                dialog.Content = textBox;
-
-                var result = await dialog.ShowAsync();
-                if (result == ContentDialogResult.Primary)
-                {
-                    ann.Content = textBox.Text;
-                    ann.IsApplied = false; // 변경됨
-                    _pdfManager.MarkModified();
-                    TxtStatus.Text = "텍스트가 수정되었습니다 (저장 시 반영)";
-                }
-                else if (result == ContentDialogResult.Secondary)
-                {
-                    _annotations.Remove(ann);
-                    _selectedAnnotation = null;
-                    _pdfManager.MarkModified();
-                    TxtStatus.Text = "객체가 삭제되었습니다";
-                }
-                RenderAnnotationOverlays();
+                    AddInlineTextBox(ann.X, ann.Y, ann);
+                });
             }
         }
 
@@ -1211,110 +1210,168 @@ private PdfAnnotation? FindAnnotationAt(double pdfX, double pdfY)
 
         #region Text Input (Inline & Dialog)
 
-private void AddInlineTextBox(double pdfX, double pdfY)
-{
-    if (_isInlineEditing) return;
-    _isInlineEditing = true;
+        private void AddInlineTextBox(double pdfX, double pdfY, PdfAnnotation? existingAnn = null)
+        {
+            if (_isInlineEditing) return;
+            _isInlineEditing = true;
 
-    var canvasX = pdfX * PdfToPixels;
-    var canvasY = pdfY * PdfToPixels;
+            var canvasX = pdfX * PdfToPixels;
+            var canvasY = pdfY * PdfToPixels;
 
-    var textBox = new TextBox
-    {
-        AcceptsReturn = false,
-        TextWrapping = TextWrapping.NoWrap,
-        // [핵심] WinUI TextBox의 기본 여백 공간 강제 초기화
-        MinWidth = 0,
-        MinHeight = 0, 
-        Padding = new Thickness(0),
-        Margin = new Thickness(-1, -1, 0, 0),
-        BorderThickness = new Thickness(1),
-        Background = new SolidColorBrush(Windows.UI.Color.FromArgb(160, 255, 255, 255)),
-        BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
-        FontSize = _fontSettings.FontSize * PdfToPixels,
-        FontFamily = new FontFamily(_fontSettings.FontFamily),
-        Foreground = new SolidColorBrush(ParseColor(_fontSettings.Color)),
-        FontWeight = _fontSettings.IsBold ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal,
-        FontStyle = _fontSettings.IsItalic ? Windows.UI.Text.FontStyle.Italic : Windows.UI.Text.FontStyle.Normal,
-        Tag = new Windows.Foundation.Point(pdfX, pdfY),
-        VerticalAlignment = VerticalAlignment.Top,
-        VerticalContentAlignment = VerticalAlignment.Top,
-        MaxWidth = 4000
-    };
+            // 기존 어노테이션 정보 또는 현재 폰트 설정 사용
+            string fontFamily = existingAnn?.FontFamily ?? _fontSettings.FontFamily;
+            double fontSize = existingAnn?.FontSize ?? _fontSettings.FontSize;
+            string color = existingAnn?.Color ?? _fontSettings.Color;
+            bool isBold = existingAnn?.IsBold ?? _fontSettings.IsBold;
+            bool isItalic = existingAnn?.IsItalic ?? _fontSettings.IsItalic;
+            string initialText = existingAnn?.Content ?? "";
+
+            var textBox = new TextBox
+            {
+                Text = initialText,
+                AcceptsReturn = existingAnn?.Type == AnnotationType.StickyNote,
+                TextWrapping = existingAnn?.Type == AnnotationType.StickyNote ? TextWrapping.Wrap : TextWrapping.NoWrap,
+                MinWidth = 60,
+                MinHeight = 24,
+                Padding = new Thickness(4, 2, 4, 2),
+                Margin = new Thickness(-1, -1, 0, 0),
+                BorderThickness = new Thickness(1),
+                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(240, 255, 255, 255)),
+                BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
+                FontSize = fontSize * PdfToPixels,
+                FontFamily = new FontFamily(fontFamily),
+                Foreground = new SolidColorBrush(ParseColor(color)),
+                FontWeight = isBold ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal,
+                FontStyle = isItalic ? Windows.UI.Text.FontStyle.Italic : Windows.UI.Text.FontStyle.Normal,
+                Tag = existingAnn != null ? (object)existingAnn : (object)new Windows.Foundation.Point(pdfX, pdfY),
+                VerticalAlignment = VerticalAlignment.Top,
+                VerticalContentAlignment = VerticalAlignment.Top,
+                MaxWidth = 4000
+            };
 
     Canvas.SetLeft(textBox, canvasX);
     Canvas.SetTop(textBox, canvasY);
 
-    textBox.Loaded += (s, e) => textBox.Focus(FocusState.Programmatic);
+            textBox.Loaded += (s, e) => 
+            {
+                // 포커스 강제 부여 및 전역 상태 보호
+                textBox.Focus(FocusState.Programmatic);
+            };
 
-    textBox.KeyDown += (s, e) =>
-    {
-        if (e.Key == Windows.System.VirtualKey.Enter)
-        {
-            ApplyInlineText((TextBox)s);
-            e.Handled = true;
+            // 텍스트 박스 내부의 포인터 이벤트가 캔버스 등으로 전달되어 편집이 꼬이는 것 방지
+            textBox.PointerPressed += (s, e) => e.Handled = true;
+            textBox.PointerReleased += (s, e) => e.Handled = true;
+            textBox.DoubleTapped += (s, e) => e.Handled = true;
+
+            textBox.KeyDown += (s, e) =>
+            {
+                if (e.Key == Windows.System.VirtualKey.Enter && !((TextBox)s).AcceptsReturn)
+                {
+                    ApplyInlineText((TextBox)s);
+                    e.Handled = true;
+                }
+                else if (e.Key == Windows.System.VirtualKey.Escape)
+                {
+                    CancelInlineEdit(textBox);
+                    e.Handled = true;
+                }
+            };
+
+            textBox.LostFocus += (s, e) =>
+            {
+                ApplyInlineText((TextBox)s);
+            };
+
+            OverlayCanvas.Children.Add(textBox);
         }
-        else if (e.Key == Windows.System.VirtualKey.Escape)
+
+        private void CancelInlineEdit(TextBox textBox)
         {
-            _isInlineEditing = false;
+            if (!_isInlineEditing || !OverlayCanvas.Children.Contains(textBox)) return;
+            
             OverlayCanvas.Children.Remove(textBox);
-            e.Handled = true;
+            _isInlineEditing = false;
+            
+            // 포커스 복구 (단축키 작동을 위해 중요)
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                DocTabView.Focus(FocusState.Programmatic);
+            });
         }
-    };
 
-    textBox.LostFocus += (s, e) =>
-    {
-        ApplyInlineText((TextBox)s);
-    };
-
-    OverlayCanvas.Children.Add(textBox);
-}
-
-        private async void ApplyInlineText(TextBox textBox)
+        private void ApplyInlineText(TextBox textBox)
         {
             if (!_isInlineEditing || !OverlayCanvas.Children.Contains(textBox)) return;
 
             string text = textBox.Text;
-            var pdfPos = (Windows.Foundation.Point)textBox.Tag;
+            object tag = textBox.Tag;
 
             textBox.Text = ""; // 텍스트 상자 내용 지우기
             OverlayCanvas.Children.Remove(textBox);
             _isInlineEditing = false;
 
-            if (string.IsNullOrWhiteSpace(text)) return;
-
             try
             {
-                string fontFamily = _fontSettings.FontFamily;
-                double fontSize = _fontSettings.FontSize;
-                bool isBold = _fontSettings.IsBold;
-                bool isItalic = _fontSettings.IsItalic;
-                string selectedColor = _fontSettings.Color;
-
-                var newAnn = new PdfAnnotation
+                if (tag is PdfAnnotation existingAnn)
                 {
-                    Type = AnnotationType.Text,
-                    PageIndex = _currentPageIndex,
-                    X = pdfPos.X,
-                    Y = pdfPos.Y,
-                    Content = text,
-                    FontFamily = fontFamily,
-                    FontSize = fontSize,
-                    Color = selectedColor,
-                    IsBold = isBold,
-                    IsItalic = isItalic,
-                    IsApplied = false // 저장 시 반영
-                };
-                _annotations.Add(newAnn);
-                _pdfManager.MarkModified();
+                    // 편집 모드
+                    if (string.IsNullOrWhiteSpace(text))
+                    {
+                        // 텍스트를 모두 지우면 삭제로 간주
+                        _annotations.Remove(existingAnn);
+                        if (_selectedAnnotation == existingAnn) _selectedAnnotation = null;
+                        TxtStatus.Text = "텍스트가 삭제되었습니다";
+                    }
+                    else if (existingAnn.Content != text)
+                    {
+                        existingAnn.Content = text;
+                        existingAnn.IsApplied = false;
+                        _pdfManager.MarkModified();
+                        TxtStatus.Text = "텍스트가 수정되었습니다 (저장 시 반영)";
+                    }
+                }
+                else if (tag is Windows.Foundation.Point pdfPos)
+                {
+                    // 추가 모드
+                    if (string.IsNullOrWhiteSpace(text)) return;
 
-                TxtStatus.Text = "텍스트가 추가되었습니다 (저장 시 반영)";
+                    var newAnn = new PdfAnnotation
+                    {
+                        Type = AnnotationType.Text,
+                        PageIndex = _currentPageIndex,
+                        X = pdfPos.X,
+                        Y = pdfPos.Y,
+                        Content = text,
+                        FontFamily = _fontSettings.FontFamily,
+                        FontSize = _fontSettings.FontSize,
+                        Color = _fontSettings.Color,
+                        IsBold = _fontSettings.IsBold,
+                        IsItalic = _fontSettings.IsItalic,
+                        IsApplied = false
+                    };
+                    _annotations.Add(newAnn);
+                    _pdfManager.MarkModified();
+                    TxtStatus.Text = "텍스트가 추가되었습니다 (저장 시 반영)";
+                }
+
                 RenderAnnotationOverlays();
+
+                // 편집 종료 후 포커스를 메인 영역으로 돌림 (단축키 작동 중요)
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    // 탭이나 메인 레이아웃 중 하나에 포커스를 주어 엑셀러레이터가 다시 작동하게 함
+                    BtnSelect.Focus(FocusState.Programmatic);
+                    this.Content.Focus(FocusState.Programmatic);
+                });
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"ApplyInlineText Error: {ex}");
-                await ShowErrorDialogAsync("오류", $"텍스트 추가 중 오류가 발생했습니다: {ex.Message}");
+                _isInlineEditing = false;
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    this.Content.Focus(FocusState.Programmatic);
+                });
             }
         }
 

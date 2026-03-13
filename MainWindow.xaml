@@ -363,6 +363,7 @@
                                 PointerPressed="OverlayCanvas_PointerPressed"
                                 PointerMoved="OverlayCanvas_PointerMoved"
                                 PointerReleased="OverlayCanvas_PointerReleased"
+                                DoubleTapped="OverlayCanvas_DoubleTapped"
                                 Background="Transparent"/>
                     </Grid>
                 </ScrollViewer>
