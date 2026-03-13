@@ -129,7 +129,7 @@
                 </MenuFlyoutItem>
                 <MenuFlyoutSeparator/>
                 <MenuFlyoutItem Text="PDF 합치기..." Click="MergePdf_Click">
-                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8BB;"/></MenuFlyoutItem.Icon>
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xEB4E;"/></MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
                 <MenuFlyoutItem Text="PDF 나누기..." x:Name="MenuSplitPdf" Click="SplitPdf_Click" IsEnabled="False">
                     <MenuFlyoutItem.Icon><FontIcon Glyph="&#xF156;"/></MenuFlyoutItem.Icon>
@@ -414,7 +414,7 @@
         </Grid>
 
         <!-- Status Bar -->
-        <Grid Grid.Row="5" Background="#0078D4" Padding="12,0">
+        <Grid Grid.Row="5" Padding="12,0" BorderBrush="#30000000" BorderThickness="0,1,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
@@ -423,33 +423,33 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-
+            
             <!-- Page navigation -->
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                 <Button x:Name="BtnPrevPage" Click="PrevPage_Click" Padding="4,2"
                         Background="Transparent" BorderThickness="0" IsEnabled="False">
-                    <FontIcon Glyph="&#xE76B;" FontSize="12" Foreground="White"/>
+                    <FontIcon Glyph="&#xE76B;" FontSize="12"/>
                 </Button>
-                <TextBlock x:Name="TxtPageInfo" Text="페이지: 0 / 0" Foreground="White"
+                <TextBlock x:Name="TxtPageInfo" Text="페이지: 0 / 0"
                            FontSize="12" VerticalAlignment="Center"/>
                 <Button x:Name="BtnNextPage" Click="NextPage_Click" Padding="4,2"
                         Background="Transparent" BorderThickness="0" IsEnabled="False">
-                    <FontIcon Glyph="&#xE76C;" FontSize="12" Foreground="White"/>
+                    <FontIcon Glyph="&#xE76C;" FontSize="12"/>
                 </Button>
-                <TextBox x:Name="TxtGoToPage" Width="50" PlaceholderText="이동" FontSize="16"
-                         Padding="4,2" VerticalAlignment="Center"
+                <TextBox x:Name="TxtGoToPage" Width="40" PlaceholderText="이동" FontSize="11"
+                         Padding="4,2" VerticalAlignment="Center" MinHeight="24"
                          KeyDown="GoToPage_KeyDown"/>
             </StackPanel>
 
-            <AppBarSeparator Grid.Column="1" Foreground="White" Opacity="0.3"/>
+            <AppBarSeparator Grid.Column="1" Opacity="0.3"/>
 
-            <TextBlock Grid.Column="2" x:Name="TxtStatus" Text="준비" Foreground="White" FontSize="12"
+            <TextBlock Grid.Column="2" x:Name="TxtStatus" Text="준비" FontSize="12"
                        VerticalAlignment="Center"/>
 
-            <TextBlock Grid.Column="3" x:Name="TxtToolMode" Text="" Foreground="White"
+            <TextBlock Grid.Column="3" x:Name="TxtToolMode" Text=""
                        FontSize="12" VerticalAlignment="Center" Margin="8,0"/>
-            <AppBarSeparator Grid.Column="4" Foreground="White" Opacity="0.3"/>
-            <TextBlock Grid.Column="5" x:Name="TxtFileInfo" Text="" Foreground="White"
+            <AppBarSeparator Grid.Column="4" Opacity="0.3"/>
+            <TextBlock Grid.Column="5" x:Name="TxtFileInfo" Text=""
                        FontSize="12" VerticalAlignment="Center"/>
         </Grid>
     </Grid>

@@ -37,6 +37,12 @@ namespace PDF_simple_edit.Models
         public string? ImagePath { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public bool IsApplied { get; set; } = false;
+        
+        // Fields for original text replacement
+        public bool IsOriginalTextReplacement { get; set; } = false;
+        public double OriginalPdfX { get; set; }
+        public double OriginalPdfY { get; set; }
+        public string OriginalText { get; set; } = string.Empty;
     }
 
     /// <summary>

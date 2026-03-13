@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using PDF_simple_edit.Models;
 
 namespace PDF_simple_edit.Helpers
 {
@@ -140,7 +141,8 @@ namespace PDF_simple_edit.Helpers
 
             try
             {
-                var font = new XFont(fontFamily, fontSize, style);
+                // Add Unicode option for better Korean/International character support
+                var font = new XFont(fontFamily, fontSize, style, new XPdfFontOptions(PdfFontEncoding.Unicode));
                 var brush = new XSolidBrush(color);
 
                 // Handle multi-line text by splitting into lines
@@ -470,6 +472,305 @@ namespace PDF_simple_edit.Helpers
         {
             _isModified = true;
             ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// Extracts all text objects from a page with their bounding boxes.
+        /// </summary>
+        public async Task<List<SearchResult>> ExtractTextObjectsAsync(int pageIndex)
+        {
+            if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount)
+                return new List<SearchResult>();
+
+            return await Task.Run(() =>
+            {
+                var results = new List<SearchResult>();
+                try
+                {
+                    var page = _document.Pages[pageIndex];
+                    var sequence = ContentReader.ReadContent(page);
+                    var textState = new PdfTextState(page.Height.Point);
+
+                    ProcessContent(sequence, textState, results);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error extracting text: {ex.Message}");
+                }
+                return results;
+            });
+        }
+
+        private void ProcessContent(CSequence sequence, PdfTextState state, List<SearchResult> results)
+        {
+            foreach (var obj in sequence)
+            {
+                if (obj is COperator op)
+                {
+                    switch (op.Name)
+                    {
+                        case "BT": state.InTextObject = true; state.TextMatrix = state.LineMatrix = new XMatrix(); break;
+                        case "ET": state.InTextObject = false; break;
+                        case "Tf": 
+                            if (op.Operands.Count >= 2) 
+                                state.FontSize = (op.Operands[1] is CReal || op.Operands[1] is CInteger)
+                                    ? double.Parse(op.Operands[1].ToString() ?? "12") : 12;
+                            break;
+                        case "Tm":
+                            if (op.Operands.Count >= 6)
+                            {
+                                state.TextMatrix = state.LineMatrix = new XMatrix(
+                                    double.Parse(op.Operands[0].ToString() ?? "0"), double.Parse(op.Operands[1].ToString() ?? "0"),
+                                    double.Parse(op.Operands[2].ToString() ?? "0"), double.Parse(op.Operands[3].ToString() ?? "0"),
+                                    double.Parse(op.Operands[4].ToString() ?? "0"), double.Parse(op.Operands[5].ToString() ?? "0"));
+                            }
+                            break;
+                        case "Td":
+                            if (op.Operands.Count >= 2)
+                            {
+                                var tx = double.Parse(op.Operands[0].ToString() ?? "0");
+                                var ty = double.Parse(op.Operands[1].ToString() ?? "0");
+                                var m = new XMatrix(); m.TranslateAppend(tx, ty);
+                                state.LineMatrix *= m;
+                                state.TextMatrix = state.LineMatrix;
+                            }
+                            break;
+                        case "TD":
+                            if (op.Operands.Count >= 2)
+                            {
+                                var tx = double.Parse(op.Operands[0].ToString() ?? "0");
+                                var ty = double.Parse(op.Operands[1].ToString() ?? "0");
+                                // Sets leading as well, but we ignore it for now
+                                var m = new XMatrix(); m.TranslateAppend(tx, ty);
+                                state.LineMatrix *= m;
+                                state.TextMatrix = state.LineMatrix;
+                            }
+                            break;
+                        case "T*":
+                            {
+                                var m = new XMatrix(); m.TranslateAppend(0, -state.FontSize * 1.2); // Default leading
+                                state.LineMatrix *= m;
+                                state.TextMatrix = state.LineMatrix;
+                            }
+                            break;
+                        case "Tj":
+                            if (op.Operands.Count >= 1)
+                            {
+                                AddTextToResults(op.Operands[0].ToString(), state, results);
+                            }
+                            break;
+                        case "TJ":
+                            if (op.Operands.Count >= 1 && op.Operands[0] is CArray array)
+                            {
+                                var sb = new System.Text.StringBuilder();
+                                foreach (var item in array) if (item is CString) sb.Append(item.ToString());
+                                AddTextToResults(sb.ToString(), state, results);
+                            }
+                            break;
+                        case "'":
+                            {
+                                var m = new XMatrix(); m.TranslateAppend(0, -state.FontSize * 1.2);
+                                state.LineMatrix *= m;
+                                state.TextMatrix = state.LineMatrix;
+                                if (op.Operands.Count >= 1) AddTextToResults(op.Operands[0].ToString(), state, results);
+                            }
+                            break;
+                    }
+                }
+                else if (obj is CSequence inner)
+                {
+                    ProcessContent(inner, state, results);
+                }
+            }
+        }
+
+        private void AddTextToResults(string? text, PdfTextState state, List<SearchResult> results)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            
+            // Basic cleaning of PDF string (remove parentheses if they are there)
+            if (text.StartsWith("(") && text.EndsWith(")")) text = text.Substring(1, text.Length - 2);
+            // PDF Coordinate (x, y) is at the bottom-left of the text base line.
+            // Our UI Coordinate (x, y) is at the top-left of the text.
+            double pdfX = state.TextMatrix.OffsetX;
+            double pdfY = state.TextMatrix.OffsetY;
+            double height = state.FontSize;
+
+            // Convert PDF y (bottom-up) to UI y (top-down)
+            double uiY = state.PageHeight - pdfY - height;
+
+            // Simple width estimate. 0.6 is a magic number, but Malgun Gothic is usually around 0.5-0.7
+            // Multi-byte characters (Korean) are wider.
+            double width = text.Length * state.FontSize * 0.6;
+            if (text.Any(c => c > 255)) width = text.Length * state.FontSize * 1.0; 
+
+            results.Add(new SearchResult
+            {
+                FoundText = text,
+                X = pdfX,
+                Y = uiY,
+                Width = width,
+                Height = height,
+                PageIndex = 0 // Will be set by caller
+            });
+
+            // Advance text matrix roughly (assume horizontal text)
+            var m = new XMatrix(); m.TranslateAppend(width, 0);
+            state.TextMatrix *= m;
+        }
+
+        /// <summary>
+        /// Removes text at a specific coordinate from the PDF content stream.
+        /// </summary>
+        public async Task<bool> RemoveTextAsync(int pageIndex, double x, double y, string text)
+        {
+            if (_document == null || pageIndex < 0 || pageIndex >= _document.PageCount)
+                return false;
+
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    var page = _document.Pages[pageIndex];
+                    var sequence = ContentReader.ReadContent(page);
+                    var state = new PdfTextState(page.Height.Point);
+
+                    if (RemoveTextFromSequence(sequence, state, x, y, text))
+                    {
+                        using var ms = new MemoryStream();
+                        
+                        // ContentWriter is internal in PDFsharp 6.0, use reflection as a workaround
+                        var contentWriterType = typeof(ContentReader).Assembly.GetType("PdfSharp.Pdf.Content.ContentWriter");
+                        if (contentWriterType != null)
+                        {
+                            var writer = Activator.CreateInstance(contentWriterType, new object[] { ms });
+                            var writeMethod = contentWriterType.GetMethod("Write", new[] { typeof(CSequence) });
+                            if (writeMethod != null)
+                            {
+                                writeMethod.Invoke(writer, new object[] { sequence });
+                                
+                                var closeMethod = contentWriterType.GetMethod("Close");
+                                closeMethod?.Invoke(writer, null);
+                                
+                                page.Contents.CreateSingleContent().Stream.Value = ms.ToArray();
+                                _isModified = true;
+                                return true;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error removing text: {ex.Message}");
+                }
+                return false;
+            });
+        }
+
+        private bool RemoveTextFromSequence(CSequence sequence, PdfTextState state, double targetX, double targetY, string targetText)
+        {
+            for (int i = 0; i < sequence.Count; i++)
+            {
+                var obj = sequence[i];
+                if (obj is COperator op)
+                {
+                    // Update state (Tm, Td, etc.) - same as in ExtractTextObjects
+                    switch (op.Name)
+                    {
+                        case "BT": state.InTextObject = true; state.TextMatrix = state.LineMatrix = new XMatrix(); break;
+                        case "ET": state.InTextObject = false; break;
+                        case "Tf": 
+                            if (op.Operands.Count >= 2) 
+                                state.FontSize = (op.Operands[1] is CReal || op.Operands[1] is CInteger)
+                                    ? double.Parse(op.Operands[1].ToString() ?? "12") : 12;
+                            break;
+                        case "Tm":
+                            if (op.Operands.Count >= 6)
+                            {
+                                state.TextMatrix = state.LineMatrix = new XMatrix(
+                                    double.Parse(op.Operands[0].ToString() ?? "0"), double.Parse(op.Operands[1].ToString() ?? "0"),
+                                    double.Parse(op.Operands[2].ToString() ?? "0"), double.Parse(op.Operands[3].ToString() ?? "0"),
+                                    double.Parse(op.Operands[4].ToString() ?? "0"), double.Parse(op.Operands[5].ToString() ?? "0"));
+                            }
+                            break;
+                        case "Td":
+                        case "TD":
+                            if (op.Operands.Count >= 2)
+                            {
+                                var tx = double.Parse(op.Operands[0].ToString() ?? "0");
+                                var ty = double.Parse(op.Operands[1].ToString() ?? "0");
+                                var m = new XMatrix(); m.TranslateAppend(tx, ty);
+                                state.LineMatrix *= m;
+                                state.TextMatrix = state.LineMatrix;
+                            }
+                            break;
+                        case "Tj":
+                        case "TJ":
+                        case "'":
+                            {
+                                string? opText = "";
+                                if (op.Name == "TJ")
+                                {
+                                    var sb = new System.Text.StringBuilder();
+                                    if (op.Operands.Count >= 1 && op.Operands[0] is CArray array)
+                                        foreach (var item in array) if (item is CString) sb.Append(item.ToString());
+                                    opText = sb.ToString();
+                                }
+                                else
+                                {
+                                    opText = op.Operands.Count >= 1 ? op.Operands[0].ToString() : "";
+                                }
+
+                                if (!string.IsNullOrEmpty(opText))
+                                {
+                                    if (opText.StartsWith("(") && opText.EndsWith(")")) opText = opText.Substring(1, opText.Length - 2);
+                                    
+                                    double pdfX = state.TextMatrix.OffsetX;
+                                    double pdfY = state.TextMatrix.OffsetY;
+                                    double uiY = state.PageHeight - pdfY - state.FontSize;
+
+                                    // Match by text and approximate position
+                                    // Being more lenient: if the coordinates are almost identical, remove it even if text slightly different
+                                    bool posMatch = Math.Abs(pdfX - targetX) < 2 && Math.Abs(uiY - targetY) < 5;
+                                    bool textMatch = !string.IsNullOrEmpty(targetText) && opText.Contains(targetText);
+                                    
+                                    // If text is broken (contains many non-printable chars), rely more on position
+                                    bool isBroken = opText.Any(c => c < 32 && c != 10 && c != 13);
+
+                                    if ((textMatch && posMatch) || (posMatch && isBroken))
+                                    {
+                                        sequence.RemoveAt(i);
+                                        return true;
+                                    }
+
+                                    // Advance matrix
+                                    var m = new XMatrix(); m.TranslateAppend(opText.Length * state.FontSize * 0.6, 0);
+                                    state.TextMatrix *= m;
+                                }
+                            }
+                            break;
+                    }
+                }
+                else if (obj is CSequence inner)
+                {
+                    if (RemoveTextFromSequence(inner, state, targetX, targetY, targetText)) return true;
+                }
+            }
+            return false;
+        }
+
+        private class PdfTextState
+        {
+            public double PageHeight { get; }
+            public bool InTextObject { get; set; }
+            public XMatrix TextMatrix { get; set; } = new XMatrix();
+            public XMatrix LineMatrix { get; set; } = new XMatrix();
+            public double FontSize { get; set; } = 12;
+
+            public PdfTextState(double pageHeight)
+            {
+                this.PageHeight = pageHeight;
+            }
         }
     }
 }
