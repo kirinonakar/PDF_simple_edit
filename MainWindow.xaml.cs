@@ -838,7 +838,7 @@ private void FitToPage()
         {
             // Focus check to prevent tool activation while typing
             var focused = FocusManager.GetFocusedElement(this.Content.XamlRoot);
-            if (focused is TextBox || focused is NumberBox || _isInlineEditing)
+            if (focused is TextBox || focused is NumberBox || focused is ComboBox || _isInlineEditing)
             {
                 args.Handled = true; // Consume the accelerator so it doesn't trigger the click, but let the key event continue if needed
                 return;
@@ -1744,19 +1744,19 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             }
             cmbFont.SelectedItem = _fontSettings.FontFamily;
 
-            var nbSize = new NumberBox
+            var cmbSize = new ComboBox { Header = "크기", Width = 100 };
+            foreach (var size in new[] { "8", "9", "10", "11", "12", "14", "16", "18", "20", "24", "28", "32", "36", "48", "72" })
             {
-                Value = _fontSettings.FontSize, Minimum = 6, Maximum = 144,
-                SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
-                Width = 100
-            };
+                cmbSize.Items.Add(size);
+            }
+            cmbSize.SelectedItem = _fontSettings.FontSize.ToString();
 
             var chkBold = new CheckBox { Content = "굵게", IsChecked = _fontSettings.IsBold };
             var chkItalic = new CheckBox { Content = "기울임", IsChecked = _fontSettings.IsItalic };
 
             var fontRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             fontRow.Children.Add(cmbFont);
-            fontRow.Children.Add(nbSize);
+            fontRow.Children.Add(cmbSize);
             fontRow.Children.Add(chkBold);
             fontRow.Children.Add(chkItalic);
 
@@ -1798,7 +1798,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(txtContent.Text))
             {
                 string fontFamily = cmbFont.SelectedItem?.ToString() ?? _fontSettings.FontFamily;
-                double fontSize = nbSize.Value;
+                double fontSize = double.TryParse(cmbSize.SelectedItem?.ToString(), out double sizeVal) ? sizeVal : _fontSettings.FontSize;
                 bool isBold = chkBold.IsChecked == true;
                 bool isItalic = chkItalic.IsChecked == true;
 
@@ -2074,10 +2074,13 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 _fontSettings.FontFamily = item.Content?.ToString() ?? "맑은 고딕";
         }
 
-        private void FontSize_Changed(NumberBox sender, NumberBoxValueChangedEventArgs args)
+        private void FontSize_Changed(object sender, SelectionChangedEventArgs e)
         {
-            if (!double.IsNaN(args.NewValue))
-                _fontSettings.FontSize = args.NewValue;
+            if (CmbFontSize.SelectedItem is ComboBoxItem item && 
+                double.TryParse(item.Content?.ToString(), out double size))
+            {
+                _fontSettings.FontSize = size;
+            }
         }
 
         private void FontBold_Click(object sender, RoutedEventArgs e) =>
@@ -2385,17 +2388,16 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             };
             panel.Children.Add(defaultFont);
 
-            var defaultSize = new NumberBox
+            var defaultSize = new ComboBox { Header = "기본 글자 크기", Width = 150 };
+            foreach (var size in new[] { "8", "9", "10", "11", "12", "14", "16", "18", "20", "24", "28", "32", "36", "48", "72" })
             {
-                Header = "기본 글자 크기", Value = _fontSettings.FontSize,
-                Minimum = 6, Maximum = 144,
-                SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
-                Width = 150
-            };
-            defaultSize.ValueChanged += (s, args) =>
+                defaultSize.Items.Add(size);
+            }
+            defaultSize.SelectedItem = _fontSettings.FontSize.ToString();
+            defaultSize.SelectionChanged += (sender, args) =>
             {
-                if (!double.IsNaN(args.NewValue))
-                    _fontSettings.FontSize = args.NewValue;
+                if (double.TryParse(defaultSize.SelectedItem?.ToString(), out double sizeVal))
+                    _fontSettings.FontSize = sizeVal;
             };
             panel.Children.Add(defaultSize);
 

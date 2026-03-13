@@ -801,8 +801,7 @@ namespace PDF_simple_edit.Helpers
                         bool anyRemoved = false;
                         if (targetOp != null)
                         {
-                            ReplaceWithEmptyString(targetOp as COperator);
-                            anyRemoved = true;
+                            anyRemoved = MakeTextInvisible(sequence, targetOp);
                         }
 
                         if (!anyRemoved)
@@ -964,9 +963,18 @@ namespace PDF_simple_edit.Helpers
 
                                 if ((posMatch && textMatch) || veryCloseMatch || (posMatch && rawText.Length == 0))
                                 {
-                                    ReplaceWithEmptyString(op);
+                                    var trInvisible = PdfSharp.Pdf.Content.Objects.OpCodes.OperatorFromName("Tr");
+                                    trInvisible.Operands.Add(new CInteger { Value = 3 });
+
+                                    var trVisible = PdfSharp.Pdf.Content.Objects.OpCodes.OperatorFromName("Tr");
+                                    trVisible.Operands.Add(new CInteger { Value = 0 });
+
+                                    sequence.Insert(i, trInvisible);
+                                    sequence.Insert(i + 2, trVisible);
+                                    
+                                    i += 2; // 삽입한 2개의 오퍼레이터만큼 인덱스 건너뛰기
                                     removed = true;
-                                    continue; 
+                                    continue;
                                 }
 
                                 double width = rawText.Length * state.FontSize * 0.5;
@@ -1105,7 +1113,9 @@ namespace PDF_simple_edit.Helpers
 
                         // 4. [수정됨] 오퍼레이터를 완전히 제거하면 PdfSharp 스트림 덮어쓰기에서 누락되거나 좌표가 꼬일 수 있습니다.
                         // RemoveTextAsync와 동일하게 값 자체를 빈 문자열로 만들어 화면에서 확실히 지웁니다.
-                        ReplaceWithEmptyString(targetOperator);
+                        // ReplaceWithEmptyString(targetOperator); <-- 이 줄을 삭제하고 아래로 교체합니다.
+
+                        MakeTextInvisible(sequence, targetOperator); // 레이아웃은 유지하고 글자만 투명하게 숨김
 
                         return clonedOp;
                     }
@@ -1165,6 +1175,37 @@ namespace PDF_simple_edit.Helpers
             return clone;
         }
 
+/// <summary>
+/// 타겟 오퍼레이터 앞뒤로 투명화 모드(3 Tr)와 복구 모드(0 Tr)를 삽입하여 화면에서 숨깁니다.
+/// </summary>
+private bool MakeTextInvisible(CSequence sequence, object targetOp)
+{
+    for (int i = 0; i < sequence.Count; i++)
+    {
+        if (object.ReferenceEquals(sequence[i], targetOp))
+        {
+            // 1. 텍스트를 그리지 않도록 투명 모드(3) 지정
+            var trInvisible = PdfSharp.Pdf.Content.Objects.OpCodes.OperatorFromName("Tr");
+            trInvisible.Operands.Add(new CInteger { Value = 3 });
+
+            // 2. 원래 상태인 Fill(0)로 복구 (다음 텍스트에 영향 방지)
+            var trVisible = PdfSharp.Pdf.Content.Objects.OpCodes.OperatorFromName("Tr");
+            trVisible.Operands.Add(new CInteger { Value = 0 });
+
+            // 타겟 오퍼레이터(i) 앞과 뒤에 각각 삽입
+            sequence.Insert(i, trInvisible);
+            sequence.Insert(i + 2, trVisible);
+            return true;
+        }
+        
+        // 중첩된 시퀀스 재귀 탐색
+        if (sequence[i] is CSequence innerSeq)
+        {
+            if (MakeTextInvisible(innerSeq, targetOp)) return true;
+        }
+    }
+    return false;
+}
 
         private void SetCOperandValue(CSequence operands, int index, double value)
         {

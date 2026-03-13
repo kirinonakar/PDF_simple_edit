@@ -220,9 +220,24 @@
                     <ComboBoxItem Content="Calibri"/>
                     <ComboBoxItem Content="Segoe UI"/>
                 </ComboBox>
-                <NumberBox x:Name="NbFontSize" Value="12" Minimum="6" Maximum="144"
-                           SpinButtonPlacementMode="Compact" Width="90"
-                           ValueChanged="FontSize_Changed" VerticalAlignment="Center"/>
+                <ComboBox x:Name="CmbFontSize" Width="90" 
+                          SelectionChanged="FontSize_Changed" VerticalAlignment="Center">
+                    <ComboBoxItem Content="8"/>
+                    <ComboBoxItem Content="9"/>
+                    <ComboBoxItem Content="10"/>
+                    <ComboBoxItem Content="11"/>
+                    <ComboBoxItem Content="12" IsSelected="True"/>
+                    <ComboBoxItem Content="14"/>
+                    <ComboBoxItem Content="16"/>
+                    <ComboBoxItem Content="18"/>
+                    <ComboBoxItem Content="20"/>
+                    <ComboBoxItem Content="24"/>
+                    <ComboBoxItem Content="28"/>
+                    <ComboBoxItem Content="32"/>
+                    <ComboBoxItem Content="36"/>
+                    <ComboBoxItem Content="48"/>
+                    <ComboBoxItem Content="72"/>
+                </ComboBox>
                 <ToggleButton x:Name="BtnBold" ToolTipService.ToolTip="굵게"
                               Click="FontBold_Click" Padding="8,6">
                     <FontIcon Glyph="&#xE8DD;" FontSize="14"/>
