@@ -68,7 +68,7 @@ namespace PDF_simple_edit.Helpers
 
     public class PrintHelper
     {
-        public async Task PrintAsync(PdfDocument document, string filePath, IntPtr windowHandle)
+        public async Task PrintAsync(string filePath, IntPtr windowHandle)
         {
             try
             {

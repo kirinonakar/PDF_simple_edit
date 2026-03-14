@@ -64,6 +64,7 @@ namespace PDF_simple_edit
         private bool _isDialogOpen = false;
         private bool _isInlineEditing = false;
 
+
         private string? _lastSearchQuery;
         private int _lastFoundPage = -1;
         private int _lastFoundWordIndex = -1;
@@ -506,7 +507,7 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
 
         private async void Print_Click(object sender, RoutedEventArgs? e)
         {
-            if (!_pdfManager.IsLoaded || _pdfManager.Document == null) return;
+            if (!_pdfManager.IsLoaded) return;
 
             try
             {
@@ -516,7 +517,7 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
 
                 var hwnd = WindowNative.GetWindowHandle(this);
                 // PerformSaveAsync handles iText 9 document flushing
-                await _printHelper.PrintAsync(_pdfManager.Document, tempPath, hwnd);
+                await _printHelper.PrintAsync(tempPath, hwnd);
             }
             catch (Exception ex)
             {
@@ -2240,7 +2241,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                     TxtStatus.Text = "PDF 나누기 중...";
                     LoadingRing.IsActive = true;
 
-                    bool success = false; // Split not yet implemented in iText
+                    // Split not yet implemented in iText
                     LoadingRing.IsActive = false;
                 }
             }
@@ -2407,17 +2408,37 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
         private async Task PerformSaveAsync(string filePath, bool isUserSave)
         {
-            if (!_pdfManager.IsLoaded || _pdfManager.Document == null) return;
+            if (!_pdfManager.IsLoaded) return;
 
             TxtStatus.Text = "저장 중...";
             LoadingRing.IsActive = true;
 
             try
             {
-                // iText 9 handles document modifications differently. 
-                // We'll perform a standard save via PdfDocumentManager.
+                // Applying all unapplied annotations before saving in a single batch
+                var unapplied = _annotations.Where(a => !a.IsApplied).ToList();
+                if (unapplied.Count > 0)
+                {
+                    _pdfManager.ApplyBatchEdit(doc =>
+                    {
+                        foreach (var ann in unapplied)
+                        {
+                            ApplyAnnotationToDocumentInternal(doc, ann);
+                            ann.IsApplied = true;
+                        }
+                    });
+                }
+
                 bool successFinal = await _pdfManager.SaveAsAsync(filePath, isUserSave);
                 if (!successFinal) throw new Exception("iText 9 save failed.");
+                
+                // Once saved and burned in, we can clear the annotations to avoid double rendering
+                if (isUserSave)
+                {
+                    _annotations.Clear();
+                    await RenderCurrentPageAsync();
+                }
+                
                 return;
             }
             catch (Exception ex)
@@ -2434,30 +2455,54 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         private void ApplyAnnotationToDocument(PdfAnnotation ann)
         {
             if (!_pdfManager.IsLoaded) return;
+            _pdfManager.ApplyBatchEdit(doc => ApplyAnnotationToDocumentInternal(doc, ann));
+        }
 
-            var color = ColorConstants.BLACK; 
-            // In iText 9, we usually set colors from constants or RGB
+        private void ApplyAnnotationToDocumentInternal(PdfDocument doc, PdfAnnotation ann)
+        {
+            var pageSize = doc.GetPage(ann.PageIndex + 1).GetPageSize();
+            if (pageSize.GetHeight() == 0) return;
+
+            // Flip Y for PDF coordinate system (UI Top-Down to PDF Bottom-Up)
+            double pdfY = CoordinateMapper.MapToPdfY(ann.Y, pageSize.GetHeight());
+            
+            // For text, iText MoveText(x, y) is the baseline. 
+            // In UI, ann.Y is the top. We need to subtract the font size to get the baseline.
+            double textPdfY = pdfY - ann.FontSize;
+
+            // For images/rectangles, iText positioning is usually at the bottom.
+            double rectPdfY = pdfY - ann.Height;
+
+            // Color parsing
+            Color iTextColor = ColorConstants.BLACK;
+            try 
+            {
+                if (!string.IsNullOrEmpty(ann.Color))
+                {
+                    var uColor = ParseColor(ann.Color);
+                    iTextColor = new DeviceRgb(uColor.R, uColor.G, uColor.B);
+                }
+            } catch { }
             
             switch (ann.Type)
             {
                 case AnnotationType.Text:
                 case AnnotationType.FreeText:
-                    _pdfManager.AddText(ann.PageIndex, ann.X, ann.Y, ann.Content,
-                        ann.FontFamily, ann.FontSize, color);
+                    _pdfManager.AddTextInternal(doc, ann.PageIndex, ann.X, textPdfY, ann.Content,
+                        ann.FontFamily, ann.FontSize, iTextColor, ann.IsBold, ann.IsItalic);
                     break;
                 case AnnotationType.Highlight:
-                    _pdfManager.AddHighlight(ann.PageIndex, ann.X, ann.Y,
-                        ann.Width, ann.Height, ColorConstants.YELLOW, 0.3f);
+                    _pdfManager.AddHighlightInternal(doc, ann.PageIndex, ann.X, rectPdfY,
+                        ann.Width, ann.Height, iTextColor, (float)ann.Opacity);
                     break;
                 case AnnotationType.StickyNote:
-                    // Sticky note needs specialized iText implementation if wanted as native annotation
-                    _pdfManager.AddText(ann.PageIndex, ann.X, ann.Y, "[Memo] " + ann.Content,
-                        ann.FontFamily, ann.FontSize, color);
+                    _pdfManager.AddTextInternal(doc, ann.PageIndex, ann.X, textPdfY, "[Memo] " + ann.Content,
+                        ann.FontFamily, ann.FontSize, iTextColor);
                     break;
                 case AnnotationType.Image:
                     if (ann.ImagePath != null)
-                        _pdfManager.AddImage(ann.PageIndex, ann.ImagePath,
-                            ann.X, ann.Y, ann.Width, ann.Height);
+                        _pdfManager.AddImageInternal(doc, ann.PageIndex, ann.ImagePath,
+                            ann.X, rectPdfY, ann.Width, ann.Height);
                     break;
             }
         }
