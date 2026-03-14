@@ -1008,7 +1008,8 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                         if (isText)
                         {
                             // Expand the removal area slightly based on font size to ensure full coverage
-                            removed = await _pdfManager.RemoveTextAsync(_currentPageIndex, targetAnn.OriginalPdfX, targetAnn.OriginalPdfY, targetAnn.Width, targetAnn.Height);
+                            // UI 좌표(X, Y)를 사용하여 텍스트 제거
+                            removed = await _pdfManager.RemoveTextAsync(_currentPageIndex, targetAnn.X, targetAnn.Y, targetAnn.Width, targetAnn.Height);
                         }
                         else
                         {
@@ -1270,7 +1271,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                     if (movedAnn.IsOriginalTextReplacement)
                     {
                         // Remove from original content stream immediately since it moved
-                        await _pdfManager.RemoveTextAsync(_currentPageIndex, movedAnn.OriginalPdfX, movedAnn.OriginalPdfY, movedAnn.Width, movedAnn.Height);
+                        // UI 좌표(X, Y)를 사용하여 텍스트 제거
+                        await _pdfManager.RemoveTextAsync(_currentPageIndex, movedAnn.X, movedAnn.Y, movedAnn.Width, movedAnn.Height);
                         movedAnn.IsOriginalTextReplacement = false; // Now it's a normal annotation
                     }
                     else if (movedAnn.IsOriginalImageReplacement && movedAnn.OriginalImageName != null)
@@ -1670,7 +1672,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         if (existingAnn.IsOriginalTextReplacement)
                         {
                             textWasRemoved = await _pdfManager.RemoveTextAsync(_currentPageIndex, 
-                                existingAnn.OriginalPdfX, existingAnn.OriginalPdfY, existingAnn.Width, existingAnn.Height);
+                                existingAnn.X, existingAnn.Y, existingAnn.Width, existingAnn.Height);
                         }
                         _annotations.Remove(existingAnn);
                         if (_selectedAnnotation == existingAnn) _selectedAnnotation = null;
@@ -1681,7 +1683,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         if (existingAnn.IsOriginalTextReplacement)
                         {
                             textWasRemoved = await _pdfManager.RemoveTextAsync(_currentPageIndex, 
-                                existingAnn.OriginalPdfX, existingAnn.OriginalPdfY, existingAnn.Width, existingAnn.Height);
+                                existingAnn.X, existingAnn.Y, existingAnn.Width, existingAnn.Height);
                             existingAnn.IsOriginalTextReplacement = false;
                         }
                         
@@ -2051,7 +2053,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 var ann = _selectedAnnotation;
                 if (ann.IsOriginalTextReplacement)
                 {
-                    await _pdfManager.RemoveTextAsync(_currentPageIndex, ann.OriginalPdfX, ann.OriginalPdfY, ann.Width, ann.Height);
+                    await _pdfManager.RemoveTextAsync(_currentPageIndex, ann.X, ann.Y, ann.Width, ann.Height);
                 }
 
                 _annotations.Remove(ann);
@@ -2499,19 +2501,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
         private void ApplyAnnotationToDocumentInternal(PdfDocument doc, PdfAnnotation ann)
         {
-            var pageSize = doc.GetPage(ann.PageIndex + 1).GetPageSize();
-            if (pageSize.GetHeight() == 0) return;
-
-            // Flip Y for PDF coordinate system (UI Top-Down to PDF Bottom-Up)
-            double pdfY = CoordinateMapper.MapToPdfY(ann.Y, pageSize.GetHeight());
-            
-            // For text, iText MoveText(x, y) is the baseline. 
-            // In UI, ann.Y is the top. We need to subtract the font size (multiplied by a typical ascent factor) to get the baseline.
-            // A typical baseline is about 80% down from the top of the em box.
-            double textPdfY = pdfY - (ann.FontSize * 0.85);
-
-            // For images/rectangles, iText positioning is at the bottom-left corner of the object.
-            double rectPdfY = pdfY - ann.Height;
+            // PdfDocumentManager의 메서드들이 이미 UI(Top-Left) -> PDF(Bottom-Left) 좌표 변환을 수행하므로,
+            // 여기서는 UI 좌표(ann.X, ann.Y)를 그대로 전달해야 합니다. 중복 변환 시 텍스트가 사라질 수 있습니다.
 
             // Color parsing
             Color iTextColor = ColorConstants.BLACK;
@@ -2528,21 +2519,21 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             {
                 case AnnotationType.Text:
                 case AnnotationType.FreeText:
-                    _pdfManager.AddTextInternal(doc, ann.PageIndex, ann.X, textPdfY, ann.Content,
+                    _pdfManager.AddTextInternal(doc, ann.PageIndex, ann.X, ann.Y, ann.Content,
                         ann.FontFamily, ann.FontSize, iTextColor, ann.IsBold, ann.IsItalic);
                     break;
                 case AnnotationType.Highlight:
-                    _pdfManager.AddHighlightInternal(doc, ann.PageIndex, ann.X, rectPdfY,
+                    _pdfManager.AddHighlightInternal(doc, ann.PageIndex, ann.X, ann.Y,
                         ann.Width, ann.Height, iTextColor, (float)ann.Opacity);
                     break;
                 case AnnotationType.StickyNote:
-                    _pdfManager.AddTextInternal(doc, ann.PageIndex, ann.X, textPdfY, "[Memo] " + ann.Content,
+                    _pdfManager.AddTextInternal(doc, ann.PageIndex, ann.X, ann.Y, "[Memo] " + ann.Content,
                         ann.FontFamily, ann.FontSize, iTextColor);
                     break;
                 case AnnotationType.Image:
                     if (ann.ImagePath != null)
                         _pdfManager.AddImageInternal(doc, ann.PageIndex, ann.ImagePath,
-                            ann.X, rectPdfY, ann.Width, ann.Height);
+                            ann.X, ann.Y, ann.Width, ann.Height);
                     break;
             }
         }

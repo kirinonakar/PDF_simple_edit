@@ -143,33 +143,36 @@ namespace PDF_simple_edit.Helpers
             {
                 try
                 {
-                    using var msInput = new MemoryStream(_pdfBytes);
-                    using var msOutput = new MemoryStream();
-                    
-                    using (var reader = new PdfReader(msInput))
-                    using (var writer = new PdfWriter(msOutput))
-                    using (var doc = new PdfDocument(reader, writer))
+                    using (var msInput = new MemoryStream(_pdfBytes))
+                    using (var msOutput = new MemoryStream())
                     {
-                        editAction(doc);
-                        doc.Close(); // 명시적으로 닫아야 스트림에 변경 사항이 완벽히 기록됩니다.
-                    }
-                    
-                    byte[] resultBytes = msOutput.ToArray();
-                    
-                    if (resultBytes.Length > 0)
-                    {
-                        _pdfBytes = resultBytes;
-                        _isModified = true;
-                        _contentCache.Clear(); 
+                        var reader = new PdfReader(msInput);
                         
-                        ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-                        DocumentChanged?.Invoke(this, EventArgs.Empty);
+                        // iText 9 에러 방지: WriterProperties 설정 (BouncyCastle 어댑터가 로드된 상태여야 함)
+                        WriterProperties props = new WriterProperties();
+                        var writer = new PdfWriter(msOutput, props);
+                        
+                        // Stamping 모드 사용하여 불필요한 객체 복제 및 직렬화 에러 방지
+                        using (var doc = new PdfDocument(reader, writer, new StampingProperties()))
+                        {
+                            editAction(doc);
+                        }
+                        
+                        byte[] resultBytes = msOutput.ToArray();
+                        if (resultBytes.Length > 0)
+                        {
+                            _pdfBytes = resultBytes;
+                            _isModified = true;
+                            _contentCache.Clear(); 
+                            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                            DocumentChanged?.Invoke(this, EventArgs.Empty);
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    // 조용히 넘어가지 말고 예외를 던져서 앱을 멈추게 합니다.
-                    throw new Exception($"PDF 편집 중 치명적 에러 발생: {ex.Message}\n{ex.StackTrace}");
+                    // 에러 메시지에 더 자세한 정보 포함
+                    throw new Exception($"PDF 편집 중 에러 발생: {ex.Message}\n타입: {ex.GetType().Name}\n스택: {ex.StackTrace}");
                 }
             }
         }
@@ -217,13 +220,11 @@ namespace PDF_simple_edit.Helpers
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages()) return;
 
             var page = doc.GetPage(pageIndex + 1);
-            
-            // 일반 PageSize 대신, 실제 화면에 잘려서 보이는 CropBox 기준으로 좌표를 잡아야 정확합니다.
-            var pageSize = page.GetCropBox(); 
+            var rect = page.GetCropBox(); 
 
-            // 1. 정확한 Y축 반전 계산 (화면상단 -> PDF하단) + 폰트 기준선 보정
-            float pdfY = pageSize.GetHeight() - (float)y - (float)fontSize;
-            float pdfX = (float)x;
+            // 폰트가 구워질 PDF 절대 좌표 계산
+            float pdfX = rect.GetLeft() + (float)x;
+            float pdfY = rect.GetBottom() + (rect.GetHeight() - (float)y - (float)fontSize);
 
             // 2. 한글 출력을 위한 폰트 강제 주입 (맑은 고딕)
             PdfFont font;
@@ -346,12 +347,17 @@ namespace PDF_simple_edit.Helpers
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages()) return;
 
             var page = doc.GetPage(pageIndex + 1);
+            var pageSize = page.GetPageSize();
+
+            // UI 좌표(Top-Down)를 PDF 좌표(Bottom-Up)로 변환
+            float pdfY = pageSize.GetHeight() - (float)y - (float)height;
+
             ImageData data = ImageDataFactory.Create(imagePath);
             iText.Layout.Element.Image img = new iText.Layout.Element.Image(data);
             
             // Use iText.Layout.Canvas for easy positioning
-            using var canvasLayout = new iText.Layout.Canvas(new PdfCanvas(page), page.GetPageSize());
-            img.SetFixedPosition((float)x, (float)y, (float)width);
+            using var canvasLayout = new iText.Layout.Canvas(new PdfCanvas(page), pageSize);
+            img.SetFixedPosition((float)x, pdfY, (float)width);
             if (height > 0) img.SetHeight((float)height);
             canvasLayout.Add(img);
         }
@@ -508,19 +514,30 @@ namespace PDF_simple_edit.Helpers
                 ApplyEdit(doc =>
                 {
                     var page = doc.GetPage(pageIndex + 1);
-                    var pageSize = page.GetPageSize();
+                    var rect = page.GetCropBox(); // 실제 보이는 영역 기준
                     
-                    // 핵심: UI(Top-Left) 좌표를 PDF(Bottom-Left) 좌표로 변환
-                    float pdfY = pageSize.GetHeight() - (float)y - (float)height;
+                    // PDF의 실제 원점(Left, Bottom) 오프셋을 반영해야 정확한 좌표가 나옵니다.
+                    float offsetLeft = rect.GetLeft();
+                    float offsetBottom = rect.GetBottom();
+                    
+                    // UI(Top-Left) -> PDF(Bottom-Left) 변환 + 페이지 오프셋 반영
+                    float pdfX = offsetLeft + (float)x;
+                    float pdfY = offsetBottom + (rect.GetHeight() - (float)y - (float)height);
 
-                    float expandedY = pdfY - ((float)height * 0.2f);
-                    float expandedHeight = (float)height * 1.4f;
+                    // 삭제 영역을 텍스트 경계보다 넉넉하게 확장 (매우 중요: 미세하게 어긋나면 삭제 안 됨)
+                    float padding = 2.0f; 
+                    float expandedX = pdfX - padding;
+                    float expandedY = pdfY - padding;
+                    float expandedWidth = (float)width + (padding * 2);
+                    float expandedHeight = (float)height + (padding * 2);
 
-                    var location = new PdfCleanUpLocation(pageIndex + 1, new Rectangle((float)x, expandedY, (float)width, expandedHeight), ColorConstants.WHITE);
+                    var location = new PdfCleanUpLocation(pageIndex + 1, 
+                        new Rectangle(expandedX, expandedY, expandedWidth, expandedHeight), 
+                        ColorConstants.WHITE);
 
-                    // 올바른 pdfSweep 도구 실행 방식
-                    PdfCleanUpTool cleaner = new PdfCleanUpTool(doc);
-                    cleaner.AddCleanupLocation(location);
+                    // 조언에 따른 최적의 pdfSweep 실행 방식: 생성자에 위치 리스트를 직접 전달
+                    var locations = new List<PdfCleanUpLocation> { location };
+                    PdfCleanUpTool cleaner = new PdfCleanUpTool(doc, locations, new CleanUpProperties());
                     cleaner.CleanUp();
                     
                     success = true;
@@ -537,16 +554,22 @@ namespace PDF_simple_edit.Helpers
                 ApplyEdit(doc =>
                 {
                     var page = doc.GetPage(pageIndex + 1);
-                    var pageSize = page.GetPageSize();
+                    var rect = page.GetCropBox();
+                    float offsetLeft = rect.GetLeft();
+                    float offsetBottom = rect.GetBottom();
                     
-                    // 기존 텍스트 삭제 영역 Y축 변환
-                    float oldPdfY = pageSize.GetHeight() - (float)oldY - (float)height;
+                    float oldPdfX = offsetLeft + (float)oldX;
+                    float oldPdfY = offsetBottom + (rect.GetHeight() - (float)oldY - (float)height);
                     
-                    var location = new PdfCleanUpLocation(pageIndex + 1, new Rectangle((float)oldX, oldPdfY, (float)width, (float)height), ColorConstants.WHITE);
+                    // 삭제 영역 확장
+                    float padding = 2.0f;
+                    var location = new PdfCleanUpLocation(pageIndex + 1, 
+                        new Rectangle(oldPdfX - padding, oldPdfY - padding, (float)width + (padding*2), (float)height + (padding*2)), 
+                        ColorConstants.WHITE);
                     
-                    // pdfSweep 실행
-                    PdfCleanUpTool cleaner = new PdfCleanUpTool(doc);
-                    cleaner.AddCleanupLocation(location);
+                    // pdfSweep 실행 (생성자 주입 방식)
+                    var locations = new List<PdfCleanUpLocation> { location };
+                    PdfCleanUpTool cleaner = new PdfCleanUpTool(doc, locations, new CleanUpProperties());
                     cleaner.CleanUp();
 
                     // 새 위치에 텍스트 추가 (새 위치 newY는 AddTextInternal에서 자동 변환됨)

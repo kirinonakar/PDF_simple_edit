@@ -1,0 +1,13 @@
+  복원할 프로젝트를 확인하는 중...
+  복원할 모든 프로젝트가 최신 상태입니다.
+D:\ASUNA\Tools\Visual_studio\PDF_simple_edit\Helpers\PdfDocumentManager.cs(153,31): error CS1061: 'WriterProperties'에는 'SetFullCompression'에 대한 정의가 포함되어 있지 않고, 'WriterProperties' 형식의 첫 번째 인수를 허용하는 액세스 가능한 확장 메서드 'SetFullCompression'이(가) 없습니다. using 지시문 또는 어셈블리 참조가 있는지 확인하세요. [D:\ASUNA\Tools\Visual_studio\PDF_simple_edit\PDF_simple_edit.csproj]
+C:\Users\totor\.nuget\packages\microsoft.windowsappsdk.winui\1.8.260204000\buildTransitive\Microsoft.UI.Xaml.Markup.Compiler.interop.targets(845,9): error MSB3073: ""C:\Users\totor\.nuget\packages\microsoft.windowsappsdk.winui\1.8.260204000\buildTransitive\..\tools\net6.0\..\net472\XamlCompiler.exe" "obj\Release\net10.0-windows10.0.19041.0\win-x64\\input.json" "obj\Release\net10.0-windows10.0.19041.0\win-x64\\output.json"" 명령이 종료되었습니다(코드: 1). [D:\ASUNA\Tools\Visual_studio\PDF_simple_edit\PDF_simple_edit.csproj]
+
+빌드하지 못했습니다.
+
+D:\ASUNA\Tools\Visual_studio\PDF_simple_edit\Helpers\PdfDocumentManager.cs(153,31): error CS1061: 'WriterProperties'에는 'SetFullCompression'에 대한 정의가 포함되어 있지 않고, 'WriterProperties' 형식의 첫 번째 인수를 허용하는 액세스 가능한 확장 메서드 'SetFullCompression'이(가) 없습니다. using 지시문 또는 어셈블리 참조가 있는지 확인하세요. [D:\ASUNA\Tools\Visual_studio\PDF_simple_edit\PDF_simple_edit.csproj]
+C:\Users\totor\.nuget\packages\microsoft.windowsappsdk.winui\1.8.260204000\buildTransitive\Microsoft.UI.Xaml.Markup.Compiler.interop.targets(845,9): error MSB3073: ""C:\Users\totor\.nuget\packages\microsoft.windowsappsdk.winui\1.8.260204000\buildTransitive\..\tools\net6.0\..\net472\XamlCompiler.exe" "obj\Release\net10.0-windows10.0.19041.0\win-x64\\input.json" "obj\Release\net10.0-windows10.0.19041.0\win-x64\\output.json"" 명령이 종료되었습니다(코드: 1). [D:\ASUNA\Tools\Visual_studio\PDF_simple_edit\PDF_simple_edit.csproj]
+    경고 0개
+    오류 2개
+
+경과 시간: 00:00:03.83
