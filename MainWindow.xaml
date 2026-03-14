@@ -317,17 +317,21 @@
                           Padding="4">
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="local:PageThumbnailData">
-                            <Grid Margin="4" MaxWidth="180">
+                            <Grid Margin="8" Width="140">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
-                                <Border Background="White"
+                                <Border Background="#FFE0E0E0"
                                         BorderBrush="#40000000"
                                         BorderThickness="1" CornerRadius="4"
-                                        Padding="2" HorizontalAlignment="Center">
-                                    <Image Source="{x:Bind Thumbnail, Mode=OneWay}" MaxHeight="200"
-                                           Stretch="Uniform"/>
+                                        Width="120" Height="160"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                    <Image Source="{x:Bind Thumbnail, Mode=OneWay}" 
+                                           Stretch="Uniform"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
                                 </Border>
                                 <TextBlock Grid.Row="1" Text="{x:Bind PageLabel, Mode=OneWay}"
                                            HorizontalAlignment="Center" Margin="0,4,0,0"

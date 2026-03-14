@@ -24,14 +24,29 @@ namespace PDF_simple_edit.Helpers
             try
             {
                 var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(filePath);
-                var pdfDoc = await Windows.Data.Pdf.PdfDocument.LoadFromFileAsync(file);
+                using var stream = await file.OpenReadAsync();
+                return await RenderPageWithWindowsPdfStreamAsync(stream, pageIndex, scale);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Windows PDF render file error: {ex.Message}");
+                return null;
+            }
+        }
+
+        public static async Task<MemoryStream?> RenderPageWithWindowsPdfStreamAsync(
+            Windows.Storage.Streams.IRandomAccessStream inputStream, int pageIndex, double scale = 2.0)
+        {
+            try
+            {
+                var pdfDoc = await Windows.Data.Pdf.PdfDocument.LoadFromStreamAsync(inputStream);
 
                 if (pageIndex < 0 || pageIndex >= (int)pdfDoc.PageCount)
                     return null;
 
                 using var page = pdfDoc.GetPage((uint)pageIndex);
                 var ms = new MemoryStream();
-                var stream = ms.AsRandomAccessStream();
+                var outputStream = ms.AsRandomAccessStream();
 
                 var options = new Windows.Data.Pdf.PdfPageRenderOptions
                 {
@@ -40,14 +55,14 @@ namespace PDF_simple_edit.Helpers
                     BackgroundColor = Windows.UI.Color.FromArgb(255, 255, 255, 255)
                 };
 
-                await page.RenderToStreamAsync(stream, options);
-                await stream.FlushAsync();
+                await page.RenderToStreamAsync(outputStream, options);
+                await outputStream.FlushAsync();
                 ms.Position = 0;
                 return ms;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Windows PDF render error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Windows PDF render stream error: {ex.Message}");
                 return null;
             }
         }

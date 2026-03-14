@@ -63,6 +63,7 @@ namespace PDF_simple_edit
         private Microsoft.UI.Xaml.Shapes.Rectangle? _dragRect;
         private bool _isDialogOpen = false;
         private bool _isInlineEditing = false;
+        private System.Threading.CancellationTokenSource? _thumbnailCts;
 
 #pragma warning disable CS0414
         private string? _lastSearchQuery;
@@ -186,10 +187,11 @@ namespace PDF_simple_edit
 
         private async void DocTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            // Unhook old events if any
+            // Unhook old events
             if (_activeTab != null)
             {
                 _activeTab.PdfManager.DocumentChanged -= PdfManager_DocumentChanged;
+                _activeTab.PdfManager.PageStructureChanged -= PdfManager_PageStructureChanged;
                 _activeTab.PdfManager.ModifiedStateChanged -= PdfManager_ModifiedStateChanged;
             }
 
@@ -199,6 +201,7 @@ namespace PDF_simple_edit
             {
                 // Hook new events
                 _activeTab.PdfManager.DocumentChanged += PdfManager_DocumentChanged;
+                _activeTab.PdfManager.PageStructureChanged += PdfManager_PageStructureChanged;
                 _activeTab.PdfManager.ModifiedStateChanged += PdfManager_ModifiedStateChanged;
 
                 PageListView.ItemsSource = _pageThumbnails;
@@ -208,8 +211,9 @@ namespace PDF_simple_edit
                 
                 if (_activeTab.PdfManager.IsLoaded)
                 {
-                    // Manually trigger the document change handler to update thumbnails and render
+                    // Manually trigger refresh logic for current view
                     PdfManager_DocumentChanged(_activeTab.PdfManager, EventArgs.Empty);
+                    PdfManager_PageStructureChanged(_activeTab.PdfManager, EventArgs.Empty);
                 }
             }
             else
@@ -263,37 +267,42 @@ namespace PDF_simple_edit
 
         #region Document Events
 
-private void PdfManager_DocumentChanged(object? sender, EventArgs e)
-{
-    DispatcherQueue.TryEnqueue(async () =>
-    {
-        UpdateUIState();
-        if (_pdfManager.IsLoaded)
+        private void PdfManager_DocumentChanged(object? sender, EventArgs e)
         {
-            // [수정] 썸네일 수와 관계없이 문서가 바뀌면 썸네일 새로고침 유도 (강제 Clear)
-            await LoadThumbnailsAsync();
-            
-            await RenderCurrentPageAsync();
-
-            if (_isFirstLoad)
+            DispatcherQueue.TryEnqueue(async () =>
             {
-                _isFirstLoad = false;
-                
-                // [핵심 3] WinUI 레이아웃 엔진이 크기 할당을 끝낼 때까지 대기
-                for (int i = 0; i < 10; i++)
+                UpdateUIState();
+                if (_pdfManager.IsLoaded)
                 {
-                    await Task.Delay(100);
-                    // ScrollViewer와 Canvas에 실제 크기가 부여되었을 때 꽉 채우기 실행
-                    if (PdfScrollViewer.ViewportWidth > 0 && OverlayCanvas.Width > 0)
+                    await RenderCurrentPageAsync();
+
+                    if (_isFirstLoad)
                     {
-                        FitToPage();
-                        break;
+                        _isFirstLoad = false;
+                        for (int i = 0; i < 10; i++)
+                        {
+                            await Task.Delay(100);
+                            if (PdfScrollViewer.ViewportWidth > 0 && OverlayCanvas.Width > 0)
+                            {
+                                FitToPage();
+                                break;
+                            }
+                        }
                     }
                 }
-            }
+            });
         }
-    });
-}
+
+        private void PdfManager_PageStructureChanged(object? sender, EventArgs e)
+        {
+            DispatcherQueue.TryEnqueue(async () =>
+            {
+                if (_pdfManager.IsLoaded)
+                {
+                    await LoadThumbnailsAsync();
+                }
+            });
+        }
 
         private void PdfManager_ModifiedStateChanged(object? sender, EventArgs e)
         {
@@ -668,55 +677,79 @@ private async Task RenderCurrentPageAsync()
             await RenderCurrentPageAsync();
         }
 
-        private bool _isLoadingThumbnails = false;
         private async Task LoadThumbnailsAsync()
         {
-            if (_isLoadingThumbnails) return;
-            _isLoadingThumbnails = true;
+            // Cancel any existing thumbnail loading
+            _thumbnailCts?.Cancel();
+            _thumbnailCts = new System.Threading.CancellationTokenSource();
+            var token = _thumbnailCts.Token;
 
             try
             {
                 _pageThumbnails.Clear();
+                if (!_pdfManager.IsLoaded) return;
 
-            if (!_pdfManager.IsLoaded) return;
+                int totalPages = _pdfManager.PageCount;
+                string? filePath = _renderTempPath ?? _pdfManager.FilePath;
+                byte[]? pdfBytes = null;
 
-            string? filePath = _renderTempPath ?? _pdfManager.FilePath;
-            if (filePath == null)
-            {
-                // Unsaved/New document case: Save bytes to temp file to render thumbnails
-                var bytes = _pdfManager.GetPdfBytes();
-                if (bytes == null) return;
-                
-                filePath = Path.Combine(ApplicationData.Current.TemporaryFolder.Path, $"temp_render_{Guid.NewGuid()}.pdf");
-                File.WriteAllBytes(filePath, bytes);
-                _renderTempPath = filePath; // Cache it
-            }
-
-            for (int i = 0; i < _pdfManager.PageCount; i++)
-            {
-                try
+                if (string.IsNullOrEmpty(filePath))
                 {
-                    var ms = await PdfRenderHelper.RenderPageWithWindowsPdfAsync(filePath, i, 0.4);
-                    if (ms != null)
+                    pdfBytes = _pdfManager.GetPdfBytes();
+                    if (pdfBytes == null) return;
+                }
+
+                for (int i = 0; i < totalPages; i++)
+                {
+                    if (token.IsCancellationRequested) return;
+
+                    try
                     {
-                        var bitmap = new BitmapImage();
-                        await bitmap.SetSourceAsync(ms.AsRandomAccessStream());
-                        _pageThumbnails.Add(new PageThumbnailData { PageNumber = i + 1, Thumbnail = bitmap });
+                        MemoryStream? ms = null;
+                        if (!string.IsNullOrEmpty(filePath))
+                        {
+                            // Retry a few times if file is locked
+                            for (int retry = 0; retry < 3; retry++)
+                            {
+                                ms = await PdfRenderHelper.RenderPageWithWindowsPdfAsync(filePath, i, 0.4);
+                                if (ms != null) break;
+                                await Task.Delay(100);
+                            }
+                        }
+                        
+                        if (ms == null)
+                        {
+                            // Fallback to memory if file failed or not available
+                            pdfBytes ??= _pdfManager.GetPdfBytes();
+                            if (pdfBytes != null)
+                            {
+                                using var memStream = new MemoryStream(pdfBytes);
+                                ms = await PdfRenderHelper.RenderPageWithWindowsPdfStreamAsync(memStream.AsRandomAccessStream(), i, 0.4);
+                            }
+                        }
+
+                        if (ms != null)
+                        {
+                            var bitmap = new BitmapImage();
+                            await bitmap.SetSourceAsync(ms.AsRandomAccessStream());
+                            _pageThumbnails.Add(new PageThumbnailData { PageNumber = i + 1, Thumbnail = bitmap });
+                        }
+                        else
+                        {
+                            // If still null after fallback, add with grey placeholder (handled by XAML background)
+                            _pageThumbnails.Add(new PageThumbnailData { PageNumber = i + 1 });
+                        }
                     }
-                    else
+                    catch
                     {
                         _pageThumbnails.Add(new PageThumbnailData { PageNumber = i + 1 });
                     }
                 }
-                catch
-                {
-                    _pageThumbnails.Add(new PageThumbnailData { PageNumber = i + 1 });
-                }
             }
-            }
-            finally
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
             {
-                _isLoadingThumbnails = false;
+                System.Diagnostics.Debug.WriteLine($"LoadThumbnails error: {ex.Message}");
             }
         }
 

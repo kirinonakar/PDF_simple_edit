@@ -63,6 +63,7 @@ namespace PDF_simple_edit.Helpers
         public byte[]? GetPdfBytes() => _pdfBytes;
 
         public event EventHandler? DocumentChanged;
+        public event EventHandler? PageStructureChanged;
         public event EventHandler? ModifiedStateChanged;
 
         public PdfDocumentManager()
@@ -84,6 +85,7 @@ namespace PDF_simple_edit.Helpers
                         _contentCache.Clear();
                         
                         DocumentChanged?.Invoke(this, EventArgs.Empty);
+                        PageStructureChanged?.Invoke(this, EventArgs.Empty);
                         ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
                         return true;
                     }
@@ -367,6 +369,7 @@ namespace PDF_simple_edit.Helpers
         public void DeletePage(int pageIndex)
         {
             ApplyEdit(doc => DeletePageInternal(doc, pageIndex));
+            PageStructureChanged?.Invoke(this, EventArgs.Empty);
         }
 
         public void DeletePageInternal(PdfDocument doc, int pageIndex)
@@ -389,6 +392,7 @@ namespace PDF_simple_edit.Helpers
                 _filePath = null;
                 _isModified = false;
                 DocumentChanged?.Invoke(this, EventArgs.Empty);
+                PageStructureChanged?.Invoke(this, EventArgs.Empty);
                 ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
             }
         }
@@ -399,6 +403,7 @@ namespace PDF_simple_edit.Helpers
             _filePath = null;
             _isModified = false;
             DocumentChanged?.Invoke(this, EventArgs.Empty);
+            PageStructureChanged?.Invoke(this, EventArgs.Empty);
             ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
         }
 
