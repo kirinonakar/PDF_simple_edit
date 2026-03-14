@@ -1191,6 +1191,21 @@ private PdfPageContent? GetBestContentMatch(List<PdfPageContent> contents, doubl
 private PdfAnnotation ConvertExistingContentToAnnotation(PdfPageContent content)
 {
     bool isText = content.Type == PageContentType.Text;
+    string fontFamily = isText && !string.IsNullOrEmpty(content.FontFamily) ? content.FontFamily : "맑은 고딕";
+    double fontSize = isText && content.FontSize > 0 ? content.FontSize : (content.Height > 0 ? content.Height : 12);
+    
+    double width = content.Width;
+    double height = content.Height;
+
+    if (isText)
+    {
+        // [핵심] iText가 리포트한 너비 대신 WinUI에서 실제로 그려질 너비를 측정하여 저장
+        // 이렇게 해야 오른쪽 정렬 시 편집한 텍스트와 추출한 텍스트의 끝점이 완벽히 일치함
+        var size = MeasureText(content.Text ?? "", fontFamily, fontSize, false, false);
+        width = size.width;
+        height = size.height;
+    }
+
     return new PdfAnnotation
     {
         Type = isText ? AnnotationType.Text : AnnotationType.Image,
@@ -1198,8 +1213,8 @@ private PdfAnnotation ConvertExistingContentToAnnotation(PdfPageContent content)
         X = content.X,
         Y = content.Y,
         Content = content.Text,
-        Width = content.Width,
-        Height = content.Height,
+        Width = width,
+        Height = height,
         IsOriginalTextReplacement = isText,
         IsOriginalImageReplacement = !isText,
         OriginalPdfX = content.OriginalPdfX,
@@ -1208,14 +1223,16 @@ private PdfAnnotation ConvertExistingContentToAnnotation(PdfPageContent content)
         OriginalImageName = isText ? null : content.ImageId,
         ImagePath = isText ? null : (string.IsNullOrEmpty(content.Text) ? null : content.Text),
         OperatorId = content.OperatorId,
-        FontSize = isText && content.FontSize > 0 ? content.FontSize : (content.Height > 0 ? content.Height : 12),
-        FontFamily = isText && !string.IsNullOrEmpty(content.FontFamily) ? content.FontFamily : "맑은 고딕",
+        FontSize = fontSize,
+        FontFamily = fontFamily,
         IsApplied = false
     };
 }
 
 private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 {
+    var size = MeasureText(textObj.FoundText ?? "", "맑은 고딕", textObj.FontSize > 0 ? textObj.FontSize : (textObj.Height > 0 ? textObj.Height : 12), false, false);
+    
     return new PdfAnnotation
     {
         Type = AnnotationType.Text,
@@ -1223,8 +1240,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         X = textObj.X,
         Y = textObj.Y,
         Content = textObj.FoundText,
-        Width = textObj.Width,
-        Height = textObj.Height,
+        Width = size.width,
+        Height = size.height,
         IsOriginalTextReplacement = true,
         OriginalPdfX = textObj.OriginalPdfX,
         OriginalPdfY = textObj.OriginalPdfY,
@@ -1448,6 +1465,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         element = new TextBlock
                         {
                             Text = ann.Content,
+                            // 글자 잘림 방지를 위해 너비/높이 제약 제거 (자동 크기 조절)
                             TextWrapping = TextWrapping.NoWrap,
                             FontSize = ann.FontSize * PdfToPixels,
                             Foreground = new SolidColorBrush(ParseColor(ann.Color)),
@@ -2785,7 +2803,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 Padding = new Thickness(0)
             };
             textBlock.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
-            return (textBlock.DesiredSize.Width / PdfToPixels, textBlock.DesiredSize.Height / PdfToPixels);
+            // 폰트 렌더링 시 오른쪽에 미세하게 잘리는 현상을 방지하기 위해 2px 여유 공간 추가
+            return ((textBlock.DesiredSize.Width + 2.0) / PdfToPixels, textBlock.DesiredSize.Height / PdfToPixels);
         }
 
         private void ApplyAnnotationToDocument(PdfAnnotation ann)
