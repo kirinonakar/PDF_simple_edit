@@ -608,9 +608,15 @@ private async Task RenderCurrentPageAsync()
             await RenderCurrentPageAsync();
         }
 
+        private bool _isLoadingThumbnails = false;
         private async Task LoadThumbnailsAsync()
         {
-            _pageThumbnails.Clear();
+            if (_isLoadingThumbnails) return;
+            _isLoadingThumbnails = true;
+
+            try
+            {
+                _pageThumbnails.Clear();
 
             if (!_pdfManager.IsLoaded) return;
 
@@ -637,6 +643,11 @@ private async Task RenderCurrentPageAsync()
                 {
                     _pageThumbnails.Add(new PageThumbnailData { PageNumber = i + 1 });
                 }
+            }
+            }
+            finally
+            {
+                _isLoadingThumbnails = false;
             }
         }
 
@@ -2154,8 +2165,6 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                                 _renderTempPath = null;
                                 if (_activeTab != null) _activeTab.FilePath = originPath;
 
-                                await LoadThumbnailsAsync();
-                                await RenderCurrentPageAsync();
                                 TxtStatus.Text = "PDF 합치기 완료";
                             }
                             else
@@ -2206,8 +2215,6 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                     await _pdfManager.OpenAsync(file.Path);
                     _currentPageIndex = 0;
                     _renderTempPath = file.Path;
-                    await LoadThumbnailsAsync();
-                    await RenderCurrentPageAsync();
                     TxtStatus.Text = "PDF 합치기 완료";
                 }
                 else
@@ -2382,8 +2389,11 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 if (_currentPageIndex >= _pdfManager.PageCount)
                     _currentPageIndex = _pdfManager.PageCount - 1;
 
-                await SaveToTempAndRenderAsync();
-                await LoadThumbnailsAsync();
+                // [중요] 렌더링 캐시 초기화
+                _renderTempPath = null;
+                
+                // PdfManager.DeletePage()가 DocumentChanged를 호출하고, 
+                // 이는 PdfManager_DocumentChanged 핸들러에 의해 자동으로 Render 및 Thumbnail 로드를 수행합니다.
                 UpdateUIState();
                 TxtStatus.Text = "페이지가 삭제되었습니다";
             }
