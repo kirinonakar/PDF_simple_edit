@@ -7,7 +7,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Title="PDF Editor">
+    Title="PDF Simple Editor">
 
     <!--
     <Window.SystemBackdrop>
@@ -35,7 +35,7 @@
             </Grid.ColumnDefinitions>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
                 <FontIcon Glyph="&#xEA90;" FontSize="16" Foreground="#0078D4"/>
-                <TextBlock x:Name="TitleText" Text="PDF Editor" Margin="12,0,0,0"
+                <TextBlock x:Name="TitleText" Text="PDF Simple Editor" Margin="12,0,0,0"
                            Style="{StaticResource CaptionTextBlockStyle}"
                            VerticalAlignment="Center"/>
             </StackPanel>
@@ -352,7 +352,7 @@
                             VerticalAlignment="Center" Spacing="16">
                     <FontIcon Glyph="&#xEA90;" FontSize="64"
                               Foreground="#0078D4" Opacity="0.6"/>
-                    <TextBlock Text="PDF Editor" FontSize="28" FontWeight="SemiBold"
+                    <TextBlock Text="PDF Simple Editor" FontSize="28" FontWeight="SemiBold"
                                HorizontalAlignment="Center" Opacity="0.8"/>
                     <TextBlock Text="PDF 파일을 열거나 새로 만드세요" FontSize="14"
                                HorizontalAlignment="Center" Opacity="0.5"/>

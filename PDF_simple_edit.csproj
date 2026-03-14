@@ -36,11 +36,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="CheckPDFSharp\**" />
-    <EmbeddedResource Remove="CheckPDFSharp\**" />
-    <None Remove="CheckPDFSharp\**" />
-  </ItemGroup>
-  <ItemGroup>
     <PackageReference Include="itext" Version="9.5.0" />
     <PackageReference Include="itext.bouncy-castle-adapter" Version="9.5.0" />
     <PackageReference Include="itext.pdfsweep" Version="5.0.5" NoWarn="NU1701" />

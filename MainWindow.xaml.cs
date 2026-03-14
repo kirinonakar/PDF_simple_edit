@@ -136,6 +136,7 @@ namespace PDF_simple_edit
                         }
                         LoadWindowPosition();
                     }
+                    UpdateTitleBar();
                 }
                 catch (Exception ex)
                 {
@@ -353,12 +354,12 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
 
         private void UpdateTitleBar()
         {
-            string title = "PDF Editor";
+            string title = "PDF Simple Editor";
             if (_pdfManager.IsLoaded)
             {
                 string fileName = _pdfManager.FilePath != null
                     ? Path.GetFileName(_pdfManager.FilePath) : "새 문서";
-                title = $"{(_pdfManager.IsModified ? "● " : "")}{fileName} - PDF Editor";
+                title = $"{(_pdfManager.IsModified ? "● " : "")}{fileName} - PDF Simple Editor";
             }
             TitleText.Text = title;
             Title = title;
@@ -1583,8 +1584,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 TextWrapping = existingAnn?.Type == AnnotationType.StickyNote ? TextWrapping.Wrap : TextWrapping.NoWrap,
                 MinWidth = 60,
                 MinHeight = 24,
-                Padding = new Thickness(4, 2, 4, 2),
-                Margin = new Thickness(-1, -1, 0, 0),
+                Padding = new Thickness(0),
+                Margin = new Thickness(0),
                 BorderThickness = new Thickness(1),
                 Background = new SolidColorBrush(Windows.UI.Color.FromArgb(240, 255, 255, 255)),
                 BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
@@ -1596,11 +1597,12 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 Tag = existingAnn != null ? (object)existingAnn : (object)new Windows.Foundation.Point(pdfX, pdfY),
                 VerticalAlignment = VerticalAlignment.Top,
                 VerticalContentAlignment = VerticalAlignment.Top,
-                MaxWidth = 4000
+                MaxWidth = 4000,
+                UseLayoutRounding = false
             };
 
-    Canvas.SetLeft(textBox, canvasX);
-    Canvas.SetTop(textBox, canvasY);
+            Canvas.SetLeft(textBox, canvasX - 2);
+            Canvas.SetTop(textBox, canvasY - 1);
 
             textBox.Loaded += (s, e) => 
             {
@@ -2130,16 +2132,50 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                     var result = await dialog.ShowAsync();
                     if (result == ContentDialogResult.Primary)
                     {
+                        // 1. 현재 문서에 합치기
                         TxtStatus.Text = "PDF 합치기 중...";
                         LoadingRing.IsActive = true;
 
-                        bool success = await _pdfManager.SaveAsAsync(_pdfManager.FilePath ?? "temp.pdf", false); // Simplified merge
-                        if (success)
+                        try
                         {
-                            await SaveToTempAndRenderAsync();
-                            await LoadThumbnailsAsync();
-                            TxtStatus.Text = "PDF 합치기 완료";
+                            // 현재 편집 중인 내용을 임시 저장
+                            string originPath = _pdfManager.FilePath ?? Path.Combine(ApplicationData.Current.TemporaryFolder.Path, "merging_origin.pdf");
+                            await _pdfManager.SaveAsAsync(originPath, false);
+
+                            // 합치기 실행
+                            bool success = await _pdfManager.MergeFilesAsync(files.Select(f => f.Path).ToList(), originPath);
+                            
+                            if (success)
+                            {
+                                await _pdfManager.OpenAsync(originPath);
+                                _currentPageIndex = 0;
+                                
+                                // [추가] 렌더링 캐시 초기화 및 탭 정보 동기화
+                                _renderTempPath = null;
+                                if (_activeTab != null) _activeTab.FilePath = originPath;
+
+                                await LoadThumbnailsAsync();
+                                await RenderCurrentPageAsync();
+                                TxtStatus.Text = "PDF 합치기 완료";
+                            }
+                            else
+                            {
+                                await ShowErrorDialogAsync("오류", "PDF 합치기에 실패했습니다.");
+                            }
                         }
+                        catch (Exception ex)
+                        {
+                            await ShowErrorDialogAsync("오류", $"합치기 중 에러 발생: {ex.Message}");
+                        }
+                        finally
+                        {
+                            LoadingRing.IsActive = false;
+                        }
+                    }
+                    else if (result == ContentDialogResult.Secondary)
+                    {
+                        // 2. 새 파일로 저장하며 합치기
+                        await MergeToNewFileAsync(files.Select(f => f.Path).ToList());
                     }
                 }
                 else
@@ -2164,12 +2200,14 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 TxtStatus.Text = "PDF 합치기 중...";
                 LoadingRing.IsActive = true;
 
-                bool success = false; // MergeFilesAsync not yet implemented in iText
+                bool success = await _pdfManager.MergeFilesAsync(filePaths, file.Path);
                 if (success)
                 {
                     await _pdfManager.OpenAsync(file.Path);
                     _currentPageIndex = 0;
                     _renderTempPath = file.Path;
+                    await LoadThumbnailsAsync();
+                    await RenderCurrentPageAsync();
                     TxtStatus.Text = "PDF 합치기 완료";
                 }
                 else
@@ -2254,8 +2292,47 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                     TxtStatus.Text = "PDF 나누기 중...";
                     LoadingRing.IsActive = true;
 
-                    // Split not yet implemented in iText
-                    LoadingRing.IsActive = false;
+                    try
+                    {
+                        var ranges = new List<(int start, int end)>();
+                        int totalPages = _pdfManager.PageCount;
+
+                        if (rbEveryPage.IsChecked == true)
+                        {
+                            for (int i = 1; i <= totalPages; i++)
+                                ranges.Add((i, i));
+                        }
+                        else if (rbByPages.IsChecked == true)
+                        {
+                            int perFile = (int)nbPagesPerFile.Value;
+                            for (int i = 1; i <= totalPages; i += perFile)
+                                ranges.Add((i, Math.Min(i + perFile - 1, totalPages)));
+                        }
+                        else if (rbByRange.IsChecked == true)
+                        {
+                            ranges = ParsePageRanges(txtRanges.Text);
+                        }
+
+                        if (ranges.Count > 0)
+                        {
+                            int resultCount = await _pdfManager.SplitFileAsync(folder.Path, ranges);
+                            TxtStatus.Text = $"PDF 나누기 완료: {resultCount}개 파일 생성됨";
+                            
+                            // 폴더 열기 제안 등은 생략
+                        }
+                        else
+                        {
+                            TxtStatus.Text = "나눌 페이지 범위가 올바르지 않습니다.";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        await ShowErrorDialogAsync("나누기 오류", $"나누기 중 에러 발생: {ex.Message}");
+                    }
+                    finally
+                    {
+                        LoadingRing.IsActive = false;
+                    }
                 }
             }
         }
@@ -2395,7 +2472,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         private async void About_Click(object sender, RoutedEventArgs e)
         {
             var aboutPanel = new StackPanel { Spacing = 8 };
-            aboutPanel.Children.Add(new TextBlock { Text = "PDF Editor", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.Bold });
+            aboutPanel.Children.Add(new TextBlock { Text = "PDF Simple Editor", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.Bold });
             aboutPanel.Children.Add(new TextBlock { Text = "버전 1.0.0" });
             aboutPanel.Children.Add(new TextBlock { Text = "WinUI 3 + iText 9 기반 PDF 편집기", Opacity = 0.7 });
             aboutPanel.Children.Add(new TextBlock { Text = "한글 폰트 지원", Opacity = 0.7 });
@@ -2407,7 +2484,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
             var dialog = new ContentDialog
             {
-                Title = "PDF Editor 정보",
+                Title = "PDF Simple Editor 정보",
                 Content = aboutPanel,
                 CloseButtonText = "닫기",
                 XamlRoot = Content.XamlRoot
@@ -2783,9 +2860,12 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
         #region Alignment & Editing
 
-        private void AlignLeft_Click(object sender, RoutedEventArgs e)
+        private async void AlignLeft_Click(object sender, RoutedEventArgs e)
         {
             if (_selectedAnnotations.Count < 2) return;
+            
+            await HandleOriginalContentRemovalForSelectedAsync();
+            
             double minX = _selectedAnnotations.Min(a => a.X);
             foreach (var ann in _selectedAnnotations)
             {
@@ -2796,9 +2876,12 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             RenderAnnotationOverlays();
         }
 
-        private void AlignRight_Click(object sender, RoutedEventArgs e)
+        private async void AlignRight_Click(object sender, RoutedEventArgs e)
         {
             if (_selectedAnnotations.Count < 2) return;
+            
+            await HandleOriginalContentRemovalForSelectedAsync();
+            
             double maxX = _selectedAnnotations.Max(a => a.X + a.Width);
             foreach (var ann in _selectedAnnotations)
             {
@@ -2809,9 +2892,12 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             RenderAnnotationOverlays();
         }
 
-        private void AlignTop_Click(object sender, RoutedEventArgs e)
+        private async void AlignTop_Click(object sender, RoutedEventArgs e)
         {
             if (_selectedAnnotations.Count < 2) return;
+            
+            await HandleOriginalContentRemovalForSelectedAsync();
+            
             double minY = _selectedAnnotations.Min(a => a.Y);
             foreach (var ann in _selectedAnnotations)
             {
@@ -2822,9 +2908,12 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             RenderAnnotationOverlays();
         }
 
-        private void AlignBottom_Click(object sender, RoutedEventArgs e)
+        private async void AlignBottom_Click(object sender, RoutedEventArgs e)
         {
             if (_selectedAnnotations.Count < 2) return;
+            
+            await HandleOriginalContentRemovalForSelectedAsync();
+            
             double maxY = _selectedAnnotations.Max(a => a.Y + a.Height);
             foreach (var ann in _selectedAnnotations)
             {
@@ -2833,6 +2922,35 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             }
             _pdfManager.MarkModified();
             RenderAnnotationOverlays();
+        }
+
+        private async Task HandleOriginalContentRemovalForSelectedAsync()
+        {
+            var targets = _selectedAnnotations.Where(ann => 
+                ann.IsOriginalTextReplacement || 
+                (ann.IsOriginalImageReplacement && ann.OriginalImageName != null)
+            ).ToList();
+
+            if (targets.Count == 0) return;
+
+            // 좌표 리스트 추출
+            var locations = targets.Select(ann => (ann.X, ann.Y, ann.Width, ann.Height)).ToList();
+            
+            // 한 번의 편집으로 모두 삭제
+            bool success = await _pdfManager.RemoveMultipleTextsAsync(_currentPageIndex, locations);
+            
+            if (success)
+            {
+                foreach (var ann in targets)
+                {
+                    ann.IsOriginalTextReplacement = false;
+                    ann.IsOriginalImageReplacement = false;
+                }
+
+                // 삭제가 발생했으므로 배경 리렌더링 (그렇지 않으면 원본이 남아있는 것처럼 보임)
+                _renderTempPath = null; // 캐시 무효화
+                await RenderCurrentPageAsync();
+            }
         }
 
         private void DeleteAnnotation_Click(object sender, RoutedEventArgs e)

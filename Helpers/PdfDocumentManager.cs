@@ -15,6 +15,7 @@ using iText.IO.Image;
 using iText.Kernel.Font;
 using iText.IO.Font;
 using iText.IO.Font.Constants;
+using iText.Kernel.Utils;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -550,6 +551,40 @@ namespace PDF_simple_edit.Helpers
             });
         }
 
+        public async Task<bool> RemoveMultipleTextsAsync(int pageIndex, List<(double x, double y, double w, double h)> targets)
+        {
+            if (targets == null || targets.Count == 0) return true;
+
+            return await Task.Run(() =>
+            {
+                bool success = false;
+                ApplyEdit(doc =>
+                {
+                    var page = doc.GetPage(pageIndex + 1);
+                    var rect = page.GetCropBox();
+                    float offsetLeft = rect.GetLeft();
+                    float offsetBottom = rect.GetBottom();
+                    float padding = 2.0f;
+
+                    var locations = new List<PdfCleanUpLocation>();
+                    foreach (var t in targets)
+                    {
+                        float pdfX = offsetLeft + (float)t.x;
+                        float pdfY = offsetBottom + (rect.GetHeight() - (float)t.y - (float)t.h);
+
+                        locations.Add(new PdfCleanUpLocation(pageIndex + 1,
+                            new Rectangle(pdfX - padding, pdfY - padding, (float)t.w + (padding * 2), (float)t.h + (padding * 2)),
+                            ColorConstants.WHITE));
+                    }
+
+                    PdfCleanUpTool cleaner = new PdfCleanUpTool(doc, locations, new CleanUpProperties());
+                    cleaner.CleanUp();
+                    success = true;
+                });
+                return success;
+            });
+        }
+
         public async Task<bool> MoveTextAsync(int pageIndex, string text, double oldX, double oldY, double width, double height, double newX, double newY)
         {
             return await Task.Run(() =>
@@ -589,6 +624,88 @@ namespace PDF_simple_edit.Helpers
             if (_pdfBytes == null) return null;
             var reader = new PdfReader(new MemoryStream(_pdfBytes));
             return new PdfDocument(reader);
+        }
+
+        public async Task<bool> MergeFilesAsync(List<string> sourceFiles, string outputPath)
+        {
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    using (var writer = new PdfWriter(outputPath))
+                    using (var destDoc = new PdfDocument(writer))
+                    {
+                        var merger = new PdfMerger(destDoc);
+
+                        // 1. 현재 문서가 있다면 먼저 추가
+                        if (_pdfBytes != null)
+                        {
+                            using (var ms = new MemoryStream(_pdfBytes))
+                            using (var reader = new PdfReader(ms))
+                            using (var sourceDoc = new PdfDocument(reader))
+                            {
+                                merger.Merge(sourceDoc, 1, sourceDoc.GetNumberOfPages());
+                            }
+                        }
+
+                        // 2. 선택한 파일들 추가
+                        foreach (var file in sourceFiles)
+                        {
+                            if (!File.Exists(file)) continue;
+                            using (var reader = new PdfReader(file))
+                            using (var sourceDoc = new PdfDocument(reader))
+                            {
+                                merger.Merge(sourceDoc, 1, sourceDoc.GetNumberOfPages());
+                            }
+                        }
+                    }
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Merge error: {ex.Message}");
+                    return false;
+                }
+            });
+        }
+
+        public async Task<int> SplitFileAsync(string outputFolder, List<(int start, int end)> ranges)
+        {
+            if (_pdfBytes == null) return 0;
+
+            return await Task.Run(() =>
+            {
+                int count = 0;
+                try
+                {
+                    string baseName = "split";
+                    if (!string.IsNullOrEmpty(_filePath))
+                    {
+                        baseName = System.IO.Path.GetFileNameWithoutExtension(_filePath);
+                    }
+
+                    for (int i = 0; i < ranges.Count; i++)
+                    {
+                        var range = ranges[i];
+                        string outputPath = System.IO.Path.Combine(outputFolder, $"{baseName}_{i + 1}.pdf");
+
+                        using (var ms = new MemoryStream(_pdfBytes))
+                        using (var reader = new PdfReader(ms))
+                        using (var sourceDoc = new PdfDocument(reader))
+                        using (var writer = new PdfWriter(outputPath))
+                        using (var destDoc = new PdfDocument(writer))
+                        {
+                            sourceDoc.CopyPagesTo(range.start, range.end, destDoc);
+                        }
+                        count++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Split error: {ex.Message}");
+                }
+                return count;
+            });
         }
     }
 }
