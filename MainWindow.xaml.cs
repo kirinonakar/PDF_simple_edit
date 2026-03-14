@@ -64,13 +64,16 @@ namespace PDF_simple_edit
         private bool _isDialogOpen = false;
         private bool _isInlineEditing = false;
 
-
+#pragma warning disable CS0414
         private string? _lastSearchQuery;
         private int _lastFoundPage = -1;
         private int _lastFoundWordIndex = -1;
-        
+#pragma warning restore CS0414
+
         private readonly PrintHelper _printHelper = new();
         private readonly TextFontSettings _fontSettings = new();
+
+
         
         // Aliases to active tab for easier migration
         private PdfDocumentManager _pdfManager => _activeTab?.PdfManager ?? new PdfDocumentManager();
@@ -933,6 +936,7 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             if (found == null)
             {
                 // 원본 콘텐츠(텍스트/이미지) 추출 및 히트 테스트
+                TxtStatus.Text = "페이지 콘텐츠 분석 중...";
                 var pageContents = await _pdfManager.ExtractPageContentsAsync(_currentPageIndex);
                 var match = GetBestContentMatch(pageContents, pdfX, pdfY);
                 if (match != null)
@@ -943,7 +947,12 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                     {
                         _annotations.Add(found);
                         _pdfManager.MarkModified();
+                        TxtStatus.Text = "원본 콘텐츠가 선택되었습니다.";
                     }
+                }
+                else
+                {
+                    TxtStatus.Text = "선택된 개체 없음";
                 }
             }
 
@@ -998,6 +1007,7 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                         bool removed = false;
                         if (isText)
                         {
+                            // Expand the removal area slightly based on font size to ensure full coverage
                             removed = await _pdfManager.RemoveTextAsync(_currentPageIndex, targetAnn.OriginalPdfX, targetAnn.OriginalPdfY, targetAnn.Width, targetAnn.Height);
                         }
                         else
@@ -1108,9 +1118,10 @@ private SearchResult? GetBestMatch(List<SearchResult> texts, double x, double y)
 
 private PdfPageContent? GetBestContentMatch(List<PdfPageContent> contents, double x, double y)
 {
+    // Hit test with a small buffer for easier selection
     return contents.FirstOrDefault(c => 
-        x >= c.X - 2 && x <= c.X + c.Width + 2 &&
-        y >= c.Y - 2 && y <= c.Y + c.Height + 2);
+        x >= c.X - 5 && x <= c.X + c.Width + 5 &&
+        y >= c.Y - 5 && y <= c.Y + c.Height + 5);
 }
 
 private PdfAnnotation ConvertExistingContentToAnnotation(PdfPageContent content)
@@ -2410,6 +2421,16 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         {
             if (!_pdfManager.IsLoaded) return;
 
+            // 저장 전 활성화된 인라인 편집이 있다면 강제로 적용
+            if (_isInlineEditing)
+            {
+                var activeBox = OverlayCanvas.Children.OfType<TextBox>().FirstOrDefault();
+                if (activeBox != null)
+                {
+                    ApplyInlineText(activeBox);
+                }
+            }
+
             TxtStatus.Text = isUserSave ? "저장 중..." : "렌더링 준비 중...";
             LoadingRing.IsActive = true;
 
@@ -2485,10 +2506,11 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             double pdfY = CoordinateMapper.MapToPdfY(ann.Y, pageSize.GetHeight());
             
             // For text, iText MoveText(x, y) is the baseline. 
-            // In UI, ann.Y is the top. We need to subtract the font size to get the baseline.
-            double textPdfY = pdfY - ann.FontSize;
+            // In UI, ann.Y is the top. We need to subtract the font size (multiplied by a typical ascent factor) to get the baseline.
+            // A typical baseline is about 80% down from the top of the em box.
+            double textPdfY = pdfY - (ann.FontSize * 0.85);
 
-            // For images/rectangles, iText positioning is usually at the bottom.
+            // For images/rectangles, iText positioning is at the bottom-left corner of the object.
             double rectPdfY = pdfY - ann.Height;
 
             // Color parsing

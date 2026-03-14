@@ -1,4 +1,6 @@
 using iText.Kernel.Pdf;
+using iText.PdfCleanup;
+
 using iText.Kernel.Pdf.Canvas;
 using iText.Kernel.Pdf.Canvas.Parser;
 using iText.Kernel.Pdf.Canvas.Parser.Listener;
@@ -29,6 +31,7 @@ namespace PDF_simple_edit.Helpers
         private string? _filePath;
         private bool _isModified;
         private readonly object _docLock = new();
+        private readonly Dictionary<int, List<PdfPageContent>> _contentCache = new();
 
         public string? FilePath => _filePath;
         public void SetFilePath(string path) => _filePath = path;
@@ -76,6 +79,7 @@ namespace PDF_simple_edit.Helpers
                         _pdfBytes = File.ReadAllBytes(filePath);
                         _filePath = filePath;
                         _isModified = false;
+                        _contentCache.Clear();
                         
                         DocumentChanged?.Invoke(this, EventArgs.Empty);
                         ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
@@ -147,17 +151,25 @@ namespace PDF_simple_edit.Helpers
                     using (var doc = new PdfDocument(reader, writer))
                     {
                         editAction(doc);
-                        doc.Close();
+                        doc.Close(); // 명시적으로 닫아야 스트림에 변경 사항이 완벽히 기록됩니다.
                     }
                     
-                    _pdfBytes = msOutput.ToArray();
-                    _isModified = true;
-                    ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-                    DocumentChanged?.Invoke(this, EventArgs.Empty);
+                    byte[] resultBytes = msOutput.ToArray();
+                    
+                    if (resultBytes.Length > 0)
+                    {
+                        _pdfBytes = resultBytes;
+                        _isModified = true;
+                        _contentCache.Clear(); 
+                        
+                        ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                        DocumentChanged?.Invoke(this, EventArgs.Empty);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Error applying edit: {ex.Message}");
+                    // 조용히 넘어가지 말고 예외를 던져서 앱을 멈추게 합니다.
+                    throw new Exception($"PDF 편집 중 치명적 에러 발생: {ex.Message}\n{ex.StackTrace}");
                 }
             }
         }
@@ -205,17 +217,25 @@ namespace PDF_simple_edit.Helpers
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages()) return;
 
             var page = doc.GetPage(pageIndex + 1);
-            var canvas = new PdfCanvas(page);
             
+            // 일반 PageSize 대신, 실제 화면에 잘려서 보이는 CropBox 기준으로 좌표를 잡아야 정확합니다.
+            var pageSize = page.GetCropBox(); 
+
+            // 1. 정확한 Y축 반전 계산 (화면상단 -> PDF하단) + 폰트 기준선 보정
+            float pdfY = pageSize.GetHeight() - (float)y - (float)fontSize;
+            float pdfX = (float)x;
+
+            // 2. 한글 출력을 위한 폰트 강제 주입 (맑은 고딕)
             PdfFont font;
             try
             {
-                // Try to use a Korean font if text contains Hangeul
-                // Windows standard: Malgun Gothic
-                string fontPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts", "malgun.ttf");
+                // 윈도우 환경에 100% 존재하는 맑은고딕 경로를 강제로 가져와서 한글 깨짐/증발 방지
+                string fontPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), isBold ? "malgunbd.ttf" : "malgun.ttf");
+                
                 if (File.Exists(fontPath))
                 {
-                    font = PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H);
+                    // IDENTITY_H 인코딩과 PREFER_EMBEDDED 옵션을 주어야 한글이 PDF에 정상적으로 구워집니다.
+                    font = PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H, PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
                 }
                 else
                 {
@@ -226,14 +246,57 @@ namespace PDF_simple_edit.Helpers
             {
                 font = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
             }
+
+            // 3. 로우레벨(Low-level) API로 확실하게 텍스트 박아넣기
+            // NewContentStreamAfter()를 호출하면 기존 모든 내용(배경 포함)의 가장 '위'에 투명 셀로판지를 얹고 글씨를 씁니다.
+            PdfStream stream = page.NewContentStreamAfter(); 
+            PdfCanvas canvas = new PdfCanvas(stream, page.GetResources(), doc);
             
-            canvas.BeginText()
-                  .SetFontAndSize(font, (float)fontSize)
-                  .SetFillColor(color)
-                  .MoveText(x, y)
-                  .ShowText(text)
-                  .EndText();
+            canvas.SaveState();
+            canvas.BeginText();
+            canvas.SetFontAndSize(font, (float)Math.Max(fontSize, 1));
+            canvas.SetFillColor(color ?? ColorConstants.BLACK);
+
+            // 텍스트 이동 및 쓰기 (에러 없이 확실하게 그려짐)
+            canvas.MoveText(pdfX, pdfY);
+            canvas.ShowText(text ?? string.Empty);
+
+            canvas.EndText();
+            canvas.RestoreState();
             canvas.Release();
+        }
+
+        private string? GetSystemFontPath(string nameOrFile, bool isBold = false)
+        {
+            string fontDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts");
+            
+            // If it's already a full path or simple filename with extension
+            if (nameOrFile.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) || 
+                nameOrFile.EndsWith(".ttc", StringComparison.OrdinalIgnoreCase))
+            {
+                string path = System.IO.Path.Combine(fontDir, nameOrFile);
+                if (File.Exists(path)) return path;
+            }
+
+            // Map some common names to files
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "맑은 고딕", isBold ? "malgunbd.ttf" : "malgun.ttf" },
+                { "Malgun Gothic", isBold ? "malgunbd.ttf" : "malgun.ttf" },
+                { "굴림", "gulim.ttc" },
+                { "돋움", "dotum.ttc" },
+                { "바탕", "batang.ttc" },
+                { "궁서", "gungsuh.ttc" },
+                { "나눔고딕", "NanumGothic.ttf" }
+            };
+
+            if (map.TryGetValue(nameOrFile, out string? filename))
+            {
+                string path = System.IO.Path.Combine(fontDir, filename);
+                if (File.Exists(path)) return path;
+            }
+
+            return null;
         }
 
         public void AddHighlight(int pageIndex, double x, double y, double width, double height, 
@@ -256,7 +319,15 @@ namespace PDF_simple_edit.Helpers
             canvas.SetExtGState(gs);
             canvas.SetFillColor(color ?? ColorConstants.YELLOW);
             
-            canvas.Rectangle(x, y, width, height);
+            if (double.IsNaN(x) || double.IsInfinity(x) || double.IsNaN(y) || double.IsInfinity(y) || 
+                width <= 0 || height <= 0 || double.IsNaN(width) || double.IsNaN(height))
+                return;
+
+            // 핵심: Y축 변환
+            var pageSize = page.GetPageSize();
+            float pdfY = pageSize.GetHeight() - (float)y - (float)height;
+
+            canvas.Rectangle((float)x, pdfY, (float)width, (float)height); // 변환된 pdfY 사용
             canvas.Fill();
             
             canvas.RestoreState();
@@ -341,6 +412,12 @@ namespace PDF_simple_edit.Helpers
         {
             if (_pdfBytes == null) return new List<PdfPageContent>();
 
+            lock (_docLock)
+            {
+                if (_contentCache.TryGetValue(pageIndex, out var cached))
+                    return cached;
+            }
+
             return await Task.Run(() =>
             {
                 var contents = new List<PdfPageContent>();
@@ -363,6 +440,11 @@ namespace PDF_simple_edit.Helpers
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"Error extracting page contents: {ex.Message}");
+                }
+
+                lock (_docLock)
+                {
+                    _contentCache[pageIndex] = contents;
                 }
                 return contents;
             });
@@ -420,20 +502,59 @@ namespace PDF_simple_edit.Helpers
 
         public async Task<bool> RemoveTextAsync(int pageIndex, double x, double y, double width, double height)
         {
-            // Implementation of text removal/redaction
-            // Adding a white highlight as a placeholder to "delete" original text
-            AddHighlight(pageIndex, x, y, width, height, ColorConstants.WHITE, 1.0f);
-            return true;
+            return await Task.Run(() =>
+            {
+                bool success = false;
+                ApplyEdit(doc =>
+                {
+                    var page = doc.GetPage(pageIndex + 1);
+                    var pageSize = page.GetPageSize();
+                    
+                    // 핵심: UI(Top-Left) 좌표를 PDF(Bottom-Left) 좌표로 변환
+                    float pdfY = pageSize.GetHeight() - (float)y - (float)height;
+
+                    float expandedY = pdfY - ((float)height * 0.2f);
+                    float expandedHeight = (float)height * 1.4f;
+
+                    var location = new PdfCleanUpLocation(pageIndex + 1, new Rectangle((float)x, expandedY, (float)width, expandedHeight), ColorConstants.WHITE);
+
+                    // 올바른 pdfSweep 도구 실행 방식
+                    PdfCleanUpTool cleaner = new PdfCleanUpTool(doc);
+                    cleaner.AddCleanupLocation(location);
+                    cleaner.CleanUp();
+                    
+                    success = true;
+                });
+                return success;
+            });
         }
 
         public async Task<bool> MoveTextAsync(int pageIndex, string text, double oldX, double oldY, double width, double height, double newX, double newY)
         {
-            if (await RemoveTextAsync(pageIndex, oldX, oldY, width, height))
+            return await Task.Run(() =>
             {
-                AddText(pageIndex, newX, newY, text, "Arial", 12, ColorConstants.BLACK);
-                return true;
-            }
-            return false;
+                bool success = false;
+                ApplyEdit(doc =>
+                {
+                    var page = doc.GetPage(pageIndex + 1);
+                    var pageSize = page.GetPageSize();
+                    
+                    // 기존 텍스트 삭제 영역 Y축 변환
+                    float oldPdfY = pageSize.GetHeight() - (float)oldY - (float)height;
+                    
+                    var location = new PdfCleanUpLocation(pageIndex + 1, new Rectangle((float)oldX, oldPdfY, (float)width, (float)height), ColorConstants.WHITE);
+                    
+                    // pdfSweep 실행
+                    PdfCleanUpTool cleaner = new PdfCleanUpTool(doc);
+                    cleaner.AddCleanupLocation(location);
+                    cleaner.CleanUp();
+
+                    // 새 위치에 텍스트 추가 (새 위치 newY는 AddTextInternal에서 자동 변환됨)
+                    AddTextInternal(doc, pageIndex, newX, newY, text, "맑은 고딕", 12, ColorConstants.BLACK);
+                    success = true;
+                });
+                return success;
+            });
         }
 
         public PdfDocument? GetReadOnlyDocument()
