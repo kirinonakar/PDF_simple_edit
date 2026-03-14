@@ -60,6 +60,7 @@ namespace PDF_simple_edit.Helpers
         }
 
         public bool IsLoaded => _pdfBytes != null;
+        public byte[]? GetPdfBytes() => _pdfBytes;
 
         public event EventHandler? DocumentChanged;
         public event EventHandler? ModifiedStateChanged;
@@ -499,6 +500,7 @@ namespace PDF_simple_edit.Helpers
                         Width = width,
                         Height = height,
                         FontSize = fontSize,
+                        FontFamily = textInfo.GetFont().GetFontProgram().GetFontNames().GetFontName(),
                         OriginalPdfX = x,
                         OriginalPdfY = y
                     });
@@ -529,16 +531,16 @@ namespace PDF_simple_edit.Helpers
                     float pdfX = offsetLeft + (float)x;
                     float pdfY = offsetBottom + (rect.GetHeight() - (float)y - (float)height);
 
-                    // 삭제 영역을 텍스트 경계보다 넉넉하게 확장 (매우 중요: 미세하게 어긋나면 삭제 안 됨)
-                    float padding = 2.0f; 
-                    float expandedX = pdfX - padding;
-                    float expandedY = pdfY - padding;
-                    float expandedWidth = (float)width + (padding * 2);
-                    float expandedHeight = (float)height + (padding * 2);
+                    // 삭제 영역을 텍스트 경계에 매우 타이트하게 설정하여 인접한 선/배경 훼손 최소화
+                    float expandedX = pdfX;
+                    // Y축(높이)을 미세하게(0.5pt) 줄여서 인접한 수평선 침범 방지
+                    float expandedY = pdfY + 0.5f;
+                    float expandedWidth = (float)width;
+                    float expandedHeight = (float)height - 1.0f;
 
                     var location = new PdfCleanUpLocation(pageIndex + 1, 
                         new Rectangle(expandedX, expandedY, expandedWidth, expandedHeight), 
-                        ColorConstants.WHITE);
+                        null);
 
                     // 조언에 따른 최적의 pdfSweep 실행 방식: 생성자에 위치 리스트를 직접 전달
                     var locations = new List<PdfCleanUpLocation> { location };
@@ -564,7 +566,6 @@ namespace PDF_simple_edit.Helpers
                     var rect = page.GetCropBox();
                     float offsetLeft = rect.GetLeft();
                     float offsetBottom = rect.GetBottom();
-                    float padding = 2.0f;
 
                     var locations = new List<PdfCleanUpLocation>();
                     foreach (var t in targets)
@@ -572,9 +573,10 @@ namespace PDF_simple_edit.Helpers
                         float pdfX = offsetLeft + (float)t.x;
                         float pdfY = offsetBottom + (rect.GetHeight() - (float)t.y - (float)t.h);
 
+                        // 타이트한 영역 설정
                         locations.Add(new PdfCleanUpLocation(pageIndex + 1,
-                            new Rectangle(pdfX - padding, pdfY - padding, (float)t.w + (padding * 2), (float)t.h + (padding * 2)),
-                            ColorConstants.WHITE));
+                            new Rectangle(pdfX, pdfY + 0.5f, (float)t.w, (float)t.h - 1.0f),
+                            null));
                     }
 
                     PdfCleanUpTool cleaner = new PdfCleanUpTool(doc, locations, new CleanUpProperties());
@@ -604,7 +606,7 @@ namespace PDF_simple_edit.Helpers
                     float padding = 2.0f;
                     var location = new PdfCleanUpLocation(pageIndex + 1, 
                         new Rectangle(oldPdfX - padding, oldPdfY - padding, (float)width + (padding*2), (float)height + (padding*2)), 
-                        ColorConstants.WHITE);
+                        null);
                     
                     // pdfSweep 실행 (생성자 주입 방식)
                     var locations = new List<PdfCleanUpLocation> { location };

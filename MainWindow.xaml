@@ -29,10 +29,6 @@
 
         <!-- Custom Title Bar -->
         <Grid x:Name="AppTitleBar" Grid.Row="0" Background="Transparent">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
                 <FontIcon Glyph="&#xEA90;" FontSize="16" Foreground="#0078D4"/>
                 <TextBlock x:Name="TitleText" Text="PDF Simple Editor" Margin="12,0,0,0"
@@ -121,9 +117,6 @@
                 <ToggleMenuFlyoutItem Text="텍스트 강조" x:Name="MenuHighlight" Click="HighlightTool_Click" IsEnabled="False">
                     <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE7E6;"/></ToggleMenuFlyoutItem.Icon>
                 </ToggleMenuFlyoutItem>
-                <ToggleMenuFlyoutItem Text="스티커 노트" x:Name="MenuStickyNote" Click="StickyNoteTool_Click" IsEnabled="False">
-                    <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE70B;"/></ToggleMenuFlyoutItem.Icon>
-                </ToggleMenuFlyoutItem>
                 <MenuFlyoutItem Text="이미지 추가" x:Name="MenuAddImage" Click="AddImageTool_Click" IsEnabled="False">
                     <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B9;"/></MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
@@ -170,6 +163,10 @@
                         Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
                     <FontIcon Glyph="&#xE74E;" FontSize="16"/>
                 </Button>
+                <Button x:Name="BtnSaveAs" Click="SaveAsFile_Click" ToolTipService.ToolTip="다른 이름으로 저장 (Ctrl+Shift+S)"
+                        Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                    <FontIcon Glyph="&#xE792;" FontSize="16"/>
+                </Button>
                 <Button x:Name="BtnPrint" Click="Print_Click" ToolTipService.ToolTip="인쇄 (Ctrl+P)"
                         Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
                     <FontIcon Glyph="&#xE749;" FontSize="16"/>
@@ -190,10 +187,6 @@
                 <ToggleButton x:Name="BtnHighlight" Click="HighlightTool_Click" ToolTipService.ToolTip="텍스트 강조"
                               IsEnabled="False" Padding="8,6">
                     <FontIcon Glyph="&#xE7E6;" FontSize="16"/>
-                </ToggleButton>
-                <ToggleButton x:Name="BtnStickyNote" Click="StickyNoteTool_Click" ToolTipService.ToolTip="스티커 노트"
-                              IsEnabled="False" Padding="8,6">
-                    <FontIcon Glyph="&#xE70B;" FontSize="16"/>
                 </ToggleButton>
                 <Button x:Name="BtnAddImage" Click="AddImageTool_Click" ToolTipService.ToolTip="이미지 추가"
                         Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">

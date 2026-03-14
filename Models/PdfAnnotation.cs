@@ -10,7 +10,6 @@ namespace PDF_simple_edit.Models
     {
         Text,
         Highlight,
-        StickyNote,
         Image,
         FreeText
     }
@@ -56,7 +55,6 @@ namespace PDF_simple_edit.Models
         None,
         Select,
         AddText,
-        AddStickyNote,
         AddImage,
         Highlight,
         MoveText
@@ -77,6 +75,7 @@ namespace PDF_simple_edit.Models
         public double OriginalPdfX { get; set; }
         public double OriginalPdfY { get; set; }
         public double FontSize { get; set; }
+        public string FontFamily { get; set; } = string.Empty;
     }
 
     public enum PageContentType
@@ -103,6 +102,7 @@ namespace PDF_simple_edit.Models
         public Guid? OperatorId { get; set; }
         
         public double FontSize { get; set; }
+        public string FontFamily { get; set; } = string.Empty;
         
         // For image handling (future use)
         public string? ImageId { get; set; }
