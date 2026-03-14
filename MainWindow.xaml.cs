@@ -270,10 +270,8 @@ private void PdfManager_DocumentChanged(object? sender, EventArgs e)
         UpdateUIState();
         if (_pdfManager.IsLoaded)
         {
-            if (_pageThumbnails.Count != _pdfManager.PageCount)
-            {
-                await LoadThumbnailsAsync();
-            }
+            // [수정] 썸네일 수와 관계없이 문서가 바뀌면 썸네일 새로고침 유도 (강제 Clear)
+            await LoadThumbnailsAsync();
             
             await RenderCurrentPageAsync();
 
@@ -2323,8 +2321,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
                         try
                         {
-                            // 현재 편집 중인 내용을 임시 저장
-                            string originPath = _pdfManager.FilePath ?? Path.Combine(ApplicationData.Current.TemporaryFolder.Path, "merging_origin.pdf");
+                            // 현재 편집 중인 내용을 임시 저장 (고유한 파일명 사용으로 캐시 문제 방지)
+                            string originPath = _pdfManager.FilePath ?? Path.Combine(ApplicationData.Current.TemporaryFolder.Path, $"merging_{Guid.NewGuid()}.pdf");
                             await _pdfManager.SaveAsAsync(originPath, false);
 
                             // 합치기 실행
@@ -2339,9 +2337,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                                 _renderTempPath = null;
                                 if (_activeTab != null) _activeTab.FilePath = originPath;
 
-                                await LoadThumbnailsAsync();
-                                await RenderCurrentPageAsync();
-
+                                // LoadThumbnailsAsync will be triggered by OpenAsync -> DocumentChanged event
                                 TxtStatus.Text = "PDF 합치기 완료";
                             }
                             else
@@ -2392,8 +2388,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                     await _pdfManager.OpenAsync(file.Path);
                     _currentPageIndex = 0;
                     _renderTempPath = null; // Reset temp path to use the new file path
-                    await LoadThumbnailsAsync();
-                    await RenderCurrentPageAsync();
+                    // LoadThumbnailsAsync will be triggered by OpenAsync -> DocumentChanged event
                     TxtStatus.Text = "PDF 합치기 완료";
                 }
                 else
@@ -2740,8 +2735,6 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                     // [추가] 저장된 파일을 다시 불러와서 상태 동기화
                     await _pdfManager.OpenAsync(filePath);
                     _currentPageIndex = 0; // 첫 페이지로 이동 (또는 현재 페이지 유지)
-                    await LoadThumbnailsAsync();
-                    await RenderCurrentPageAsync();
                 }
                 else
                 {
