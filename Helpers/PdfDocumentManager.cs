@@ -2,6 +2,7 @@ using iText.Kernel.Pdf;
 using iText.Kernel.Pdf.Canvas;
 using iText.Kernel.Pdf.Canvas.Parser;
 using iText.Kernel.Pdf.Canvas.Parser.Listener;
+using iText.Kernel.Pdf.Canvas.Parser.Data;
 using iText.Kernel.Pdf.Extgstate;
 using iText.Kernel.Geom;
 using iText.Kernel.Colors;
@@ -146,6 +147,7 @@ namespace PDF_simple_edit.Helpers
                     using (var doc = new PdfDocument(reader, writer))
                     {
                         editAction(doc);
+                        doc.Close();
                     }
                     
                     _pdfBytes = msOutput.ToArray();
@@ -156,6 +158,35 @@ namespace PDF_simple_edit.Helpers
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"Error applying edit: {ex.Message}");
+                }
+            }
+        }
+
+        public byte[]? GetPdfBytesWithEdits(Action<PdfDocument> editAction)
+        {
+            if (_pdfBytes == null) return null;
+
+            lock (_docLock)
+            {
+                try
+                {
+                    using var msInput = new MemoryStream(_pdfBytes);
+                    using var msOutput = new MemoryStream();
+
+                    using (var reader = new PdfReader(msInput))
+                    using (var writer = new PdfWriter(msOutput))
+                    using (var doc = new PdfDocument(reader, writer))
+                    {
+                        editAction(doc);
+                        doc.Close();
+                    }
+
+                    return msOutput.ToArray();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error getting PDF bytes with edits: {ex.Message}");
+                    return null;
                 }
             }
         }
@@ -202,6 +233,7 @@ namespace PDF_simple_edit.Helpers
                   .MoveText(x, y)
                   .ShowText(text)
                   .EndText();
+            canvas.Release();
         }
 
         public void AddHighlight(int pageIndex, double x, double y, double width, double height, 
@@ -228,6 +260,7 @@ namespace PDF_simple_edit.Helpers
             canvas.Fill();
             
             canvas.RestoreState();
+            canvas.Release();
         }
 
         public void AddImage(int pageIndex, string imagePath, double x, double y,
@@ -319,13 +352,13 @@ namespace PDF_simple_edit.Helpers
                         return contents;
 
                     var page = doc.GetPage(pageIndex + 1);
-                    var strategy = new LocationTextExtractionStrategy();
-                    PdfCanvasProcessor processor = new PdfCanvasProcessor(strategy);
+                    var pageSize = page.GetPageSize();
+                    
+                    var listener = new ContentExtractionListener(pageSize.GetHeight());
+                    PdfCanvasProcessor processor = new PdfCanvasProcessor(listener);
                     processor.ProcessPageContent(page);
                     
-                    // Simple extraction for now
-                    var text = strategy.GetResultantText();
-                    // ... further processing could go here
+                    contents = listener.Contents;
                 }
                 catch (Exception ex)
                 {
@@ -335,17 +368,67 @@ namespace PDF_simple_edit.Helpers
             });
         }
 
-        public async Task<bool> RemoveTextAsync(int pageIndex, double x, double y, string text)
+        private class ContentExtractionListener : IEventListener
         {
-            // Implementation of text removal/redaction would go here
-            // For now, let's just add a white highlight as a placeholder
-            AddHighlight(pageIndex, x, y, 100, 20, ColorConstants.WHITE, 1.0f);
+            public List<PdfPageContent> Contents { get; } = new List<PdfPageContent>();
+            private readonly float _pageHeight;
+
+            public ContentExtractionListener(float pageHeight)
+            {
+                _pageHeight = pageHeight;
+            }
+
+            public void EventOccurred(IEventData data, EventType type)
+            {
+                if (type == EventType.RENDER_TEXT)
+                {
+                    var textInfo = (TextRenderInfo)data;
+                    var text = textInfo.GetText();
+                    if (string.IsNullOrWhiteSpace(text)) return;
+
+                    var baseline = textInfo.GetBaseline().GetStartPoint();
+                    var ascent = textInfo.GetAscentLine().GetEndPoint();
+                    var descent = textInfo.GetDescentLine().GetStartPoint();
+
+                    float x = baseline.Get(0);
+                    float y = baseline.Get(1);
+                    float height = ascent.Get(1) - descent.Get(1);
+                    float width = textInfo.GetAscentLine().GetEndPoint().Get(0) - textInfo.GetBaseline().GetStartPoint().Get(0);
+
+                    if (width <= 0) width = text.Length * (height > 0 ? height * 0.5f : 10);
+                    if (height <= 0) height = 12;
+
+                    Contents.Add(new PdfPageContent
+                    {
+                        Type = PageContentType.Text,
+                        Text = text,
+                        X = x,
+                        Y = _pageHeight - y - height,
+                        Width = width,
+                        Height = height,
+                        OriginalPdfX = x,
+                        OriginalPdfY = y
+                    });
+                }
+            }
+
+            public ICollection<EventType> GetSupportedEvents()
+            {
+                return new[] { EventType.RENDER_TEXT };
+            }
+        }
+
+        public async Task<bool> RemoveTextAsync(int pageIndex, double x, double y, double width, double height)
+        {
+            // Implementation of text removal/redaction
+            // Adding a white highlight as a placeholder to "delete" original text
+            AddHighlight(pageIndex, x, y, width, height, ColorConstants.WHITE, 1.0f);
             return true;
         }
 
-        public async Task<bool> MoveTextAsync(int pageIndex, string text, double oldX, double oldY, double newX, double newY)
+        public async Task<bool> MoveTextAsync(int pageIndex, string text, double oldX, double oldY, double width, double height, double newX, double newY)
         {
-            if (await RemoveTextAsync(pageIndex, oldX, oldY, text))
+            if (await RemoveTextAsync(pageIndex, oldX, oldY, width, height))
             {
                 AddText(pageIndex, newX, newY, text, "Arial", 12, ColorConstants.BLACK);
                 return true;

@@ -998,12 +998,12 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                         bool removed = false;
                         if (isText)
                         {
-                            removed = await _pdfManager.RemoveTextAsync(_currentPageIndex, targetAnn.OriginalPdfX, targetAnn.OriginalPdfY, targetAnn.OriginalText.Trim());
+                            removed = await _pdfManager.RemoveTextAsync(_currentPageIndex, targetAnn.OriginalPdfX, targetAnn.OriginalPdfY, targetAnn.Width, targetAnn.Height);
                         }
                         else
                         {
                             // Image removal simplified to white-out
-                            removed = await _pdfManager.RemoveTextAsync(_currentPageIndex, targetAnn.X, targetAnn.Y, "");
+                            removed = await _pdfManager.RemoveTextAsync(_currentPageIndex, targetAnn.X, targetAnn.Y, targetAnn.Width, targetAnn.Height);
                         }
                         
                         DispatcherQueue.TryEnqueue(async () => {
@@ -1259,12 +1259,12 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                     if (movedAnn.IsOriginalTextReplacement)
                     {
                         // Remove from original content stream immediately since it moved
-                        await _pdfManager.RemoveTextAsync(_currentPageIndex, movedAnn.OriginalPdfX, movedAnn.OriginalPdfY, movedAnn.OriginalText.Trim());
+                        await _pdfManager.RemoveTextAsync(_currentPageIndex, movedAnn.OriginalPdfX, movedAnn.OriginalPdfY, movedAnn.Width, movedAnn.Height);
                         movedAnn.IsOriginalTextReplacement = false; // Now it's a normal annotation
                     }
                     else if (movedAnn.IsOriginalImageReplacement && movedAnn.OriginalImageName != null)
                     {
-                        await _pdfManager.RemoveTextAsync(_currentPageIndex, movedAnn.X, movedAnn.Y, "");
+                        await _pdfManager.RemoveTextAsync(_currentPageIndex, movedAnn.X, movedAnn.Y, movedAnn.Width, movedAnn.Height);
                         movedAnn.IsOriginalImageReplacement = false;
                     }
                 }
@@ -1659,7 +1659,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         if (existingAnn.IsOriginalTextReplacement)
                         {
                             textWasRemoved = await _pdfManager.RemoveTextAsync(_currentPageIndex, 
-                                existingAnn.OriginalPdfX, existingAnn.OriginalPdfY, existingAnn.OriginalText.Trim());
+                                existingAnn.OriginalPdfX, existingAnn.OriginalPdfY, existingAnn.Width, existingAnn.Height);
                         }
                         _annotations.Remove(existingAnn);
                         if (_selectedAnnotation == existingAnn) _selectedAnnotation = null;
@@ -1670,7 +1670,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         if (existingAnn.IsOriginalTextReplacement)
                         {
                             textWasRemoved = await _pdfManager.RemoveTextAsync(_currentPageIndex, 
-                                existingAnn.OriginalPdfX, existingAnn.OriginalPdfY, existingAnn.OriginalText.Trim());
+                                existingAnn.OriginalPdfX, existingAnn.OriginalPdfY, existingAnn.Width, existingAnn.Height);
                             existingAnn.IsOriginalTextReplacement = false;
                         }
                         
@@ -2040,7 +2040,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 var ann = _selectedAnnotation;
                 if (ann.IsOriginalTextReplacement)
                 {
-                    await _pdfManager.RemoveTextAsync(_currentPageIndex, ann.OriginalPdfX, ann.OriginalPdfY, ann.OriginalText);
+                    await _pdfManager.RemoveTextAsync(_currentPageIndex, ann.OriginalPdfX, ann.OriginalPdfY, ann.Width, ann.Height);
                 }
 
                 _annotations.Remove(ann);
@@ -2410,33 +2410,51 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         {
             if (!_pdfManager.IsLoaded) return;
 
-            TxtStatus.Text = "저장 중...";
+            TxtStatus.Text = isUserSave ? "저장 중..." : "렌더링 준비 중...";
             LoadingRing.IsActive = true;
 
             try
             {
-                // Applying all unapplied annotations before saving in a single batch
-                var unapplied = _annotations.Where(a => !a.IsApplied).ToList();
-                if (unapplied.Count > 0)
+                if (isUserSave)
                 {
+                    // For user save, permanently burn ALL annotations into _pdfBytes
                     _pdfManager.ApplyBatchEdit(doc =>
                     {
-                        foreach (var ann in unapplied)
+                        foreach (var ann in _annotations)
                         {
                             ApplyAnnotationToDocumentInternal(doc, ann);
                             ann.IsApplied = true;
                         }
                     });
-                }
 
-                bool successFinal = await _pdfManager.SaveAsAsync(filePath, isUserSave);
-                if (!successFinal) throw new Exception("iText 9 save failed.");
-                
-                // Once saved and burned in, we can clear the annotations to avoid double rendering
-                if (isUserSave)
-                {
+                    bool successFinal = await _pdfManager.SaveAsAsync(filePath, true);
+                    if (!successFinal) throw new Exception("저장에 실패했습니다.");
+                    
+                    // Once permanently saved, clear the list as they are now part of the PDF background
                     _annotations.Clear();
                     await RenderCurrentPageAsync();
+                }
+                else
+                {
+                    // For temporary rendering, DO NOT modify the master _pdfBytes.
+                    // Instead, get a temporary byte array with all annotations applied.
+                    var tempBytes = _pdfManager.GetPdfBytesWithEdits(doc =>
+                    {
+                        foreach (var ann in _annotations)
+                        {
+                            ApplyAnnotationToDocumentInternal(doc, ann);
+                        }
+                    });
+
+                    if (tempBytes != null)
+                    {
+                        await File.WriteAllBytesAsync(filePath, tempBytes);
+                    }
+                    else
+                    {
+                        // Fallback to basic save if edit failed
+                        await _pdfManager.SaveAsAsync(filePath, false);
+                    }
                 }
                 
                 return;
