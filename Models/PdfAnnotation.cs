@@ -76,6 +76,7 @@ namespace PDF_simple_edit.Models
         public Guid? OperatorId { get; set; }
         public double OriginalPdfX { get; set; }
         public double OriginalPdfY { get; set; }
+        public double FontSize { get; set; }
     }
 
     public enum PageContentType
@@ -100,6 +101,8 @@ namespace PDF_simple_edit.Models
         public double OriginalPdfX { get; set; }
         public double OriginalPdfY { get; set; }
         public Guid? OperatorId { get; set; }
+        
+        public double FontSize { get; set; }
         
         // For image handling (future use)
         public string? ImageId { get; set; }

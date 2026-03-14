@@ -486,6 +486,9 @@ namespace PDF_simple_edit.Helpers
                     if (width <= 0) width = text.Length * (height > 0 ? height * 0.5f : 10);
                     if (height <= 0) height = 12;
 
+                    float fontSize = textInfo.GetFontSize();
+                    if (fontSize <= 0) fontSize = height;
+
                     Contents.Add(new PdfPageContent
                     {
                         Type = PageContentType.Text,
@@ -494,6 +497,7 @@ namespace PDF_simple_edit.Helpers
                         Y = _pageHeight - y - height,
                         Width = width,
                         Height = height,
+                        FontSize = fontSize,
                         OriginalPdfX = x,
                         OriginalPdfY = y
                     });

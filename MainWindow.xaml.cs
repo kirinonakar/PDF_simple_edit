@@ -1145,7 +1145,7 @@ private PdfAnnotation ConvertExistingContentToAnnotation(PdfPageContent content)
         OriginalImageName = isText ? null : content.ImageId,
         ImagePath = isText ? null : (string.IsNullOrEmpty(content.Text) ? null : content.Text),
         OperatorId = content.OperatorId,
-        FontSize = isText && content.Height > 0 ? content.Height : 12,
+        FontSize = isText && content.FontSize > 0 ? content.FontSize : (content.Height > 0 ? content.Height : 12),
         IsApplied = false
     };
 }
@@ -1166,7 +1166,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         OriginalPdfY = textObj.OriginalPdfY,
         OriginalText = textObj.FoundText,
         OperatorId = textObj.OperatorId,
-        FontSize = textObj.Height > 0 ? textObj.Height : 12,
+        FontSize = textObj.FontSize > 0 ? textObj.FontSize : (textObj.Height > 0 ? textObj.Height : 12),
         IsApplied = false
     };
 }
@@ -2455,6 +2455,15 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                     
                     // Once permanently saved, clear the list as they are now part of the PDF background
                     _annotations.Clear();
+
+                    // [추가] 렌더링 캐시 초기화 (저장된 상태로 새로고침 강제)
+                    _renderTempPath = null;
+                    if (_activeTab != null) _activeTab.FilePath = filePath;
+
+                    // [추가] 저장된 파일을 다시 불러와서 상태 동기화
+                    await _pdfManager.OpenAsync(filePath);
+                    _currentPageIndex = 0; // 첫 페이지로 이동 (또는 현재 페이지 유지)
+                    await LoadThumbnailsAsync();
                     await RenderCurrentPageAsync();
                 }
                 else
