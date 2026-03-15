@@ -186,7 +186,40 @@
                 </ToggleButton>
                 <ToggleButton x:Name="BtnHighlight" Click="HighlightTool_Click" ToolTipService.ToolTip="텍스트 강조"
                               IsEnabled="False" Padding="8,6">
-                    <FontIcon Glyph="&#xE7E6;" FontSize="16"/>
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <FontIcon Glyph="&#xE7E6;" FontSize="16"/>
+                        <Border x:Name="HighlightColorIndicator" Width="12" Height="4" 
+                                CornerRadius="1" VerticalAlignment="Bottom" Margin="0,0,0,2"
+                                Background="Yellow"/>
+                    </StackPanel>
+                    <FlyoutBase.AttachedFlyout>
+                        <Flyout x:Name="HighlightFlyout">
+                            <StackPanel Spacing="10" Width="240">
+                                <TextBlock Text="강조 색상 및 투명도" FontWeight="Bold"/>
+                                <ColorPicker x:Name="HighlightColorPicker" 
+                                             IsAlphaEnabled="True"
+                                             IsColorSpectrumVisible="True"
+                                             IsColorSliderVisible="True"
+                                             IsHexInputVisible="True"
+                                             ColorChanged="HighlightColorPicker_ColorChanged"/>
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="투명도" VerticalAlignment="Center"/>
+                                    <Slider x:Name="SldHighlightOpacity" Minimum="0" Maximum="1" StepFrequency="0.05"
+                                            Value="0.3" Width="100" ValueChanged="HighlightOpacity_Changed"/>
+                                    <TextBlock x:Name="TxtHighlightOpacity" Text="30%" 
+                                               VerticalAlignment="Center" FontSize="12"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Flyout>
+                    </FlyoutBase.AttachedFlyout>
+                </ToggleButton>
+                <Button x:Name="BtnHighlightSettings" Click="HighlightSettings_Click" ToolTipService.ToolTip="강조 설정"
+                        Padding="4,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                    <FontIcon Glyph="&#xE713;" FontSize="12"/>
+                </Button>
+                <ToggleButton x:Name="BtnColorPicker" Click="ColorPickerTool_Click" ToolTipService.ToolTip="색상 추출 (Eyedropper)"
+                              IsEnabled="False" Padding="8,6">
+                    <FontIcon Glyph="&#xEF3C;" FontSize="16"/>
                 </ToggleButton>
                 <Button x:Name="BtnAddImage" Click="AddImageTool_Click" ToolTipService.ToolTip="이미지 추가"
                         Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">

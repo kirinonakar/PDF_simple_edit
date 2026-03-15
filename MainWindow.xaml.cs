@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -111,6 +112,12 @@ namespace PDF_simple_edit
 
                 // Initialize color palette programmatically
                 InitializeColorPalette();
+
+                // Initialize Highlight UI
+                HighlightColorPicker.Color = ParseColor(_fontSettings.HighlightColor);
+                SldHighlightOpacity.Value = _fontSettings.HighlightOpacity;
+                HighlightColorIndicator.Background = new SolidColorBrush(ParseColor(_fontSettings.HighlightColor));
+                TxtHighlightOpacity.Text = $"{(int)(_fontSettings.HighlightOpacity * 100)}%";
 
                 LoadRecentFiles();
                 UpdateRecentFilesMenu();
@@ -362,6 +369,8 @@ namespace PDF_simple_edit
             BtnSelect.IsEnabled = hasDoc;
             BtnAddText.IsEnabled = hasDoc;
             BtnHighlight.IsEnabled = hasDoc;
+            BtnHighlightSettings.IsEnabled = hasDoc;
+            BtnColorPicker.IsEnabled = hasDoc;
             BtnAddImage.IsEnabled = hasDoc;
 
             BtnPrevPage.IsEnabled = hasDoc && _currentPageIndex > 0;
@@ -920,6 +929,7 @@ private void FitToPage()
             BtnSelect.IsChecked = mode == EditToolMode.Select;
             BtnAddText.IsChecked = mode == EditToolMode.AddText;
             BtnHighlight.IsChecked = mode == EditToolMode.Highlight;
+            BtnColorPicker.IsChecked = mode == EditToolMode.ColorPicker;
             
             if (MenuSelect != null) MenuSelect.IsChecked = mode == EditToolMode.Select;
             if (MenuAddText != null) MenuAddText.IsChecked = mode == EditToolMode.AddText;
@@ -931,6 +941,7 @@ private void FitToPage()
                 EditToolMode.Highlight => "도구: 텍스트 강조",
                 EditToolMode.AddImage => "도구: 이미지 추가",
                 EditToolMode.Select => "도구: 선택",
+                EditToolMode.ColorPicker => "도구: 색상 추출",
                 _ => ""
             };
 
@@ -958,6 +969,29 @@ private void FitToPage()
         private void HighlightTool_Click(object sender, RoutedEventArgs e)
         {
             SetToolMode(_currentTool == EditToolMode.Highlight ? EditToolMode.None : EditToolMode.Highlight);
+        }
+
+        private void HighlightSettings_Click(object sender, RoutedEventArgs e)
+        {
+            FlyoutBase.ShowAttachedFlyout(BtnHighlight);
+        }
+
+        private void ColorPickerTool_Click(object sender, RoutedEventArgs e)
+        {
+            SetToolMode(_currentTool == EditToolMode.ColorPicker ? EditToolMode.None : EditToolMode.ColorPicker);
+        }
+
+        private void HighlightColorPicker_ColorChanged(ColorPicker sender, ColorChangedEventArgs args)
+        {
+            _fontSettings.HighlightColor = args.NewColor.ToString();
+            HighlightColorIndicator.Background = new SolidColorBrush(args.NewColor);
+        }
+
+        private void HighlightOpacity_Changed(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+        {
+            _fontSettings.HighlightOpacity = e.NewValue;
+            if (TxtHighlightOpacity != null)
+                TxtHighlightOpacity.Text = $"{(int)(e.NewValue * 100)}%";
         }
 
 
@@ -1175,8 +1209,8 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             _dragStart = pos;
             _dragRect = new Microsoft.UI.Xaml.Shapes.Rectangle
             {
-                Fill = new SolidColorBrush(Microsoft.UI.Colors.Yellow),
-                Opacity = 0.3,
+                Fill = new SolidColorBrush(ParseColor(_fontSettings.HighlightColor)),
+                Opacity = _fontSettings.HighlightOpacity,
                 Stroke = new SolidColorBrush(Microsoft.UI.Colors.Orange),
                 StrokeThickness = 1
             };
@@ -1185,7 +1219,70 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             OverlayCanvas.Children.Add(_dragRect);
             OverlayCanvas.CapturePointer(e.Pointer);
             break;
+
+        case EditToolMode.ColorPicker:
+            TxtStatus.Text = "색상 추출 중...";
+            var pickedColor = await GetColorAtPointAsync(PdfPageImage, e.GetCurrentPoint(PdfPageImage).Position);
+            if (pickedColor.HasValue)
+            {
+                var color = pickedColor.Value;
+                _fontSettings.HighlightColor = color.ToString();
+                HighlightColorPicker.Color = color;
+                HighlightColorIndicator.Background = new SolidColorBrush(color);
+                TxtStatus.Text = $"색상이 추출되었습니다: {color}";
+                
+                // Automatically switch back to Highlight tool if desired, 
+                // or just stay in ColorPicker. User asked for "automatically selected", 
+                // so let's switch to Highlight tool to be helpful.
+                SetToolMode(EditToolMode.Highlight);
+            }
+            break;
     }
+}
+
+private async Task<Windows.UI.Color?> GetColorAtPointAsync(UIElement element, Windows.Foundation.Point point)
+{
+    try
+    {
+        var rtb = new RenderTargetBitmap();
+        await rtb.RenderAsync(element);
+        var buffer = await rtb.GetPixelsAsync();
+        
+        using (var reader = Windows.Storage.Streams.DataReader.FromBuffer(buffer))
+        {
+            byte[] pixels = new byte[buffer.Length];
+            reader.ReadBytes(pixels);
+            
+            // RenderTargetBitmap size might be larger than element's logical size due to DPI or scaling
+            // We need to map logical point to pixel coordinates
+            int pixelWidth = rtb.PixelWidth;
+            int pixelHeight = rtb.PixelHeight;
+            
+            double scaleX = pixelWidth / element.RenderSize.Width;
+            double scaleY = pixelHeight / element.RenderSize.Height;
+            
+            int x = (int)(point.X * scaleX);
+            int y = (int)(point.Y * scaleY);
+            
+            if (x < 0) x = 0; if (x >= pixelWidth) x = pixelWidth - 1;
+            if (y < 0) y = 0; if (y >= pixelHeight) y = pixelHeight - 1;
+
+            int index = (y * pixelWidth + x) * 4;
+            if (index >= 0 && index + 3 < pixels.Length)
+            {
+                byte b = pixels[index];
+                byte g = pixels[index + 1];
+                byte r = pixels[index + 2];
+                byte a = pixels[index + 3];
+                return Windows.UI.Color.FromArgb(a, r, g, b);
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        System.Diagnostics.Debug.WriteLine($"Error picking color: {ex.Message}");
+    }
+    return null;
 }
 
 private PdfAnnotation? FindAnnotationAt(double pdfX, double pdfY)
@@ -1444,8 +1541,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         Y = y,
                         Width = w,
                         Height = h,
-                        Color = "#FFFF00",
-                        Opacity = 0.3,
+                        Color = _fontSettings.HighlightColor,
+                        Opacity = _fontSettings.HighlightOpacity,
                         IsApplied = false
                     });
 
@@ -2905,7 +3002,15 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             try
             {
                 hexColor = hexColor.TrimStart('#');
-                if (hexColor.Length == 6)
+                if (hexColor.Length == 8)
+                {
+                    byte a = Convert.ToByte(hexColor.Substring(0, 2), 16);
+                    byte r = Convert.ToByte(hexColor.Substring(2, 2), 16);
+                    byte g = Convert.ToByte(hexColor.Substring(4, 2), 16);
+                    byte b = Convert.ToByte(hexColor.Substring(6, 2), 16);
+                    return Windows.UI.Color.FromArgb(a, r, g, b);
+                }
+                else if (hexColor.Length == 6)
                 {
                     byte r = Convert.ToByte(hexColor.Substring(0, 2), 16);
                     byte g = Convert.ToByte(hexColor.Substring(2, 2), 16);

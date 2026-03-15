@@ -57,7 +57,8 @@ namespace PDF_simple_edit.Models
         AddText,
         AddImage,
         Highlight,
-        MoveText
+        MoveText,
+        ColorPicker
     }
 
     /// <summary>
@@ -118,6 +119,10 @@ namespace PDF_simple_edit.Models
         public string Color { get; set; } = "#000000";
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
+        
+        // Highlight settings
+        public string HighlightColor { get; set; } = "#FFFF00";
+        public double HighlightOpacity { get; set; } = 0.3;
 
         public TextFontSettings Clone()
         {
@@ -127,7 +132,9 @@ namespace PDF_simple_edit.Models
                 FontSize = FontSize,
                 Color = Color,
                 IsBold = IsBold,
-                IsItalic = IsItalic
+                IsItalic = IsItalic,
+                HighlightColor = HighlightColor,
+                HighlightOpacity = HighlightOpacity
             };
         }
     }
