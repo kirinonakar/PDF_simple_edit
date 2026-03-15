@@ -1264,7 +1264,10 @@ private PdfAnnotation ConvertExistingContentToAnnotation(PdfPageContent content)
 
 private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 {
-    var size = MeasureText(textObj.FoundText ?? "", "맑은 고딕", textObj.FontSize > 0 ? textObj.FontSize : (textObj.Height > 0 ? textObj.Height : 12), false, false);
+    string fontFamily = !string.IsNullOrEmpty(textObj.FontFamily) ? textObj.FontFamily : "맑은 고딕";
+    double fontSize = textObj.FontSize > 0 ? textObj.FontSize : (textObj.Height > 0 ? textObj.Height : 12);
+    
+    var size = MeasureText(textObj.FoundText ?? "", fontFamily, fontSize, false, false);
     
     return new PdfAnnotation
     {
@@ -1280,7 +1283,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         OriginalPdfY = textObj.OriginalPdfY,
         OriginalText = textObj.FoundText ?? string.Empty,
         OperatorId = textObj.OperatorId,
-        FontSize = textObj.FontSize > 0 ? textObj.FontSize : (textObj.Height > 0 ? textObj.Height : 12),
+        FontSize = fontSize,
+        FontFamily = fontFamily,
         IsApplied = false
     };
 }

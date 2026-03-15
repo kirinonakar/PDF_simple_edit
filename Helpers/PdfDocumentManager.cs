@@ -226,34 +226,33 @@ namespace PDF_simple_edit.Helpers
             var page = doc.GetPage(pageIndex + 1);
             var rect = page.GetCropBox(); 
 
-            // 폰트가 구워질 PDF 절대 좌표 계산
             float pdfX = rect.GetLeft() + (float)x;
             float pdfY = rect.GetBottom() + (rect.GetHeight() - (float)y - (float)fontSize);
 
-            // 2. 한글 출력을 위한 폰트 강제 주입 (맑은 고딕)
             PdfFont font;
             try
             {
-                // 수정된 부분: 파라미터로 받은 fontFamily를 먼저 찾고, 없으면 맑은 고딕으로 폴백
-                string? resolvedFontPath = GetSystemFontPath(fontFamily, isBold);
-                string fontPath = resolvedFontPath ?? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), isBold ? "malgunbd.ttf" : "malgun.ttf");
+                // GetSystemFontPath에서 인덱스가 포함된 정확한 경로(예: C:\Windows\Fonts\gulim.ttc,2)를 받아옵니다.
+                string? resolvedPath = GetSystemFontPath(fontFamily, isBold);
                 
-                if (File.Exists(fontPath))
+                if (!string.IsNullOrEmpty(resolvedPath))
                 {
-                    font = PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H, PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
+                    font = PdfFontFactory.CreateFont(resolvedPath, PdfEncodings.IDENTITY_H, PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
                 }
                 else
                 {
-                    font = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
+                    // 폰트 매핑 실패 시 맑은 고딕 폴백
+                    string fallbackPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts", isBold ? "malgunbd.ttf" : "malgun.ttf");
+                    font = PdfFontFactory.CreateFont(fallbackPath, PdfEncodings.IDENTITY_H, PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"Font load error: {ex.Message}");
                 font = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
             }
 
             // 3. 로우레벨(Low-level) API로 확실하게 텍스트 박아넣기
-            // NewContentStreamAfter()를 호출하면 기존 모든 내용(배경 포함)의 가장 '위'에 투명 셀로판지를 얹고 글씨를 씁니다.
             PdfStream stream = page.NewContentStreamAfter(); 
             PdfCanvas canvas = new PdfCanvas(stream, page.GetResources(), doc);
             
@@ -273,9 +272,45 @@ namespace PDF_simple_edit.Helpers
 
         private string? GetSystemFontPath(string nameOrFile, bool isBold = false)
         {
+            if (string.IsNullOrWhiteSpace(nameOrFile)) return null;
+
             string fontDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts");
-            
-            // If it's already a full path or simple filename with extension
+
+            // 핵심: 굴림/돋움은 gulim.ttc에, 바탕/궁서는 batang.ttc에 묶여 있습니다. 인덱스를 지정해야 합니다.
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "맑은 고딕", isBold ? "malgunbd.ttf" : "malgun.ttf" },
+                { "Malgun Gothic", isBold ? "malgunbd.ttf" : "malgun.ttf" },
+                { "굴림", "gulim.ttc,0" },
+                { "굴림체", "gulim.ttc,1" },
+                { "돋움", "gulim.ttc,2" },
+                { "돋움체", "gulim.ttc,3" },
+                { "바탕", "batang.ttc,0" },
+                { "바탕체", "batang.ttc,1" },
+                { "궁서", "batang.ttc,2" },
+                { "궁서체", "batang.ttc,3" },
+                { "나눔고딕", "NanumGothic.ttf" },
+                { "Arial", isBold ? "arialbd.ttf" : "arial.ttf" },
+                { "Times New Roman", isBold ? "timesbd.ttf" : "times.ttf" },
+                { "Tahoma", isBold ? "tahomabd.ttf" : "tahoma.ttf" },
+                { "Verdana", isBold ? "verdanab.ttf" : "verdana.ttf" },
+                { "Consolas", isBold ? "consolab.ttf" : "consola.ttf" },
+                { "Courier New", isBold ? "courbd.ttf" : "cour.ttf" }
+            };
+
+            if (map.TryGetValue(nameOrFile, out string? mappedValue))
+            {
+                string[] parts = mappedValue.Split(',');
+                string path = System.IO.Path.Combine(fontDir, parts[0]); // 실제 파일 경로
+                
+                if (File.Exists(path))
+                {
+                    // 파일이 존재하면 경로 뒤에 인덱스(,0 ,1 ,2 등)를 붙여서 반환
+                    return parts.Length > 1 ? $"{path},{parts[1]}" : path;
+                }
+            }
+
+            // 파일명 자체가 들어온 경우 처리
             if (nameOrFile.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) || 
                 nameOrFile.EndsWith(".ttc", StringComparison.OrdinalIgnoreCase))
             {
@@ -283,25 +318,12 @@ namespace PDF_simple_edit.Helpers
                 if (File.Exists(path)) return path;
             }
 
-            // Map some common names to files
-            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                { "맑은 고딕", isBold ? "malgunbd.ttf" : "malgun.ttf" },
-                { "Malgun Gothic", isBold ? "malgunbd.ttf" : "malgun.ttf" },
-                { "굴림", "gulim.ttc" },
-                { "돋움", "dotum.ttc" },
-                { "바탕", "batang.ttc" },
-                { "궁서", "gungsuh.ttc" },
-                { "나눔고딕", "NanumGothic.ttf" }
-            };
+            // 3. 매핑에 없으면 폰트 이름의 공백을 제거하고 유추 시도
+            string guessName = nameOrFile.Replace(" ", "") + (isBold ? "bd.ttf" : ".ttf");
+            string guessPath = System.IO.Path.Combine(fontDir, guessName);
+            if (File.Exists(guessPath)) return guessPath;
 
-            if (map.TryGetValue(nameOrFile, out string? filename))
-            {
-                string path = System.IO.Path.Combine(fontDir, filename);
-                if (File.Exists(path)) return path;
-            }
-
-            return null;
+            return null; // 그래도 없으면 null 반환
         }
 
         public void AddHighlight(int pageIndex, double x, double y, double width, double height, 
@@ -496,13 +518,43 @@ namespace PDF_simple_edit.Helpers
                     float fontSize = textInfo.GetFontSize();
                     if (fontSize <= 0) fontSize = height;
 
-                    // 수정된 부분: PDF 서브셋 폰트명 접두사(예: AAAAAA+) 제거 로직 추가
-                    string rawFontName = textInfo.GetFont().GetFontProgram().GetFontNames().GetFontName();
-                    string cleanFontName = rawFontName;
-                    if (!string.IsNullOrEmpty(rawFontName) && rawFontName.Contains("+"))
+                    // --- 폰트 추출 시 발생할 수 있는 Null 에러 완벽 방지 ---
+                    string cleanFontName = "맑은 고딕"; // 에러 발생 시 사용할 기본값
+                    
+                    try
                     {
-                        cleanFontName = rawFontName.Substring(rawFontName.IndexOf('+') + 1);
+                        var fontProgram = textInfo.GetFont()?.GetFontProgram();
+                        var fontNames = fontProgram?.GetFontNames();
+                        string? rawFontName = fontNames?.GetFontName();
+
+                        if (!string.IsNullOrEmpty(rawFontName))
+                        {
+                            cleanFontName = rawFontName;
+
+                            // 1. 서브셋 접두어(예: AAAAAA+) 제거
+                            if (cleanFontName.Contains("+"))
+                            {
+                                cleanFontName = cleanFontName.Substring(cleanFontName.IndexOf('+') + 1);
+                            }
+
+                            // 2. 불필요한 꼬리표 제거 (null 체크가 보장된 상태에서 안전하게 실행)
+                            cleanFontName = cleanFontName.Replace("-Bold", "").Replace("-Italic", "").Replace("MT", "");
+
+                            // 3. 친숙한 이름으로 변환
+                            string lowerFont = cleanFontName.ToLower();
+                            if (lowerFont.Contains("malgun")) cleanFontName = "맑은 고딕";
+                            else if (lowerFont.Contains("gulim")) cleanFontName = "굴림";
+                            else if (lowerFont.Contains("dotum")) cleanFontName = "돋움";
+                            else if (lowerFont.Contains("batang")) cleanFontName = "바탕";
+                            else if (lowerFont.Contains("gungsuh")) cleanFontName = "궁서";
+                        }
                     }
+                    catch (Exception ex)
+                    {
+                        // 폰트 정보를 읽는 중 예외가 발생하더라도, 텍스트 객체 생성은 계속 진행되도록 무시
+                        System.Diagnostics.Debug.WriteLine($"Font parsing error: {ex.Message}");
+                    }
+                    // ----------------------------------------------------
 
                     Contents.Add(new PdfPageContent
                     {
@@ -513,7 +565,7 @@ namespace PDF_simple_edit.Helpers
                         Width = width,
                         Height = height,
                         FontSize = fontSize,
-                        FontFamily = cleanFontName, // 정제된 폰트 이름 전달
+                        FontFamily = cleanFontName, // 안전하게 정제된 폰트명 전달
                         OriginalPdfX = x,
                         OriginalPdfY = y
                     });
