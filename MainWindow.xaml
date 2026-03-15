@@ -80,6 +80,19 @@
             </MenuBarItem>
 
             <MenuBarItem Title="편집">
+                <MenuFlyoutItem Text="실행 취소" x:Name="MenuUndo" Click="Undo_Click" IsEnabled="False">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE7A7;"/></MenuFlyoutItem.Icon>
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="Z"/>
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="다시 실행" x:Name="MenuRedo" Click="Redo_Click" IsEnabled="False">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE7A6;"/></MenuFlyoutItem.Icon>
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="Y"/>
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
+                <MenuFlyoutSeparator/>
                 <MenuFlyoutItem Text="찾기..." x:Name="MenuFind" Click="Find_Click" IsEnabled="False">
                     <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE721;"/></MenuFlyoutItem.Icon>
                     <MenuFlyoutItem.KeyboardAccelerators>
@@ -170,6 +183,15 @@
                 <Button x:Name="BtnPrint" Click="Print_Click" ToolTipService.ToolTip="인쇄 (Ctrl+P)"
                         Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
                     <FontIcon Glyph="&#xE749;" FontSize="16"/>
+                </Button>
+                <AppBarSeparator/>
+                <Button x:Name="BtnUndo" Click="Undo_Click" ToolTipService.ToolTip="실행 취소 (Ctrl+Z)"
+                        Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                    <FontIcon Glyph="&#xE7A7;" FontSize="16"/>
+                </Button>
+                <Button x:Name="BtnRedo" Click="Redo_Click" ToolTipService.ToolTip="다시 실행 (Ctrl+Y)"
+                        Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                    <FontIcon Glyph="&#xE7A6;" FontSize="16"/>
                 </Button>
                 <AppBarSeparator/>
             </StackPanel>

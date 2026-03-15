@@ -34,6 +34,13 @@ namespace PDF_simple_edit.Helpers
         private readonly object _docLock = new();
         private readonly Dictionary<int, List<PdfPageContent>> _contentCache = new();
 
+        private readonly Stack<byte[]> _undoStack = new();
+        private readonly Stack<byte[]> _redoStack = new();
+        private const int MaxUndoSteps = 30;
+
+        public bool CanUndo => _undoStack.Count > 0;
+        public bool CanRedo => _redoStack.Count > 0;
+
         public string? FilePath => _filePath;
         public void SetFilePath(string path) => _filePath = path;
         
@@ -83,6 +90,8 @@ namespace PDF_simple_edit.Helpers
                         _filePath = filePath;
                         _isModified = false;
                         _contentCache.Clear();
+                        _undoStack.Clear();
+                        _redoStack.Clear();
                         
                         DocumentChanged?.Invoke(this, EventArgs.Empty);
                         PageStructureChanged?.Invoke(this, EventArgs.Empty);
@@ -145,6 +154,18 @@ namespace PDF_simple_edit.Helpers
 
             lock (_docLock)
             {
+                // Save current state to undo stack before mutation
+                _undoStack.Push((byte[])_pdfBytes.Clone());
+                if (_undoStack.Count > MaxUndoSteps)
+                {
+                    // Remove oldest (inefficient with Stack, but infrequent)
+                    var list = _undoStack.ToList();
+                    _undoStack.Clear();
+                    for (int i = Math.Min(list.Count - 1, MaxUndoSteps - 1); i >= 0; i--)
+                        _undoStack.Push(list[i]);
+                }
+                _redoStack.Clear();
+
                 try
                 {
                     using (var msInput = new MemoryStream(_pdfBytes))
@@ -413,6 +434,8 @@ namespace PDF_simple_edit.Helpers
                 _pdfBytes = ms.ToArray();
                 _filePath = null;
                 _isModified = false;
+                _undoStack.Clear();
+                _redoStack.Clear();
                 DocumentChanged?.Invoke(this, EventArgs.Empty);
                 PageStructureChanged?.Invoke(this, EventArgs.Empty);
                 ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
@@ -424,9 +447,47 @@ namespace PDF_simple_edit.Helpers
             _pdfBytes = null;
             _filePath = null;
             _isModified = false;
+            _undoStack.Clear();
+            _redoStack.Clear();
             DocumentChanged?.Invoke(this, EventArgs.Empty);
             PageStructureChanged?.Invoke(this, EventArgs.Empty);
             ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void Undo()
+        {
+            if (!CanUndo || _pdfBytes == null) return;
+
+            lock (_docLock)
+            {
+                _redoStack.Push((byte[])_pdfBytes.Clone());
+                _pdfBytes = _undoStack.Pop();
+                
+                _isModified = true; 
+                _contentCache.Clear();
+                
+                ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                DocumentChanged?.Invoke(this, EventArgs.Empty);
+                PageStructureChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        public void Redo()
+        {
+            if (!CanRedo || _pdfBytes == null) return;
+
+            lock (_docLock)
+            {
+                _undoStack.Push((byte[])_pdfBytes.Clone());
+                _pdfBytes = _redoStack.Pop();
+                
+                _isModified = true;
+                _contentCache.Clear();
+                
+                ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                DocumentChanged?.Invoke(this, EventArgs.Empty);
+                PageStructureChanged?.Invoke(this, EventArgs.Empty);
+            }
         }
 
         public (double width, double height) GetPageSize(int pageIndex)

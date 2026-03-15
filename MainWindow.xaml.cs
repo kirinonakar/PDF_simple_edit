@@ -366,12 +366,17 @@ namespace PDF_simple_edit
             BtnSave.IsEnabled = hasDoc;
             BtnSaveAs.IsEnabled = hasDoc;
             BtnPrint.IsEnabled = hasDoc;
+            BtnUndo.IsEnabled = hasDoc && _pdfManager.CanUndo;
+            BtnRedo.IsEnabled = hasDoc && _pdfManager.CanRedo;
             BtnSelect.IsEnabled = hasDoc;
             BtnAddText.IsEnabled = hasDoc;
             BtnHighlight.IsEnabled = hasDoc;
             BtnHighlightSettings.IsEnabled = hasDoc;
             BtnColorPicker.IsEnabled = hasDoc;
             BtnAddImage.IsEnabled = hasDoc;
+
+            MenuUndo.IsEnabled = hasDoc && _pdfManager.CanUndo;
+            MenuRedo.IsEnabled = hasDoc && _pdfManager.CanRedo;
 
             BtnPrevPage.IsEnabled = hasDoc && _currentPageIndex > 0;
             BtnNextPage.IsEnabled = hasDoc && _currentPageIndex < _pdfManager.PageCount - 1;
@@ -833,6 +838,24 @@ private async Task RenderCurrentPageAsync()
             {
                 PageListView.SelectedIndex = _currentPageIndex;
                 PageListView.ScrollIntoView(PageListView.SelectedItem);
+            }
+        }
+
+        private void Undo_Click(object sender, RoutedEventArgs e)
+        {
+            if (_pdfManager.CanUndo)
+            {
+                _pdfManager.Undo();
+                TxtStatus.Text = "실행 취소됨";
+            }
+        }
+
+        private void Redo_Click(object sender, RoutedEventArgs e)
+        {
+            if (_pdfManager.CanRedo)
+            {
+                _pdfManager.Redo();
+                TxtStatus.Text = "다시 실행됨";
             }
         }
 
