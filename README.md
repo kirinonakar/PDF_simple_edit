@@ -51,7 +51,7 @@ You can download the latest version from the [Releases Page](https://github.com/
 ### Build from Source
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/PDF_simple_edit.git
+   git clone https://github.com/kirinonakar/PDF_simple_edit.git
    ```
 2. Open the solution in Visual Studio 2022 (or later).
 3. Restore NuGet packages.
