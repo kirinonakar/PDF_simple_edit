@@ -510,17 +510,17 @@ namespace PDF_simple_edit.Helpers
                     float x = baseline.Get(0);
                     float y = baseline.Get(1);
                     float height = ascent.Get(1) - descent.Get(1);
-                    float width = textInfo.GetAscentLine().GetEndPoint().Get(0) - textInfo.GetBaseline().GetStartPoint().Get(0);
+                    float width = ascent.Get(0) - baseline.Get(0);
 
                     if (width <= 0) width = text.Length * (height > 0 ? height * 0.5f : 10);
                     if (height <= 0) height = 12;
 
-                    float fontSize = textInfo.GetFontSize();
-                    if (fontSize <= 0) fontSize = height;
+                    // [수정 포인트 1] 폰트 크기 버그 수정:
+                    // GetFontSize()가 아닌, 실제 화면에 그려진 시각적 높이(height)를 폰트 크기로 사용합니다.
+                    float fontSize = height;
 
-                    // --- 폰트 추출 시 발생할 수 있는 Null 에러 완벽 방지 ---
-                    string cleanFontName = "맑은 고딕"; // 에러 발생 시 사용할 기본값
-                    
+                    // --- 폰트 이름 정제 로직 ---
+                    string cleanFontName = "맑은 고딕";
                     try
                     {
                         var fontProgram = textInfo.GetFont()?.GetFontProgram();
@@ -530,17 +530,11 @@ namespace PDF_simple_edit.Helpers
                         if (!string.IsNullOrEmpty(rawFontName))
                         {
                             cleanFontName = rawFontName;
-
-                            // 1. 서브셋 접두어(예: AAAAAA+) 제거
                             if (cleanFontName.Contains("+"))
-                            {
                                 cleanFontName = cleanFontName.Substring(cleanFontName.IndexOf('+') + 1);
-                            }
 
-                            // 2. 불필요한 꼬리표 제거 (null 체크가 보장된 상태에서 안전하게 실행)
                             cleanFontName = cleanFontName.Replace("-Bold", "").Replace("-Italic", "").Replace("MT", "");
 
-                            // 3. 친숙한 이름으로 변환
                             string lowerFont = cleanFontName.ToLower();
                             if (lowerFont.Contains("malgun")) cleanFontName = "맑은 고딕";
                             else if (lowerFont.Contains("gulim")) cleanFontName = "굴림";
@@ -551,21 +545,58 @@ namespace PDF_simple_edit.Helpers
                     }
                     catch (Exception ex)
                     {
-                        // 폰트 정보를 읽는 중 예외가 발생하더라도, 텍스트 객체 생성은 계속 진행되도록 무시
                         System.Diagnostics.Debug.WriteLine($"Font parsing error: {ex.Message}");
                     }
-                    // ----------------------------------------------------
 
+                    float convertedY = _pageHeight - y - height;
+
+                    // [수정 포인트 2] 인접한 텍스트 병합(Grouping) 로직
+                    var lastContent = Contents.LastOrDefault();
+                    if (lastContent != null)
+                    {
+                        // 같은 줄에 있는지 판별 (Y축 위치 차이가 폰트 높이의 30% 이내면 같은 줄로 간주)
+                        float yTolerance = height * 0.3f;
+                        bool isSameLine = Math.Abs((float)lastContent.OriginalPdfY - y) <= yTolerance;
+
+                        if (isSameLine)
+                        {
+                            // 이전 글자의 끝점과 현재 글자의 시작점 사이의 가로 간격 계산
+                            float gap = x - (float)(lastContent.OriginalPdfX + lastContent.Width);
+                            
+                            // 간격이 폰트 크기의 1.5배 이내면 같은 문장으로 간주하고 병합
+                            float xTolerance = height * 1.5f;
+                            if (gap > -xTolerance && gap < xTolerance)
+                            {
+                                // 띄어쓰기가 필요한 정도로 떨어져 있으면 스페이스바 추가
+                                bool needsSpace = gap > (height * 0.2f) && !text.StartsWith(" ") && !lastContent.Text.EndsWith(" ");
+                                lastContent.Text += (needsSpace ? " " : "") + text;
+                                
+                                // Width 박스 확장 (현재 글자의 끝점에서 이전 문장의 시작점을 뺌)
+                                lastContent.Width = (double)((x + width) - (float)lastContent.OriginalPdfX);
+                                
+                                // 현재 글자가 기존 글자보다 크면 Bounding Box 높이 및 폰트 크기 갱신
+                                if ((double)height > lastContent.Height)
+                                {
+                                    lastContent.Height = (double)height;
+                                    lastContent.FontSize = (double)fontSize;
+                                    lastContent.Y = (double)(_pageHeight - (float)lastContent.OriginalPdfY - (float)lastContent.Height);
+                                }
+                                return; // 병합 완료되었으므로 새 객체로 추가하지 않고 종료
+                            }
+                        }
+                    }
+
+                    // 병합되지 않은 새로운 문장의 시작점인 경우 리스트에 추가
                     Contents.Add(new PdfPageContent
                     {
                         Type = PageContentType.Text,
                         Text = text,
                         X = x,
-                        Y = _pageHeight - y - height,
+                        Y = convertedY,
                         Width = width,
                         Height = height,
                         FontSize = fontSize,
-                        FontFamily = cleanFontName, // 안전하게 정제된 폰트명 전달
+                        FontFamily = cleanFontName,
                         OriginalPdfX = x,
                         OriginalPdfY = y
                     });
