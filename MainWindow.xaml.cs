@@ -16,6 +16,7 @@ using System.Threading.Tasks;
 using Windows.Storage.Pickers;
 using Windows.Storage;
 using Microsoft.UI.Windowing;
+using Microsoft.UI;
 using WinRT.Interop;
 
 namespace PDF_simple_edit
@@ -91,6 +92,18 @@ namespace PDF_simple_edit
                 InitializeComponent();
                 DocTabView.TabItemsSource = _tabs;
 
+                // 1. 현재 윈도우의 핸들(HWND) 가져오기
+                IntPtr hWnd = WindowNative.GetWindowHandle(this);
+
+                // 2. WindowId 및 AppWindow 객체 가져오기
+                WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
+                AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+
+                // 3. 아이콘 설정 (파일명이 정확해야 하며, 프로젝트 루트에 있어야 함)
+                // .ico 파일이 빌드 결과물 폴더에 복사되도록 설정되어 있어야 합니다.
+                string iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico");
+                appWindow.SetIcon(iconPath);
+
                 // Initialize font settings
                 _fontSettings.FontFamily = "맑은 고딕";
                 _fontSettings.FontSize = 12;
@@ -133,7 +146,8 @@ namespace PDF_simple_edit
                         var appWindow = AppWindow.GetFromWindowId(windowId);
                         if (appWindow != null)
                         {
-                            appWindow.SetIcon("Assets/app.ico");
+                            string iconPath2 = Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico");
+                            appWindow.SetIcon(iconPath2);
                             appWindow.Closing += AppWindow_Closing;
                         }
                         LoadWindowPosition();
