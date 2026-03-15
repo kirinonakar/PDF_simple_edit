@@ -234,12 +234,12 @@ namespace PDF_simple_edit.Helpers
             PdfFont font;
             try
             {
-                // 윈도우 환경에 100% 존재하는 맑은고딕 경로를 강제로 가져와서 한글 깨짐/증발 방지
-                string fontPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), isBold ? "malgunbd.ttf" : "malgun.ttf");
+                // 수정된 부분: 파라미터로 받은 fontFamily를 먼저 찾고, 없으면 맑은 고딕으로 폴백
+                string? resolvedFontPath = GetSystemFontPath(fontFamily, isBold);
+                string fontPath = resolvedFontPath ?? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), isBold ? "malgunbd.ttf" : "malgun.ttf");
                 
                 if (File.Exists(fontPath))
                 {
-                    // IDENTITY_H 인코딩과 PREFER_EMBEDDED 옵션을 주어야 한글이 PDF에 정상적으로 구워집니다.
                     font = PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H, PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
                 }
                 else
@@ -496,6 +496,14 @@ namespace PDF_simple_edit.Helpers
                     float fontSize = textInfo.GetFontSize();
                     if (fontSize <= 0) fontSize = height;
 
+                    // 수정된 부분: PDF 서브셋 폰트명 접두사(예: AAAAAA+) 제거 로직 추가
+                    string rawFontName = textInfo.GetFont().GetFontProgram().GetFontNames().GetFontName();
+                    string cleanFontName = rawFontName;
+                    if (!string.IsNullOrEmpty(rawFontName) && rawFontName.Contains("+"))
+                    {
+                        cleanFontName = rawFontName.Substring(rawFontName.IndexOf('+') + 1);
+                    }
+
                     Contents.Add(new PdfPageContent
                     {
                         Type = PageContentType.Text,
@@ -505,7 +513,7 @@ namespace PDF_simple_edit.Helpers
                         Width = width,
                         Height = height,
                         FontSize = fontSize,
-                        FontFamily = textInfo.GetFont().GetFontProgram().GetFontNames().GetFontName(),
+                        FontFamily = cleanFontName, // 정제된 폰트 이름 전달
                         OriginalPdfX = x,
                         OriginalPdfY = y
                     });
@@ -592,7 +600,7 @@ namespace PDF_simple_edit.Helpers
             });
         }
 
-        public async Task<bool> MoveTextAsync(int pageIndex, string text, double oldX, double oldY, double width, double height, double newX, double newY)
+        public async Task<bool> MoveTextAsync(int pageIndex, string text, double oldX, double oldY, double width, double height, double newX, double newY, string fontFamily = "맑은 고딕", double fontSize = 12)
         {
             return await Task.Run(() =>
             {
@@ -618,8 +626,8 @@ namespace PDF_simple_edit.Helpers
                     PdfCleanUpTool cleaner = new PdfCleanUpTool(doc, locations, new CleanUpProperties());
                     cleaner.CleanUp();
 
-                    // 새 위치에 텍스트 추가 (새 위치 newY는 AddTextInternal에서 자동 변환됨)
-                    AddTextInternal(doc, pageIndex, newX, newY, text, "맑은 고딕", 12, ColorConstants.BLACK);
+                    // 수정된 부분: 하드코딩된 "맑은 고딕" 대신 파라미터로 받은 폰트와 사이즈 사용
+                    AddTextInternal(doc, pageIndex, newX, newY, text, fontFamily, fontSize, ColorConstants.BLACK);
                     success = true;
                 });
                 return success;
