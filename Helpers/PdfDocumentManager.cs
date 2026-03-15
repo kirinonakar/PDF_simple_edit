@@ -34,8 +34,8 @@ namespace PDF_simple_edit.Helpers
         private readonly object _docLock = new();
         private readonly Dictionary<int, List<PdfPageContent>> _contentCache = new();
 
-        private readonly Stack<byte[]> _undoStack = new();
-        private readonly Stack<byte[]> _redoStack = new();
+        private readonly Stack<(byte[] Bytes, object? UIState)> _undoStack = new();
+        private readonly Stack<(byte[] Bytes, object? UIState)> _redoStack = new();
         private const int MaxUndoSteps = 30;
 
         public bool CanUndo => _undoStack.Count > 0;
@@ -72,6 +72,9 @@ namespace PDF_simple_edit.Helpers
         public event EventHandler? DocumentChanged;
         public event EventHandler? PageStructureChanged;
         public event EventHandler? ModifiedStateChanged;
+        public event EventHandler<object?>? UndoRedoPerformed;
+
+        public Func<object?>? GetUIStateFunc { get; set; }
 
         public PdfDocumentManager()
         {
@@ -155,7 +158,7 @@ namespace PDF_simple_edit.Helpers
             lock (_docLock)
             {
                 // Save current state to undo stack before mutation
-                _undoStack.Push((byte[])_pdfBytes.Clone());
+                _undoStack.Push(((byte[])_pdfBytes.Clone(), GetUIStateFunc?.Invoke()));
                 if (_undoStack.Count > MaxUndoSteps)
                 {
                     // Remove oldest (inefficient with Stack, but infrequent)
@@ -460,8 +463,11 @@ namespace PDF_simple_edit.Helpers
 
             lock (_docLock)
             {
-                _redoStack.Push((byte[])_pdfBytes.Clone());
-                _pdfBytes = _undoStack.Pop();
+                var currentState = GetUIStateFunc?.Invoke();
+                _redoStack.Push(((byte[])_pdfBytes.Clone(), currentState));
+                
+                var past = _undoStack.Pop();
+                _pdfBytes = past.Bytes;
                 
                 _isModified = true; 
                 _contentCache.Clear();
@@ -469,6 +475,7 @@ namespace PDF_simple_edit.Helpers
                 ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
                 DocumentChanged?.Invoke(this, EventArgs.Empty);
                 PageStructureChanged?.Invoke(this, EventArgs.Empty);
+                UndoRedoPerformed?.Invoke(this, past.UIState);
             }
         }
 
@@ -478,8 +485,11 @@ namespace PDF_simple_edit.Helpers
 
             lock (_docLock)
             {
-                _undoStack.Push((byte[])_pdfBytes.Clone());
-                _pdfBytes = _redoStack.Pop();
+                var currentState = GetUIStateFunc?.Invoke();
+                _undoStack.Push(((byte[])_pdfBytes.Clone(), currentState));
+                
+                var next = _redoStack.Pop();
+                _pdfBytes = next.Bytes;
                 
                 _isModified = true;
                 _contentCache.Clear();
@@ -487,6 +497,7 @@ namespace PDF_simple_edit.Helpers
                 ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
                 DocumentChanged?.Invoke(this, EventArgs.Empty);
                 PageStructureChanged?.Invoke(this, EventArgs.Empty);
+                UndoRedoPerformed?.Invoke(this, next.UIState);
             }
         }
 
@@ -591,17 +602,36 @@ namespace PDF_simple_edit.Helpers
                         if (!string.IsNullOrEmpty(rawFontName))
                         {
                             cleanFontName = rawFontName;
+                            
+                            // 1. 서브셋 프리픽스(예: ABCDEF+) 제거
                             if (cleanFontName.Contains("+"))
                                 cleanFontName = cleanFontName.Substring(cleanFontName.IndexOf('+') + 1);
 
-                            cleanFontName = cleanFontName.Replace("-Bold", "").Replace("-Italic", "").Replace("MT", "");
+                            // 2. 불필요한 스타일/타입 접미사 제거 (UI가 인식할 수 있는 순수 Family Name만 남김)
+                            cleanFontName = cleanFontName.Replace("-Bold", "")
+                                                         .Replace("-Italic", "")
+                                                         .Replace("Bold", "")
+                                                         .Replace("Italic", "")
+                                                         .Replace("MT", "")
+                                                         .Replace("PS", "");
 
                             string lowerFont = cleanFontName.ToLower();
+
+                            // 3. UI 프레임워크가 인식할 수 있는 실제 Windows 폰트명으로 강제 매핑
                             if (lowerFont.Contains("malgun")) cleanFontName = "맑은 고딕";
                             else if (lowerFont.Contains("gulim")) cleanFontName = "굴림";
                             else if (lowerFont.Contains("dotum")) cleanFontName = "돋움";
                             else if (lowerFont.Contains("batang")) cleanFontName = "바탕";
                             else if (lowerFont.Contains("gungsuh")) cleanFontName = "궁서";
+                            else if (lowerFont.Contains("nanumgothic")) cleanFontName = "나눔고딕";
+                            else if (lowerFont.Contains("arial")) cleanFontName = "Arial";
+                            else if (lowerFont.Contains("times")) cleanFontName = "Times New Roman";
+                            else if (lowerFont.Contains("helvetica")) cleanFontName = "Arial"; // PDF 표준 폰트인 Helvetica는 Arial로 대체
+                            else if (lowerFont.Contains("courier")) cleanFontName = "Courier New";
+                            else if (lowerFont.Contains("tahoma")) cleanFontName = "Tahoma";
+                            else if (lowerFont.Contains("verdana")) cleanFontName = "Verdana";
+                            else if (lowerFont.Contains("segoe")) cleanFontName = "Segoe UI";
+                            else if (lowerFont.Contains("consolas")) cleanFontName = "Consolas";
                         }
                     }
                     catch (Exception ex)
@@ -642,6 +672,13 @@ namespace PDF_simple_edit.Helpers
                                     lastContent.FontSize = (double)fontSize;
                                     lastContent.Y = (double)(_pageHeight - (float)lastContent.OriginalPdfY - (float)lastContent.Height);
                                 }
+
+                                // ⭐ [여기에 추가] 병합 시 기존 폰트가 맑은 고딕이었는데 새 텍스트가 명확한 폰트면 덮어쓰기
+                                if (lastContent.FontFamily == "맑은 고딕" && cleanFontName != "맑은 고딕")
+                                {
+                                    lastContent.FontFamily = cleanFontName;
+                                }
+
                                 return; // 병합 완료되었으므로 새 객체로 추가하지 않고 종료
                             }
                         }

@@ -214,6 +214,8 @@ namespace PDF_simple_edit
                 _activeTab.PdfManager.DocumentChanged -= PdfManager_DocumentChanged;
                 _activeTab.PdfManager.PageStructureChanged -= PdfManager_PageStructureChanged;
                 _activeTab.PdfManager.ModifiedStateChanged -= PdfManager_ModifiedStateChanged;
+                _activeTab.PdfManager.UndoRedoPerformed -= PdfManager_UndoRedoPerformed;
+                _activeTab.PdfManager.GetUIStateFunc = null;
             }
 
             _activeTab = DocTabView.SelectedItem as PdfDocumentTab;
@@ -224,6 +226,12 @@ namespace PDF_simple_edit
                 _activeTab.PdfManager.DocumentChanged += PdfManager_DocumentChanged;
                 _activeTab.PdfManager.PageStructureChanged += PdfManager_PageStructureChanged;
                 _activeTab.PdfManager.ModifiedStateChanged += PdfManager_ModifiedStateChanged;
+                _activeTab.PdfManager.UndoRedoPerformed += PdfManager_UndoRedoPerformed;
+                
+                // 설정: 원복 시 복원할 UI 상태(어노테이션 목록) 제공 함수
+                _activeTab.PdfManager.GetUIStateFunc = () => {
+                    return _activeTab.Annotations.Select(a => a.Clone()).ToList();
+                };
 
                 PageListView.ItemsSource = _pageThumbnails;
                 
@@ -331,6 +339,27 @@ namespace PDF_simple_edit
                 UpdateTitleBar();
                 UpdateTabHeader();
             });
+        }
+
+        private void PdfManager_UndoRedoPerformed(object? sender, object? state)
+        {
+            if (_activeTab != null && state is List<PdfAnnotation> savedAnnotations)
+            {
+                DispatcherQueue.TryEnqueue(async () => {
+                    _activeTab.Annotations.Clear();
+                    foreach (var ann in savedAnnotations)
+                    {
+                        _activeTab.Annotations.Add(ann);
+                    }
+                    
+                    // UI 갱신
+                    RenderAnnotationOverlays();
+                    
+                    // 만약 Undo로 인해 원본 PDF 데이터가 바뀌었다면 렌더링 다시 수행
+                    _renderTempPath = null;
+                    await RenderCurrentPageAsync();
+                });
+            }
         }
 
         private void UpdateTabHeader()
@@ -1123,9 +1152,23 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
                     if (found != null)
                     {
+                        // [핵심 해결책] 
+                        // 먼저 PDF에서 해당 텍스트를 제거합니다. 
+                        // 이때 PdfManager.ApplyEdit가 호출되는데, 아직 _annotations에 found가 추가되기 전이므로
+                        // Undo 시점의 UI 상태는 '어노테이션이 없는 상태'로 저장됩니다.
+                        bool isText = found.IsOriginalTextReplacement;
+                        await _pdfManager.RemoveTextAsync(_currentPageIndex, found.X, found.Y, found.Width, found.Height);
+                        
+                        // 이제 UI용 어노테이션으로 목록에 추가합니다.
+                        found.IsOriginalTextReplacement = false; // 이미 제거했으므로 플래그 해제
+                        found.IsOriginalImageReplacement = false;
                         _annotations.Add(found);
+                        
                         _pdfManager.MarkModified();
-                        TxtStatus.Text = "원본 콘텐츠가 선택되었습니다.";
+                        TxtStatus.Text = "원본 콘텐츠가 선택되어 이동 가능한 상태가 되었습니다.";
+                        
+                        // 강제로 UI 갱신 (원본이 사라지고 어노테이션이 나타남)
+                        await RenderCurrentPageAsync();
                     }
                 }
                 else
@@ -1175,41 +1218,11 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 _lastMousePos = pos;
                 OverlayCanvas.CapturePointer(e.Pointer);
                 
-                // ... (existing original content removal logic)
+                // 기존의 이 부분(백그라운드 Task에서 RemoveTextAsync를 호출하던 로직)은 
+                // 위에서 선택 즉시 처리하도록 변경했으므로 제거하거나 중복 방지 처리를 합니다.
                 if (_selectedAnnotation.IsOriginalTextReplacement || (_selectedAnnotation.IsOriginalImageReplacement && _selectedAnnotation.OriginalImageName != null))
                 {
-                    var targetAnn = _selectedAnnotation;
-                    bool isText = targetAnn.IsOriginalTextReplacement;
-
-                    _ = Task.Run(async () => {
-                        bool removed = false;
-                        if (isText)
-                        {
-                            // Expand the removal area slightly based on font size to ensure full coverage
-                            // UI 좌표(X, Y)를 사용하여 텍스트 제거
-                            removed = await _pdfManager.RemoveTextAsync(_currentPageIndex, targetAnn.X, targetAnn.Y, targetAnn.Width, targetAnn.Height);
-                        }
-                        else
-                        {
-                            // Image removal simplified to white-out
-                            removed = await _pdfManager.RemoveTextAsync(_currentPageIndex, targetAnn.X, targetAnn.Y, targetAnn.Width, targetAnn.Height);
-                        }
-                        
-                        DispatcherQueue.TryEnqueue(async () => {
-                            if (removed)
-                            {
-                                if (isText) targetAnn.IsOriginalTextReplacement = false;
-                                else targetAnn.IsOriginalImageReplacement = false;
-
-                                await RenderCurrentPageAsync();
-                                TxtStatus.Text = (isText ? "기존 텍스트" : "기존 이미지") + " 제거 성공";
-                            }
-                            else
-                            {
-                                TxtStatus.Text = "제거 재시도 중...";
-                            }
-                        });
-                    });
+                   // 이미 위에서 처리됨
                 }
                 else
                 {

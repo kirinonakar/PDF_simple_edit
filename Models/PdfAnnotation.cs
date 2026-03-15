@@ -45,6 +45,37 @@ namespace PDF_simple_edit.Models
         public string OriginalText { get; set; } = string.Empty;
         public string? OriginalImageName { get; set; }
         public Guid? OperatorId { get; set; }
+
+        public PdfAnnotation Clone()
+        {
+            return new PdfAnnotation
+            {
+                Id = this.Id, // Keep same ID for matching if needed, or Guid.NewGuid() if new object
+                Type = this.Type,
+                PageIndex = this.PageIndex,
+                X = this.X,
+                Y = this.Y,
+                Width = this.Width,
+                Height = this.Height,
+                Content = this.Content,
+                FontFamily = this.FontFamily,
+                FontSize = this.FontSize,
+                Color = this.Color,
+                IsBold = this.IsBold,
+                IsItalic = this.IsItalic,
+                Opacity = this.Opacity,
+                ImagePath = this.ImagePath,
+                CreatedAt = this.CreatedAt,
+                IsApplied = this.IsApplied,
+                IsOriginalTextReplacement = this.IsOriginalTextReplacement,
+                IsOriginalImageReplacement = this.IsOriginalImageReplacement,
+                OriginalPdfX = this.OriginalPdfX,
+                OriginalPdfY = this.OriginalPdfY,
+                OriginalText = this.OriginalText,
+                OriginalImageName = this.OriginalImageName,
+                OperatorId = this.OperatorId
+            };
+        }
     }
 
     /// <summary>
