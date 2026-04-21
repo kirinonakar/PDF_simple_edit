@@ -45,6 +45,9 @@ namespace PDF_simple_edit.Models
         public string OriginalText { get; set; } = string.Empty;
         public string? OriginalImageName { get; set; }
         public Guid? OperatorId { get; set; }
+        public int ContentStreamIndex { get; set; } = -1;
+        public int OperationIndex { get; set; } = -1;
+        public int TextRenderMode { get; set; }
 
         public PdfAnnotation Clone()
         {
@@ -73,7 +76,10 @@ namespace PDF_simple_edit.Models
                 OriginalPdfY = this.OriginalPdfY,
                 OriginalText = this.OriginalText,
                 OriginalImageName = this.OriginalImageName,
-                OperatorId = this.OperatorId
+                OperatorId = this.OperatorId,
+                ContentStreamIndex = this.ContentStreamIndex,
+                OperationIndex = this.OperationIndex,
+                TextRenderMode = this.TextRenderMode
             };
         }
     }
@@ -108,6 +114,12 @@ namespace PDF_simple_edit.Models
         public double OriginalPdfY { get; set; }
         public double FontSize { get; set; }
         public string FontFamily { get; set; } = string.Empty;
+        public string Color { get; set; } = "#000000";
+        public bool IsBold { get; set; }
+        public bool IsItalic { get; set; }
+        public int ContentStreamIndex { get; set; } = -1;
+        public int OperationIndex { get; set; } = -1;
+        public int TextRenderMode { get; set; }
     }
 
     public enum PageContentType
@@ -135,6 +147,12 @@ namespace PDF_simple_edit.Models
         
         public double FontSize { get; set; }
         public string FontFamily { get; set; } = string.Empty;
+        public string Color { get; set; } = "#000000";
+        public bool IsBold { get; set; }
+        public bool IsItalic { get; set; }
+        public int ContentStreamIndex { get; set; } = -1;
+        public int OperationIndex { get; set; } = -1;
+        public int TextRenderMode { get; set; }
         
         // For image handling (future use)
         public string? ImageId { get; set; }
