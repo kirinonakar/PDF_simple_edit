@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace PDF_simple_edit.Models
 {
@@ -46,8 +47,13 @@ namespace PDF_simple_edit.Models
         public string? OriginalImageName { get; set; }
         public Guid? OperatorId { get; set; }
         public int ContentStreamIndex { get; set; } = -1;
+        public int ContentStreamObjectNumber { get; set; } = -1;
         public int OperationIndex { get; set; } = -1;
         public int TextRenderMode { get; set; }
+        public double LineHeight { get; set; }
+        public double BaselineOffset { get; set; }
+        public int OriginalFontObjectNumber { get; set; } = -1;
+        public List<PdfTextFragment> TextFragments { get; set; } = new();
 
         public PdfAnnotation Clone()
         {
@@ -78,9 +84,47 @@ namespace PDF_simple_edit.Models
                 OriginalImageName = this.OriginalImageName,
                 OperatorId = this.OperatorId,
                 ContentStreamIndex = this.ContentStreamIndex,
+                ContentStreamObjectNumber = this.ContentStreamObjectNumber,
                 OperationIndex = this.OperationIndex,
-                TextRenderMode = this.TextRenderMode
+                TextRenderMode = this.TextRenderMode,
+                LineHeight = this.LineHeight,
+                BaselineOffset = this.BaselineOffset,
+                OriginalFontObjectNumber = this.OriginalFontObjectNumber,
+                TextFragments = this.TextFragments.Select(fragment => fragment.Clone()).ToList()
             };
+        }
+    }
+
+    /// <summary>
+    /// Identifies one PDF text-showing operation and its rendered bounds.
+    /// Keeping these targets lets the editor remove text without erasing graphics
+    /// that happen to be behind the text.
+    /// </summary>
+    public class PdfTextFragment
+    {
+        public string Text { get; set; } = string.Empty;
+        public double X { get; set; }
+        public double Y { get; set; }
+        public double Width { get; set; }
+        public double Height { get; set; }
+        public double OriginalPdfX { get; set; }
+        public double OriginalPdfY { get; set; }
+        public double FontSize { get; set; }
+        public string FontFamily { get; set; } = string.Empty;
+        public string Color { get; set; } = "#000000";
+        public bool IsBold { get; set; }
+        public bool IsItalic { get; set; }
+        public int ContentStreamIndex { get; set; } = -1;
+        public int ContentStreamObjectNumber { get; set; } = -1;
+        public int OperationIndex { get; set; } = -1;
+        public int TextRenderMode { get; set; }
+        public double BaselineOffset { get; set; }
+        public int OriginalFontObjectNumber { get; set; } = -1;
+        public int LineIndex { get; set; }
+
+        public PdfTextFragment Clone()
+        {
+            return (PdfTextFragment)MemberwiseClone();
         }
     }
 
@@ -118,8 +162,13 @@ namespace PDF_simple_edit.Models
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
         public int ContentStreamIndex { get; set; } = -1;
+        public int ContentStreamObjectNumber { get; set; } = -1;
         public int OperationIndex { get; set; } = -1;
         public int TextRenderMode { get; set; }
+        public double LineHeight { get; set; }
+        public double BaselineOffset { get; set; }
+        public int OriginalFontObjectNumber { get; set; } = -1;
+        public List<PdfTextFragment> TextFragments { get; set; } = new();
     }
 
     public enum PageContentType
@@ -151,8 +200,13 @@ namespace PDF_simple_edit.Models
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
         public int ContentStreamIndex { get; set; } = -1;
+        public int ContentStreamObjectNumber { get; set; } = -1;
         public int OperationIndex { get; set; } = -1;
         public int TextRenderMode { get; set; }
+        public double LineHeight { get; set; }
+        public double BaselineOffset { get; set; }
+        public int OriginalFontObjectNumber { get; set; } = -1;
+        public List<PdfTextFragment> TextFragments { get; set; } = new();
         
         // For image handling (future use)
         public string? ImageId { get; set; }

@@ -52,6 +52,8 @@ namespace PDF_simple_edit
         private PdfAnnotation? _selectedAnnotation;
         private readonly List<PdfAnnotation> _selectedAnnotations = new();
         private bool _isMovingAnnotation = false;
+        private bool _hasMovedAnnotation = false;
+        private readonly Dictionary<PdfAnnotation, Windows.Foundation.Point> _moveStartPositions = new();
         private bool _isResizingAnnotation = false;
         private string? _resizeHandle = null; // "NW", "N", "NE", "W", "E", "SW", "S", "SE"
         private Windows.Foundation.Point _lastMousePos;
@@ -66,6 +68,16 @@ namespace PDF_simple_edit
         private bool _isDialogOpen = false;
         private bool _isInlineEditing = false;
         private System.Threading.CancellationTokenSource? _thumbnailCts;
+
+        private sealed class InlineTextEditSession
+        {
+            public required PdfAnnotation Annotation { get; init; }
+            public required string OriginalContent { get; init; }
+            public bool HasLiveChanges { get; set; }
+            public bool SuppressTextChanged { get; set; }
+            public bool OriginalRemovalCommitted { get; set; }
+            public Task<bool>? RemovalTask { get; set; }
+        }
 
 #pragma warning disable CS0414
         private string? _lastSearchQuery;
@@ -1152,24 +1164,12 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
                     if (found != null)
                     {
-                        // [핵심 해결책] 
-                        // 먼저 PDF에서 해당 텍스트를 제거합니다. 
-                        // 이때 PdfManager.ApplyEdit가 호출되는데, 아직 _annotations에 found가 추가되기 전이므로
-                        // Undo 시점의 UI 상태는 '어노테이션이 없는 상태'로 저장됩니다.
-                        bool isText = found.IsOriginalTextReplacement;
-                        await _pdfManager.RemoveTextAsync(_currentPageIndex, found.X, found.Y, found.Width, found.Height,
-                            found.ContentStreamIndex, found.OperationIndex, found.TextRenderMode);
-                        
-                        // 이제 UI용 어노테이션으로 목록에 추가합니다.
-                        found.IsOriginalTextReplacement = false; // 이미 제거했으므로 플래그 해제
-                        found.IsOriginalImageReplacement = false;
+                        // 선택만으로 PDF 원문을 변경하지 않습니다. 원본은 그대로 렌더링하고
+                        // 편집 구역 테두리만 오버레이하여 글꼴/크기/좌표 변화를 막습니다.
                         _annotations.Add(found);
-                        
-                        _pdfManager.MarkModified();
-                        TxtStatus.Text = "원본 콘텐츠가 선택되어 이동 가능한 상태가 되었습니다.";
-                        
-                        // 강제로 UI 갱신 (원본이 사라지고 어노테이션이 나타남)
-                        await RenderCurrentPageAsync();
+                        TxtStatus.Text = found.IsOriginalTextReplacement
+                            ? "텍스트 편집 구역이 선택되었습니다. 두 번 클릭하여 편집하세요."
+                            : "원본 콘텐츠가 선택되었습니다.";
                     }
                 }
                 else
@@ -1216,6 +1216,10 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             if (_selectedAnnotation != null)
             {
                 _isMovingAnnotation = true;
+                _hasMovedAnnotation = false;
+                _moveStartPositions.Clear();
+                foreach (var annotation in _selectedAnnotations)
+                    _moveStartPositions[annotation] = new Windows.Foundation.Point(annotation.X, annotation.Y);
                 _lastMousePos = pos;
                 OverlayCanvas.CapturePointer(e.Pointer);
                 
@@ -1380,15 +1384,6 @@ private PdfAnnotation ConvertExistingContentToAnnotation(PdfPageContent content)
     double width = content.Width;
     double height = content.Height;
 
-    if (isText)
-    {
-        // [핵심] iText가 리포트한 너비 대신 WinUI에서 실제로 그려질 너비를 측정하여 저장
-        // 이렇게 해야 오른쪽 정렬 시 편집한 텍스트와 추출한 텍스트의 끝점이 완벽히 일치함
-        var size = MeasureText(content.Text ?? "", fontFamily, fontSize, isBold, isItalic);
-        width = size.width;
-        height = size.height;
-    }
-
     return new PdfAnnotation
     {
         Type = isText ? AnnotationType.Text : AnnotationType.Image,
@@ -1407,8 +1402,13 @@ private PdfAnnotation ConvertExistingContentToAnnotation(PdfPageContent content)
         ImagePath = isText ? null : (string.IsNullOrEmpty(content.Text) ? null : content.Text),
         OperatorId = content.OperatorId,
         ContentStreamIndex = content.ContentStreamIndex,
+        ContentStreamObjectNumber = content.ContentStreamObjectNumber,
         OperationIndex = content.OperationIndex,
         TextRenderMode = content.TextRenderMode,
+        LineHeight = content.LineHeight,
+        BaselineOffset = content.BaselineOffset,
+        OriginalFontObjectNumber = content.OriginalFontObjectNumber,
+        TextFragments = content.TextFragments.Select(fragment => fragment.Clone()).ToList(),
         FontSize = fontSize,
         FontFamily = fontFamily,
         Color = content.Color,
@@ -1425,8 +1425,6 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
     bool isBold = textObj.IsBold;
     bool isItalic = textObj.IsItalic;
     
-    var size = MeasureText(textObj.FoundText ?? "", fontFamily, fontSize, isBold, isItalic);
-    
     return new PdfAnnotation
     {
         Type = AnnotationType.Text,
@@ -1434,8 +1432,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         X = textObj.X,
         Y = textObj.Y,
         Content = textObj.FoundText ?? string.Empty,
-        Width = size.width,
-        Height = size.height,
+        Width = textObj.Width,
+        Height = textObj.Height,
         IsOriginalTextReplacement = true,
         OriginalPdfX = textObj.OriginalPdfX,
         OriginalPdfY = textObj.OriginalPdfY,
@@ -1506,6 +1504,16 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 double dx = (pos.X - _lastMousePos.X) / PdfToPixels;
                 double dy = (pos.Y - _lastMousePos.Y) / PdfToPixels;
 
+                if (!_hasMovedAnnotation)
+                {
+                    double pixelDistance = Math.Sqrt(
+                        Math.Pow(pos.X - _lastMousePos.X, 2) +
+                        Math.Pow(pos.Y - _lastMousePos.Y, 2));
+                    if (pixelDistance < 3)
+                        return;
+                    _hasMovedAnnotation = true;
+                }
+
                 foreach (var ann in _selectedAnnotations)
                 {
                     ann.X += dx;
@@ -1543,28 +1551,41 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             }
             else if (_isMovingAnnotation)
             {
-                var movedAnn = _selectedAnnotation;
                 _isMovingAnnotation = false;
                 OverlayCanvas.ReleasePointerCapture(e.Pointer);
-                
-                // If it's a replacement for original PDF content and it hasn't been removed yet
-                if (movedAnn != null)
+
+                if (!_hasMovedAnnotation)
                 {
-                    if (movedAnn.IsOriginalTextReplacement)
-                    {
-                        // Remove from original content stream immediately since it moved
-                        // UI 좌표(X, Y)를 사용하여 텍스트 제거
-                        await _pdfManager.RemoveTextAsync(_currentPageIndex, movedAnn.X, movedAnn.Y, movedAnn.Width, movedAnn.Height,
-                            movedAnn.ContentStreamIndex, movedAnn.OperationIndex, movedAnn.TextRenderMode);
-                        movedAnn.IsOriginalTextReplacement = false; // Now it's a normal annotation
-                    }
-                    else if (movedAnn.IsOriginalImageReplacement && movedAnn.OriginalImageName != null)
-                    {
-                        await _pdfManager.RemoveTextAsync(_currentPageIndex, movedAnn.X, movedAnn.Y, movedAnn.Width, movedAnn.Height);
-                        movedAnn.IsOriginalImageReplacement = false;
-                    }
+                    _moveStartPositions.Clear();
+                    RenderAnnotationOverlays();
+                    return;
                 }
 
+                var originalTextTargets = _selectedAnnotations
+                    .Where(annotation => annotation.IsOriginalTextReplacement)
+                    .ToList();
+                if (originalTextTargets.Count > 0)
+                {
+                    bool removed = await _pdfManager.RemoveOriginalTextAnnotationsAsync(
+                        _currentPageIndex, originalTextTargets);
+                    if (!removed)
+                    {
+                        foreach (var pair in _moveStartPositions)
+                        {
+                            pair.Key.X = pair.Value.X;
+                            pair.Key.Y = pair.Value.Y;
+                        }
+                        TxtStatus.Text = "이 PDF의 텍스트는 배경을 보존한 상태로 이동할 수 없습니다.";
+                        _moveStartPositions.Clear();
+                        RenderAnnotationOverlays();
+                        return;
+                    }
+
+                    foreach (var annotation in originalTextTargets)
+                        annotation.IsOriginalTextReplacement = false;
+                }
+
+                _moveStartPositions.Clear();
                 _pdfManager.MarkModified();
                 TxtStatus.Text = "위치 이동됨 (저장 시 반영)";
                 
@@ -1650,7 +1671,12 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             }
 
             // 편집 중인 어노테이션 객체 식별 (skip rendering base text while editing)
-            var editingAnn = activeBox?.Tag as PdfAnnotation;
+            var editingAnn = activeBox?.Tag switch
+            {
+                InlineTextEditSession session => session.Annotation,
+                PdfAnnotation annotation => annotation,
+                _ => null
+            };
 
             var pageAnnotations = _annotations.Where(a => a.PageIndex == _currentPageIndex).ToList();
             int insertIndex = 0;
@@ -1658,30 +1684,46 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             foreach (var ann in pageAnnotations)
             {
                 if (ann == editingAnn) continue;
+                if (ann.IsOriginalTextReplacement && !_selectedAnnotations.Contains(ann))
+                    continue;
                 FrameworkElement? element = null;
 
                 switch (ann.Type)
                 {
                     case AnnotationType.Text:
                     case AnnotationType.FreeText:
-                        element = new TextBlock
+                        if (ann.IsOriginalTextReplacement)
                         {
-                            Text = ann.Content,
-                            // 글자 잘림 방지를 위해 너비/높이 제약 제거 (자동 크기 조절)
-                            TextWrapping = TextWrapping.NoWrap,
-                            FontFamily = new FontFamily(ann.FontFamily),
-                            FontSize = ann.FontSize * PdfToPixels,
-                            Foreground = new SolidColorBrush(ParseColor(ann.Color)),
-                            FontWeight = ann.IsBold
-                                ? Microsoft.UI.Text.FontWeights.Bold
-                                : Microsoft.UI.Text.FontWeights.Normal,
-                            FontStyle = ann.IsItalic
-                                ? Windows.UI.Text.FontStyle.Italic
-                                : Windows.UI.Text.FontStyle.Normal,
-                            Padding = new Thickness(0),
-                            Margin = new Thickness(0),
-                            IsHitTestVisible = false
-                        };
+                            // 원문은 PDF 페이지 이미지가 그대로 보여 주므로 선택 테두리용
+                            // 투명 영역만 만듭니다. 텍스트를 다시 그리면 폰트와 크기가 달라집니다.
+                            element = new Microsoft.UI.Xaml.Shapes.Rectangle
+                            {
+                                Width = Math.Max(ann.Width * PdfToPixels, 1),
+                                Height = Math.Max(ann.Height * PdfToPixels, 1),
+                                Fill = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                                IsHitTestVisible = false
+                            };
+                        }
+                        else
+                        {
+                            element = new TextBlock
+                            {
+                                Text = ann.Content,
+                                TextWrapping = TextWrapping.NoWrap,
+                                FontFamily = new FontFamily(ann.FontFamily),
+                                FontSize = ann.FontSize * PdfToPixels,
+                                Foreground = new SolidColorBrush(ParseColor(ann.Color)),
+                                FontWeight = ann.IsBold
+                                    ? Microsoft.UI.Text.FontWeights.Bold
+                                    : Microsoft.UI.Text.FontWeights.Normal,
+                                FontStyle = ann.IsItalic
+                                    ? Windows.UI.Text.FontStyle.Italic
+                                    : Windows.UI.Text.FontStyle.Normal,
+                                Padding = new Thickness(0),
+                                Margin = new Thickness(0),
+                                IsHitTestVisible = false
+                            };
+                        }
                         break;
 
                     case AnnotationType.Highlight:
@@ -1849,29 +1891,37 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             var textBox = new TextBox
             {
                 Text = initialText,
-                AcceptsReturn = false,
+                AcceptsReturn = existingAnn != null,
                 TextWrapping = TextWrapping.NoWrap,
-                MinWidth = 60,
-                MinHeight = 24,
+                MinWidth = existingAnn != null ? 0 : 60,
+                MinHeight = existingAnn != null ? 0 : 24,
+                Width = existingAnn != null ? Math.Max(existingAnn.Width * PdfToPixels, 1) : double.NaN,
+                Height = existingAnn != null ? Math.Max(existingAnn.Height * PdfToPixels, fontSize * PdfToPixels * 1.2) : double.NaN,
                 Padding = new Thickness(0),
                 Margin = new Thickness(0),
                 BorderThickness = new Thickness(1),
-                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(240, 255, 255, 255)),
+                Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
                 BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
                 FontSize = fontSize * PdfToPixels,
                 FontFamily = new FontFamily(fontFamily),
                 Foreground = new SolidColorBrush(ParseColor(color)),
                 FontWeight = isBold ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal,
                 FontStyle = isItalic ? Windows.UI.Text.FontStyle.Italic : Windows.UI.Text.FontStyle.Normal,
-                Tag = existingAnn != null ? (object)existingAnn : (object)new Windows.Foundation.Point(pdfX, pdfY),
+                Tag = existingAnn != null
+                    ? new InlineTextEditSession
+                    {
+                        Annotation = existingAnn,
+                        OriginalContent = existingAnn.Content
+                    }
+                    : (object)new Windows.Foundation.Point(pdfX, pdfY),
                 VerticalAlignment = VerticalAlignment.Top,
                 VerticalContentAlignment = VerticalAlignment.Top,
                 MaxWidth = 4000,
                 UseLayoutRounding = false
             };
 
-            Canvas.SetLeft(textBox, canvasX - 2);
-            Canvas.SetTop(textBox, canvasY - 1);
+            Canvas.SetLeft(textBox, canvasX);
+            Canvas.SetTop(textBox, canvasY);
 
             textBox.Loaded += (s, e) => 
             {
@@ -1883,12 +1933,18 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             textBox.PointerPressed += (s, e) => e.Handled = true;
             textBox.PointerReleased += (s, e) => e.Handled = true;
             textBox.DoubleTapped += (s, e) => e.Handled = true;
+            if (existingAnn != null)
+                textBox.TextChanged += InlineTextBox_TextChanged;
 
-            textBox.KeyDown += (s, e) =>
+            textBox.KeyDown += async (s, e) =>
             {
-                if (e.Key == Windows.System.VirtualKey.Enter && !((TextBox)s).AcceptsReturn)
+                var controlDown = Microsoft.UI.Input.InputKeyboardSource
+                    .GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
+                    .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+                if (e.Key == Windows.System.VirtualKey.Enter &&
+                    (!((TextBox)s).AcceptsReturn || controlDown))
                 {
-                    ApplyInlineText((TextBox)s);
+                    await ApplyInlineTextAsync((TextBox)s);
                     e.Handled = true;
                 }
                 else if (e.Key == Windows.System.VirtualKey.Escape)
@@ -1898,20 +1954,89 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 }
             };
 
-            textBox.LostFocus += (s, e) =>
+            textBox.LostFocus += async (s, e) =>
             {
-                ApplyInlineText((TextBox)s);
+                await ApplyInlineTextAsync((TextBox)s);
             };
 
             OverlayCanvas.Children.Add(textBox);
         }
 
-        private void CancelInlineEdit(TextBox textBox)
+        private async void InlineTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (sender is not TextBox textBox ||
+                textBox.Tag is not InlineTextEditSession session ||
+                session.SuppressTextChanged)
+                return;
+
+            session.HasLiveChanges = true;
+
+            if (session.Annotation.IsOriginalTextReplacement && session.RemovalTask == null)
+            {
+                session.RemovalTask = RemoveOriginalTextForLiveEditAsync(session);
+                bool removed = await session.RemovalTask;
+                if (!removed && OverlayCanvas.Children.Contains(textBox))
+                {
+                    session.SuppressTextChanged = true;
+                    session.Annotation.Content = session.OriginalContent;
+                    textBox.Text = session.OriginalContent;
+                    textBox.SelectionStart = textBox.Text.Length;
+                    session.SuppressTextChanged = false;
+                    session.HasLiveChanges = false;
+                    TxtStatus.Text = "배경을 보존하면서 수정할 수 없는 PDF 텍스트입니다.";
+                    return;
+                }
+            }
+
+            if (session.RemovalTask != null && !await session.RemovalTask)
+                return;
+
+            session.Annotation.Content = textBox.Text;
+            session.Annotation.IsApplied = false;
+
+            TxtStatus.Text = string.IsNullOrEmpty(textBox.Text)
+                ? "텍스트가 삭제되었습니다 (편집 중)"
+                : "텍스트 편집 내용이 실시간 반영 중입니다.";
+        }
+
+        private async Task<bool> RemoveOriginalTextForLiveEditAsync(InlineTextEditSession session)
+        {
+            bool removed = await _pdfManager.RemoveOriginalTextAnnotationsAsync(
+                _currentPageIndex, new[] { session.Annotation });
+            if (!removed)
+                return false;
+
+            session.Annotation.IsOriginalTextReplacement = false;
+            session.OriginalRemovalCommitted = true;
+            _renderTempPath = null;
+            await RenderCurrentPageAsync();
+            RenderAnnotationOverlays();
+            return true;
+        }
+
+        private async void CancelInlineEdit(TextBox textBox)
         {
             if (!_isInlineEditing || !OverlayCanvas.Children.Contains(textBox)) return;
-            
-            OverlayCanvas.Children.Remove(textBox);
+
             _isInlineEditing = false;
+            OverlayCanvas.Children.Remove(textBox);
+
+            if (textBox.Tag is InlineTextEditSession session)
+            {
+                if (session.RemovalTask != null)
+                    await session.RemovalTask;
+
+                if (session.OriginalRemovalCommitted && _pdfManager.CanUndo)
+                {
+                    _pdfManager.Undo();
+                }
+                else
+                {
+                    session.Annotation.Content = session.OriginalContent;
+                    session.Annotation.IsApplied = false;
+                    RenderAnnotationOverlays();
+                }
+            }
             
             // 포커스 복구 (단축키 작동을 위해 중요)
             DispatcherQueue.TryEnqueue(() =>
@@ -1920,7 +2045,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             });
         }
 
-        private async void ApplyInlineText(TextBox textBox)
+        private async Task ApplyInlineTextAsync(TextBox textBox)
         {
             if (!_isInlineEditing || !OverlayCanvas.Children.Contains(textBox)) return;
 
@@ -1934,36 +2059,64 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
             try
             {
-                if (tag is PdfAnnotation existingAnn)
+                PdfAnnotation? existingAnn = tag switch
                 {
+                    InlineTextEditSession session => session.Annotation,
+                    PdfAnnotation annotation => annotation,
+                    _ => null
+                };
+                var editSession = tag as InlineTextEditSession;
+
+                if (existingAnn != null)
+                {
+                    if (editSession?.RemovalTask != null && !await editSession.RemovalTask)
+                    {
+                        existingAnn.Content = editSession.OriginalContent;
+                        RenderAnnotationOverlays();
+                        return;
+                    }
+
                     // 편집 모드
                     if (string.IsNullOrWhiteSpace(text))
                     {
                         // 텍스트를 모두 지우면 삭제로 간주
                         if (existingAnn.IsOriginalTextReplacement)
                         {
-                            textWasRemoved = await _pdfManager.RemoveTextAsync(_currentPageIndex,
-                                existingAnn.X, existingAnn.Y, existingAnn.Width, existingAnn.Height,
-                                existingAnn.ContentStreamIndex, existingAnn.OperationIndex, existingAnn.TextRenderMode);
+                            textWasRemoved = await _pdfManager.RemoveOriginalTextAnnotationsAsync(
+                                _currentPageIndex, new[] { existingAnn });
+                            if (!textWasRemoved)
+                            {
+                                TxtStatus.Text = "배경을 보존하면서 삭제할 수 없는 PDF 텍스트입니다.";
+                                return;
+                            }
                         }
                         _annotations.Remove(existingAnn);
                         if (_selectedAnnotation == existingAnn) _selectedAnnotation = null;
+                        _selectedAnnotations.Remove(existingAnn);
+                        _pdfManager.MarkModified();
                         TxtStatus.Text = "텍스트가 삭제되었습니다";
                     }
-                    else if (existingAnn.Content != text)
+                    else if (editSession?.HasLiveChanges == true || existingAnn.Content != text)
                     {
                         if (existingAnn.IsOriginalTextReplacement)
                         {
-                            textWasRemoved = await _pdfManager.RemoveTextAsync(_currentPageIndex,
-                                existingAnn.X, existingAnn.Y, existingAnn.Width, existingAnn.Height,
-                                existingAnn.ContentStreamIndex, existingAnn.OperationIndex, existingAnn.TextRenderMode);
+                            textWasRemoved = await _pdfManager.RemoveOriginalTextAnnotationsAsync(
+                                _currentPageIndex, new[] { existingAnn });
+                            if (!textWasRemoved)
+                            {
+                                TxtStatus.Text = "배경을 보존하면서 수정할 수 없는 PDF 텍스트입니다.";
+                                return;
+                            }
                             existingAnn.IsOriginalTextReplacement = false;
                         }
                         
                         existingAnn.Content = text;
-                        var size = MeasureText(text, existingAnn.FontFamily, existingAnn.FontSize, existingAnn.IsBold, existingAnn.IsItalic);
-                        existingAnn.Width = size.width;
-                        existingAnn.Height = size.height;
+                        if (existingAnn.TextFragments.Count == 0)
+                        {
+                            var size = MeasureText(text, existingAnn.FontFamily, existingAnn.FontSize, existingAnn.IsBold, existingAnn.IsItalic);
+                            existingAnn.Width = size.width;
+                            existingAnn.Height = size.height;
+                        }
                         existingAnn.IsApplied = false;
                         _pdfManager.MarkModified();
                         TxtStatus.Text = "텍스트가 수정되었습니다 (저장 시 반영)";
@@ -2406,27 +2559,68 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         {
             if (e.Key == Windows.System.VirtualKey.Delete && _selectedAnnotation != null && !_isInlineEditing && !_isDialogOpen)
             {
-                var ann = _selectedAnnotation;
-                if (ann.IsOriginalTextReplacement)
-                {
-                    await _pdfManager.RemoveTextAsync(_currentPageIndex, ann.X, ann.Y, ann.Width, ann.Height,
-                        ann.ContentStreamIndex, ann.OperationIndex, ann.TextRenderMode);
-                }
-
-                _annotations.Remove(ann);
-                _selectedAnnotation = null;
-                
-                await RenderCurrentPageAsync();
-                RenderAnnotationOverlays();
+                await DeleteSelectedAnnotationsAsync();
                 e.Handled = true;
-                TxtStatus.Text = "객체 삭제됨";
             }
+        }
+
+        private async Task<bool> DeleteSelectedAnnotationsAsync()
+        {
+            var targets = _selectedAnnotations.Count > 0
+                ? _selectedAnnotations.ToList()
+                : (_selectedAnnotation != null ? new List<PdfAnnotation> { _selectedAnnotation } : new List<PdfAnnotation>());
+            if (targets.Count == 0)
+                return false;
+
+            var originalTextTargets = targets
+                .Where(annotation => annotation.IsOriginalTextReplacement)
+                .ToList();
+            if (originalTextTargets.Count > 0)
+            {
+                bool removed = await _pdfManager.RemoveOriginalTextAnnotationsAsync(
+                    _currentPageIndex, originalTextTargets);
+                if (!removed)
+                {
+                    TxtStatus.Text = "배경을 보존하면서 삭제할 수 없는 PDF 텍스트입니다.";
+                    return false;
+                }
+            }
+
+            foreach (var annotation in targets)
+                _annotations.Remove(annotation);
+
+            _selectedAnnotations.Clear();
+            _selectedAnnotation = null;
+            _pdfManager.MarkModified();
+            if (originalTextTargets.Count > 0)
+                await RenderCurrentPageAsync();
+            RenderAnnotationOverlays();
+            TxtStatus.Text = targets.Count > 1 ? $"{targets.Count}개 객체 삭제됨" : "텍스트가 삭제되었습니다.";
+            return true;
         }
         #endregion
 
         #region Font Settings
 
-        private void FontFamily_Changed(object sender, SelectionChangedEventArgs e)
+        private async Task<bool> PrepareOriginalTextForReplacementAsync(PdfAnnotation annotation)
+        {
+            if (!annotation.IsOriginalTextReplacement)
+                return true;
+
+            bool removed = await _pdfManager.RemoveOriginalTextAnnotationsAsync(
+                _currentPageIndex, new[] { annotation });
+            if (!removed)
+            {
+                TxtStatus.Text = "배경을 보존하면서 수정할 수 없는 PDF 텍스트입니다.";
+                return false;
+            }
+
+            annotation.IsOriginalTextReplacement = false;
+            await RenderCurrentPageAsync();
+            return true;
+        }
+
+        private async void FontFamily_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (CmbFontFamily.SelectedItem is ComboBoxItem item)
             {
@@ -2435,7 +2629,10 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 
                 if (_selectedAnnotation != null && (_selectedAnnotation.Type == AnnotationType.Text || _selectedAnnotation.Type == AnnotationType.FreeText))
                 {
+                    if (!await PrepareOriginalTextForReplacementAsync(_selectedAnnotation))
+                        return;
                     _selectedAnnotation.FontFamily = font;
+                    _selectedAnnotation.OriginalFontObjectNumber = -1;
                     var size = MeasureText(_selectedAnnotation.Content, font, _selectedAnnotation.FontSize, _selectedAnnotation.IsBold, _selectedAnnotation.IsItalic);
                     _selectedAnnotation.Width = size.width;
                     _selectedAnnotation.Height = size.height;
@@ -2445,7 +2642,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             }
         }
 
-        private void FontSize_Changed(object sender, SelectionChangedEventArgs e)
+        private async void FontSize_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (CmbFontSize.SelectedItem is ComboBoxItem item && 
                 double.TryParse(item.Content?.ToString(), out double sizeVal))
@@ -2454,6 +2651,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 
                 if (_selectedAnnotation != null && (_selectedAnnotation.Type == AnnotationType.Text || _selectedAnnotation.Type == AnnotationType.FreeText))
                 {
+                    if (!await PrepareOriginalTextForReplacementAsync(_selectedAnnotation))
+                        return;
                     _selectedAnnotation.FontSize = sizeVal;
                     var size = MeasureText(_selectedAnnotation.Content, _selectedAnnotation.FontFamily, sizeVal, _selectedAnnotation.IsBold, _selectedAnnotation.IsItalic);
                     _selectedAnnotation.Width = size.width;
@@ -2464,12 +2663,15 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             }
         }
 
-        private void FontBold_Click(object sender, RoutedEventArgs e)
+        private async void FontBold_Click(object sender, RoutedEventArgs e)
         {
             _fontSettings.IsBold = BtnBold.IsChecked == true;
             if (_selectedAnnotation != null && (_selectedAnnotation.Type == AnnotationType.Text || _selectedAnnotation.Type == AnnotationType.FreeText))
             {
+                if (!await PrepareOriginalTextForReplacementAsync(_selectedAnnotation))
+                    return;
                 _selectedAnnotation.IsBold = _fontSettings.IsBold;
+                _selectedAnnotation.OriginalFontObjectNumber = -1;
                 var size = MeasureText(_selectedAnnotation.Content, _selectedAnnotation.FontFamily, _selectedAnnotation.FontSize, _selectedAnnotation.IsBold, _selectedAnnotation.IsItalic);
                 _selectedAnnotation.Width = size.width;
                 _selectedAnnotation.Height = size.height;
@@ -2478,12 +2680,15 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             }
         }
 
-        private void FontItalic_Click(object sender, RoutedEventArgs e)
+        private async void FontItalic_Click(object sender, RoutedEventArgs e)
         {
             _fontSettings.IsItalic = BtnItalic.IsChecked == true;
             if (_selectedAnnotation != null && (_selectedAnnotation.Type == AnnotationType.Text || _selectedAnnotation.Type == AnnotationType.FreeText))
             {
+                if (!await PrepareOriginalTextForReplacementAsync(_selectedAnnotation))
+                    return;
                 _selectedAnnotation.IsItalic = _fontSettings.IsItalic;
+                _selectedAnnotation.OriginalFontObjectNumber = -1;
                 var size = MeasureText(_selectedAnnotation.Content, _selectedAnnotation.FontFamily, _selectedAnnotation.FontSize, _selectedAnnotation.IsBold, _selectedAnnotation.IsItalic);
                 _selectedAnnotation.Width = size.width;
                 _selectedAnnotation.Height = size.height;
@@ -2492,7 +2697,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             }
         }
 
-        private void FontColor_Changed(object sender, SelectionChangedEventArgs e)
+        private async void FontColor_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (ColorPalette.SelectedItem is Border border && border.Tag is string color)
             {
@@ -2501,6 +2706,9 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
                 if (_selectedAnnotation != null)
                 {
+                    if ((_selectedAnnotation.Type == AnnotationType.Text || _selectedAnnotation.Type == AnnotationType.FreeText) &&
+                        !await PrepareOriginalTextForReplacementAsync(_selectedAnnotation))
+                        return;
                     _selectedAnnotation.Color = color;
                     _pdfManager.MarkModified();
                     RenderAnnotationOverlays();
@@ -2925,7 +3133,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 var activeBox = OverlayCanvas.Children.OfType<TextBox>().FirstOrDefault();
                 if (activeBox != null)
                 {
-                    ApplyInlineText(activeBox);
+                    await ApplyInlineTextAsync(activeBox);
                 }
             }
 
@@ -3039,8 +3247,31 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             {
                 case AnnotationType.Text:
                 case AnnotationType.FreeText:
+                    if (ann.IsOriginalTextReplacement)
+                        break;
+                    var lineGroups = ann.TextFragments
+                        .GroupBy(fragment => fragment.LineIndex)
+                        .OrderBy(group => group.Key)
+                        .ToList();
+                    var lineFontObjectNumbers = lineGroups
+                        .Select(group => group
+                            .Select(fragment => fragment.OriginalFontObjectNumber)
+                            .FirstOrDefault(objectNumber => objectNumber > 0, ann.OriginalFontObjectNumber))
+                        .ToList();
+                    var lineXOffsets = lineGroups
+                        .Select(group => group.Min(fragment => fragment.X) - ann.X)
+                        .ToList();
+                    var lineBaselineOffsets = lineGroups
+                        .Select(group =>
+                        {
+                            var firstFragment = group.OrderBy(fragment => fragment.X).First();
+                            return (firstFragment.Y + firstFragment.BaselineOffset) - ann.Y;
+                        })
+                        .ToList();
                     _pdfManager.AddTextInternal(doc, ann.PageIndex, ann.X, ann.Y, ann.Content,
-                        ann.FontFamily, ann.FontSize, iTextColor, ann.IsBold, ann.IsItalic);
+                        ann.FontFamily, ann.FontSize, iTextColor, ann.IsBold, ann.IsItalic,
+                        ann.LineHeight, ann.BaselineOffset, ann.OriginalFontObjectNumber,
+                        lineFontObjectNumbers, lineXOffsets, lineBaselineOffsets);
                     break;
                 case AnnotationType.Highlight:
                     _pdfManager.AddHighlightInternal(doc, ann.PageIndex, ann.X, ann.Y,
@@ -3302,7 +3533,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         {
             if (_selectedAnnotations.Count < 2) return;
             
-            await HandleOriginalContentRemovalForSelectedAsync();
+            if (!await HandleOriginalContentRemovalForSelectedAsync()) return;
             
             double minX = _selectedAnnotations.Min(a => a.X);
             foreach (var ann in _selectedAnnotations)
@@ -3318,7 +3549,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         {
             if (_selectedAnnotations.Count < 2) return;
             
-            await HandleOriginalContentRemovalForSelectedAsync();
+            if (!await HandleOriginalContentRemovalForSelectedAsync()) return;
             
             double maxX = _selectedAnnotations.Max(a => a.X + a.Width);
             foreach (var ann in _selectedAnnotations)
@@ -3335,7 +3566,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         {
             if (_selectedAnnotations.Count < 2) return;
             
-            await HandleOriginalContentRemovalForSelectedAsync();
+            if (!await HandleOriginalContentRemovalForSelectedAsync()) return;
             
             double minY = _selectedAnnotations.Min(a => a.Y);
             foreach (var ann in _selectedAnnotations)
@@ -3351,7 +3582,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         {
             if (_selectedAnnotations.Count < 2) return;
             
-            await HandleOriginalContentRemovalForSelectedAsync();
+            if (!await HandleOriginalContentRemovalForSelectedAsync()) return;
             
             double maxY = _selectedAnnotations.Max(a => a.Y + a.Height);
             foreach (var ann in _selectedAnnotations)
@@ -3364,44 +3595,33 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             RenderAnnotationOverlays();
         }
 
-        private async Task HandleOriginalContentRemovalForSelectedAsync()
+        private async Task<bool> HandleOriginalContentRemovalForSelectedAsync()
         {
-            var targets = _selectedAnnotations.Where(ann => 
-                ann.IsOriginalTextReplacement || 
-                (ann.IsOriginalImageReplacement && ann.OriginalImageName != null)
-            ).ToList();
+            var targets = _selectedAnnotations
+                .Where(annotation => annotation.IsOriginalTextReplacement)
+                .ToList();
 
-            if (targets.Count == 0) return;
+            if (targets.Count == 0) return true;
 
             bool success = await _pdfManager.RemoveOriginalTextAnnotationsAsync(_currentPageIndex, targets);
             
-            if (success)
+            if (!success)
             {
-                foreach (var ann in targets)
-                {
-                    ann.IsOriginalTextReplacement = false;
-                    ann.IsOriginalImageReplacement = false;
-                }
-
-                // 삭제가 발생했으므로 배경 리렌더링 (그렇지 않으면 원본이 남아있는 것처럼 보임)
-                _renderTempPath = null; // 캐시 무효화
-                await RenderCurrentPageAsync();
+                TxtStatus.Text = "배경을 보존하면서 이동할 수 없는 PDF 텍스트입니다.";
+                return false;
             }
+
+            foreach (var ann in targets)
+                ann.IsOriginalTextReplacement = false;
+
+            _renderTempPath = null;
+            await RenderCurrentPageAsync();
+            return true;
         }
 
-        private void DeleteAnnotation_Click(object sender, RoutedEventArgs e)
+        private async void DeleteAnnotation_Click(object sender, RoutedEventArgs e)
         {
-            if (_selectedAnnotations.Count == 0) return;
-
-            foreach (var ann in _selectedAnnotations.ToList())
-            {
-                _annotations.Remove(ann);
-            }
-
-            _selectedAnnotations.Clear();
-            _selectedAnnotation = null;
-            _pdfManager.MarkModified();
-            RenderAnnotationOverlays();
+            await DeleteSelectedAnnotationsAsync();
         }
 
         #endregion

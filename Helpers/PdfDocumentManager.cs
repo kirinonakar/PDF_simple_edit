@@ -245,38 +245,111 @@ namespace PDF_simple_edit.Helpers
 
         public void AddTextInternal(PdfDocument doc, int pageIndex, double x, double y, string text,
             string fontFamily, double fontSize, Color color,
-            bool isBold = false, bool isItalic = false)
+            bool isBold = false, bool isItalic = false, double lineHeight = 0,
+            double baselineOffset = 0, int originalFontObjectNumber = -1,
+            IReadOnlyList<int>? originalFontObjectNumbersByLine = null,
+            IReadOnlyList<double>? lineXOffsets = null,
+            IReadOnlyList<double>? lineBaselineOffsets = null)
         {
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages()) return;
 
             var page = doc.GetPage(pageIndex + 1);
             var rect = page.GetCropBox(); 
 
-            float pdfX = rect.GetLeft() + (float)x;
-            float pdfY = rect.GetBottom() + (rect.GetHeight() - (float)y - (float)fontSize);
+            float firstLineXOffset = lineXOffsets != null && lineXOffsets.Count > 0
+                ? (float)lineXOffsets[0]
+                : 0;
+            float pdfX = rect.GetLeft() + (float)x + firstLineXOffset;
+            float resolvedBaselineOffset = lineBaselineOffsets != null && lineBaselineOffsets.Count > 0
+                ? (float)lineBaselineOffsets[0]
+                : (float)(baselineOffset > 0.1 ? baselineOffset : fontSize);
+            float pdfY = rect.GetBottom() + (rect.GetHeight() - (float)y - resolvedBaselineOffset);
+            string[] lines = (text ?? string.Empty)
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace('\r', '\n')
+                .Split('\n');
 
-            PdfFont font;
-            try
+            var originalFontCache = new Dictionary<int, PdfFont>();
+            PdfFont? fallbackFont = null;
+
+            (PdfFont Font, bool IsFallback) ResolveFontForLine(string line, int lineIndex)
             {
-                // GetSystemFontPath에서 인덱스가 포함된 정확한 경로(예: C:\Windows\Fonts\gulim.ttc,2)를 받아옵니다.
-                string? resolvedPath = GetSystemFontPath(fontFamily, isBold);
-                
-                if (!string.IsNullOrEmpty(resolvedPath))
+                var candidateObjectNumbers = new List<int>();
+                if (originalFontObjectNumbersByLine != null &&
+                    lineIndex < originalFontObjectNumbersByLine.Count)
                 {
-                    font = PdfFontFactory.CreateFont(resolvedPath, PdfEncodings.IDENTITY_H, PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
+                    candidateObjectNumbers.Add(originalFontObjectNumbersByLine[lineIndex]);
                 }
-                else
+                candidateObjectNumbers.Add(originalFontObjectNumber);
+                if (originalFontObjectNumbersByLine != null)
+                    candidateObjectNumbers.AddRange(originalFontObjectNumbersByLine);
+
+                foreach (int objectNumber in candidateObjectNumbers.Where(number => number > 0).Distinct())
                 {
-                    // 폰트 매핑 실패 시 맑은 고딕 폴백
-                    string fallbackPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts", isBold ? "malgunbd.ttf" : "malgun.ttf");
-                    font = PdfFontFactory.CreateFont(fallbackPath, PdfEncodings.IDENTITY_H, PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
+                    try
+                    {
+                        if (!originalFontCache.TryGetValue(objectNumber, out var candidate))
+                        {
+                            if (doc.GetPdfObject(objectNumber) is not PdfDictionary originalFontDictionary)
+                                continue;
+                            candidate = PdfFontFactory.CreateFont(originalFontDictionary);
+                            originalFontCache[objectNumber] = candidate;
+                        }
+
+                        bool containsAllGlyphs = line
+                            .Where(character => !char.IsControl(character) && !char.IsWhiteSpace(character))
+                            .All(character => candidate.ContainsGlyph(character));
+                        if (containsAllGlyphs)
+                            return (candidate, false);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Original PDF font reuse error: {ex.Message}");
+                    }
                 }
+
+                if (fallbackFont != null)
+                    return (fallbackFont, true);
+
+                try
+                {
+                    string? resolvedPath = GetSystemFontPath(fontFamily, isBold);
+                    if (!string.IsNullOrEmpty(resolvedPath))
+                    {
+                        fallbackFont = PdfFontFactory.CreateFont(
+                            resolvedPath,
+                            PdfEncodings.IDENTITY_H,
+                            PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
+                    }
+                    else
+                    {
+                        string fallbackPath = System.IO.Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                            "Fonts",
+                            isBold ? "malgunbd.ttf" : "malgun.ttf");
+                        fallbackFont = PdfFontFactory.CreateFont(
+                            fallbackPath,
+                            PdfEncodings.IDENTITY_H,
+                            PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Font load error: {ex.Message}");
+                    fallbackFont = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
+                }
+
+                return (fallbackFont, true);
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Font load error: {ex.Message}");
-                font = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
-            }
+
+            var resolvedLineFonts = lines
+                .Select((line, index) => ResolveFontForLine(line, index))
+                .ToList();
+            var fallbackBaselineAdjustments = resolvedLineFonts
+                .Select((resolved, index) => resolved.IsFallback
+                    ? Math.Max(resolved.Font.GetAscent(lines[index], (float)Math.Max(fontSize, 1)), 0)
+                    : 0)
+                .ToList();
 
             // 3. 로우레벨(Low-level) API로 확실하게 텍스트 박아넣기
             PdfStream stream = page.NewContentStreamAfter(); 
@@ -284,12 +357,38 @@ namespace PDF_simple_edit.Helpers
             
             canvas.SaveState();
             canvas.BeginText();
-            canvas.SetFontAndSize(font, (float)Math.Max(fontSize, 1));
             canvas.SetFillColor(color ?? ColorConstants.BLACK);
 
-            // 텍스트 이동 및 쓰기 (에러 없이 확실하게 그려짐)
-            canvas.MoveText(pdfX, pdfY);
-            canvas.ShowText(text ?? string.Empty);
+            // 텍스트 이동 및 쓰기. 줄바꿈은 기존 편집 구역의 줄 간격을 유지합니다.
+            canvas.MoveText(pdfX, pdfY - fallbackBaselineAdjustments[0]);
+            float resolvedLineHeight = (float)(lineHeight > 0.1 ? lineHeight : Math.Max(fontSize * 1.2, 1));
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (i > 0)
+                {
+                    float previousXOffset = lineXOffsets != null && i - 1 < lineXOffsets.Count
+                        ? (float)lineXOffsets[i - 1]
+                        : 0;
+                    float currentXOffset = lineXOffsets != null && i < lineXOffsets.Count
+                        ? (float)lineXOffsets[i]
+                        : previousXOffset;
+                    float previousBaselineOffset = lineBaselineOffsets != null && i - 1 < lineBaselineOffsets.Count
+                        ? (float)lineBaselineOffsets[i - 1]
+                        : resolvedBaselineOffset + ((i - 1) * resolvedLineHeight);
+                    float currentBaselineOffset = lineBaselineOffsets != null && i < lineBaselineOffsets.Count
+                        ? (float)lineBaselineOffsets[i]
+                        : previousBaselineOffset + resolvedLineHeight;
+                    previousBaselineOffset += fallbackBaselineAdjustments[i - 1];
+                    currentBaselineOffset += fallbackBaselineAdjustments[i];
+                    canvas.MoveText(
+                        currentXOffset - previousXOffset,
+                        -(currentBaselineOffset - previousBaselineOffset));
+                }
+                canvas.SetFontAndSize(
+                    resolvedLineFonts[i].Font,
+                    (float)Math.Max(fontSize, 1));
+                canvas.ShowText(lines[i]);
+            }
 
             canvas.EndText();
             canvas.RestoreState();
@@ -316,6 +415,8 @@ namespace PDF_simple_edit.Helpers
                 { "궁서", "batang.ttc,2" },
                 { "궁서체", "batang.ttc,3" },
                 { "나눔고딕", "NanumGothic.ttf" },
+                { "Noto Sans KR", "NotoSansKR-VF.ttf" },
+                { "Noto Serif KR", "NotoSerifKR-VF.ttf" },
                 { "Arial", isBold ? "arialbd.ttf" : "arial.ttf" },
                 { "Times New Roman", isBold ? "timesbd.ttf" : "times.ttf" },
                 { "Tahoma", isBold ? "tahomabd.ttf" : "tahoma.ttf" },
@@ -540,11 +641,19 @@ namespace PDF_simple_edit.Helpers
                     var page = doc.GetPage(pageIndex + 1);
                     var pageSize = page.GetPageSize();
                     
+                    var operationTargets = ExtractTextOperationDescriptors(page);
                     var listener = new ContentExtractionListener(pageSize.GetHeight());
                     PdfCanvasProcessor processor = new PdfCanvasProcessor(listener);
+                    var tracker = new TextOperationTracker(operationTargets);
+                    foreach (string operatorName in new[] { "Tj", "TJ", "'", "\"" })
+                    {
+                        var trackingOperator = new TrackingTextContentOperator(listener, tracker);
+                        trackingOperator.InnerOperator = processor.RegisterContentOperator(
+                            operatorName, trackingOperator);
+                    }
                     processor.ProcessPageContent(page);
                     
-                    contents = listener.Contents;
+                    contents = GroupTextIntoEditRegions(listener.Contents);
                 }
                 catch (Exception ex)
                 {
@@ -597,7 +706,23 @@ namespace PDF_simple_edit.Helpers
         {
             float reportedFontSize = textInfo.GetFontSize();
             if (reportedFontSize > 0.1f)
+            {
+                try
+                {
+                    var font = textInfo.GetFont();
+                    string sample = textInfo.GetText();
+                    float metricHeight = font.GetAscent(sample, reportedFontSize)
+                                       - font.GetDescent(sample, reportedFontSize);
+                    if (actualHeight > 0.1f && metricHeight > 0.01f)
+                        return reportedFontSize * (actualHeight / metricHeight);
+                }
+                catch
+                {
+                    // Fall through to the reported size when the embedded font has incomplete metrics.
+                }
+
                 return reportedFontSize;
+            }
 
             if (actualHeight > 0.1f)
                 return actualHeight;
@@ -646,6 +771,8 @@ namespace PDF_simple_edit.Helpers
             if (lowerFont.Contains("batang")) return "바탕";
             if (lowerFont.Contains("gungsuh")) return "궁서";
             if (lowerFont.Contains("nanumgothic")) return "나눔고딕";
+            if (lowerFont.Contains("notosanscjkkr") || lowerFont.Contains("notosanskr")) return "Noto Sans KR";
+            if (lowerFont.Contains("notoserifcjkkr") || lowerFont.Contains("notoserifkr")) return "Noto Serif KR";
             if (lowerFont.Contains("arial")) return "Arial";
             if (lowerFont.Contains("times")) return "Times New Roman";
             if (lowerFont.Contains("helvetica")) return "Arial";
@@ -702,10 +829,269 @@ namespace PDF_simple_edit.Helpers
             return "#000000";
         }
 
+        private sealed class TextOperationDescriptor
+        {
+            public int StreamIndex { get; init; }
+            public int StreamObjectNumber { get; init; }
+            public int OperationIndex { get; init; }
+            public int TextRenderMode { get; init; }
+        }
+
+        private static List<TextOperationDescriptor> ExtractTextOperationDescriptors(PdfPage page)
+        {
+            var result = new List<TextOperationDescriptor>();
+
+            for (int streamIndex = 0; streamIndex < page.GetContentStreamCount(); streamIndex++)
+            {
+                var contentStream = page.GetContentStream(streamIndex);
+                if (contentStream == null)
+                    continue;
+
+                AppendTextOperationDescriptors(
+                    contentStream, page.GetResources(), streamIndex, result, new HashSet<int>());
+            }
+
+            return result;
+        }
+
+        private static void AppendTextOperationDescriptors(
+            PdfStream contentStream,
+            PdfResources resources,
+            int pageStreamIndex,
+            List<TextOperationDescriptor> result,
+            HashSet<int> recursionStack)
+        {
+            int streamObjectNumber = contentStream.GetIndirectReference()?.GetObjNumber() ?? -1;
+            if (streamObjectNumber > 0 && !recursionStack.Add(streamObjectNumber))
+                return;
+
+            try
+            {
+                var sourceFactory = new RandomAccessSourceFactory();
+                var randomSource = sourceFactory.CreateSource(contentStream.GetBytes());
+                var tokenizer = new PdfTokenizer(new RandomAccessFileOrArray(randomSource));
+                var parser = new iText.Kernel.Pdf.Canvas.Parser.Util.PdfCanvasParser(tokenizer);
+                var renderModeStack = new Stack<int>();
+                int renderMode = 0;
+                int textOperationIndex = -1;
+
+                while (true)
+                {
+                    var operation = parser.Parse(new List<PdfObject>());
+                    if (operation == null || operation.Count == 0)
+                        break;
+
+                    if (operation[^1] is not PdfLiteral literal)
+                        continue;
+
+                    string operatorName = literal.ToString();
+                    if (operatorName == "q")
+                    {
+                        renderModeStack.Push(renderMode);
+                    }
+                    else if (operatorName == "Q")
+                    {
+                        renderMode = renderModeStack.Count > 0 ? renderModeStack.Pop() : 0;
+                    }
+                    else if (operatorName == "Tr" && operation.Count > 1 && operation[0] is PdfNumber number)
+                    {
+                        renderMode = number.IntValue();
+                    }
+                    else if (IsTextShowingOperator(operatorName))
+                    {
+                        textOperationIndex++;
+                        result.Add(new TextOperationDescriptor
+                        {
+                            StreamIndex = pageStreamIndex,
+                            StreamObjectNumber = streamObjectNumber,
+                            OperationIndex = textOperationIndex,
+                            TextRenderMode = renderMode
+                        });
+                    }
+                    else if (operatorName == "Do" && operation.Count > 1 && operation[0] is PdfName resourceName)
+                    {
+                        var xObjects = resources.GetResource(PdfName.XObject);
+                        var formStream = xObjects?.GetAsStream(resourceName);
+                        if (formStream?.GetAsName(PdfName.Subtype)?.Equals(PdfName.Form) == true)
+                        {
+                            var formResourceDictionary = formStream.GetAsDictionary(PdfName.Resources);
+                            var formResources = formResourceDictionary != null
+                                ? new PdfResources(formResourceDictionary)
+                                : resources;
+                            AppendTextOperationDescriptors(
+                                formStream, formResources, -1, result, recursionStack);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                if (streamObjectNumber > 0)
+                    recursionStack.Remove(streamObjectNumber);
+            }
+        }
+
+        private static bool HasSameEditableStyle(PdfPageContent region, PdfPageContent next)
+        {
+            double referenceSize = Math.Max(region.FontSize, 1);
+            return string.Equals(region.FontFamily, next.FontFamily, StringComparison.OrdinalIgnoreCase)
+                && Math.Abs(region.FontSize - next.FontSize) <= Math.Max(0.75, referenceSize * 0.15)
+                && string.Equals(region.Color, next.Color, StringComparison.OrdinalIgnoreCase)
+                && region.IsBold == next.IsBold
+                && region.IsItalic == next.IsItalic;
+        }
+
+        private static bool CanMergeIntoEditRegion(PdfPageContent region, PdfPageContent next, out bool startsNewLine)
+        {
+            startsNewLine = false;
+            if (region.TextFragments.Count == 0 || next.TextFragments.Count == 0 || !HasSameEditableStyle(region, next))
+                return false;
+
+            var previous = region.TextFragments[^1];
+            var current = next.TextFragments[0];
+            double fontSize = Math.Max(Math.Max(previous.FontSize, current.FontSize), 1);
+            double baselineDelta = Math.Abs(previous.OriginalPdfY - current.OriginalPdfY);
+            bool sameLine = baselineDelta <= Math.Max(1.25, fontSize * 0.35);
+
+            if (sameLine)
+            {
+                double gap = current.X - (previous.X + previous.Width);
+                return gap >= -fontSize && gap <= fontSize * 2.25;
+            }
+
+            double verticalGap = current.Y - (previous.Y + previous.Height);
+            if (current.Y <= previous.Y || verticalGap > fontSize * 1.35)
+                return false;
+
+            double overlap = Math.Min(region.X + region.Width, current.X + current.Width)
+                           - Math.Max(region.X, current.X);
+            double minWidth = Math.Max(Math.Min(region.Width, current.Width), 1);
+            bool horizontallyRelated = overlap / minWidth >= 0.35
+                || Math.Abs(current.X - region.X) <= Math.Max(18, fontSize * 1.75);
+
+            startsNewLine = horizontallyRelated;
+            return horizontallyRelated;
+        }
+
+        private static List<PdfPageContent> GroupTextIntoEditRegions(IEnumerable<PdfPageContent> rawContents)
+        {
+            var regions = new List<PdfPageContent>();
+
+            foreach (var item in rawContents)
+            {
+                var last = regions.LastOrDefault();
+                if (last == null || !CanMergeIntoEditRegion(last, item, out bool startsNewLine))
+                {
+                    regions.Add(item);
+                    continue;
+                }
+
+                var previous = last.TextFragments[^1];
+                var current = item.TextFragments[0];
+                if (startsNewLine)
+                {
+                    last.Text += "\r\n" + item.Text;
+                    double detectedLineHeight = Math.Abs(current.Y - previous.Y);
+                    if (detectedLineHeight > 0.1)
+                    {
+                        last.LineHeight = last.LineHeight > 0.1
+                            ? (last.LineHeight + detectedLineHeight) / 2.0
+                            : detectedLineHeight;
+                    }
+                }
+                else
+                {
+                    double gap = current.X - (previous.X + previous.Width);
+                    bool needsSpace = gap > Math.Max(previous.FontSize, current.FontSize) * 0.15
+                        && !last.Text.EndsWith(" ", StringComparison.Ordinal)
+                        && !item.Text.StartsWith(" ", StringComparison.Ordinal);
+                    last.Text += (needsSpace ? " " : string.Empty) + item.Text;
+                }
+
+                double left = Math.Min(last.X, item.X);
+                double top = Math.Min(last.Y, item.Y);
+                double right = Math.Max(last.X + last.Width, item.X + item.Width);
+                double bottom = Math.Max(last.Y + last.Height, item.Y + item.Height);
+                last.X = left;
+                last.Y = top;
+                last.Width = right - left;
+                last.Height = bottom - top;
+                int targetLineIndex = last.TextFragments.Max(fragment => fragment.LineIndex)
+                    + (startsNewLine ? 1 : 0);
+                foreach (var fragment in item.TextFragments)
+                    fragment.LineIndex = targetLineIndex;
+                last.TextFragments.AddRange(item.TextFragments);
+            }
+
+            foreach (var region in regions)
+            {
+                if (region.LineHeight <= 0.1)
+                    region.LineHeight = Math.Max(region.FontSize * 1.2, region.Height);
+                if (region.TextFragments.Count > 0)
+                {
+                    var first = region.TextFragments[0];
+                    region.BaselineOffset = (first.Y - region.Y) + first.BaselineOffset;
+                    region.OriginalFontObjectNumber = first.OriginalFontObjectNumber;
+                }
+            }
+
+            return regions;
+        }
+
+        private sealed class TextOperationTracker
+        {
+            private readonly IReadOnlyList<TextOperationDescriptor> _targets;
+            private int _index;
+
+            public TextOperationTracker(IReadOnlyList<TextOperationDescriptor> targets)
+            {
+                _targets = targets;
+            }
+
+            public TextOperationDescriptor? Next()
+            {
+                return _index < _targets.Count ? _targets[_index++] : null;
+            }
+        }
+
+        private sealed class TrackingTextContentOperator : IContentOperator
+        {
+            private readonly ContentExtractionListener _listener;
+            private readonly TextOperationTracker _tracker;
+
+            public IContentOperator? InnerOperator { get; set; }
+
+            public TrackingTextContentOperator(
+                ContentExtractionListener listener,
+                TextOperationTracker tracker)
+            {
+                _listener = listener;
+                _tracker = tracker;
+            }
+
+            public void Invoke(
+                PdfCanvasProcessor processor,
+                PdfLiteral operatorLiteral,
+                IList<PdfObject> operands)
+            {
+                var previousTarget = _listener.CurrentTarget;
+                _listener.CurrentTarget = _tracker.Next();
+                try
+                {
+                    InnerOperator?.Invoke(processor, operatorLiteral, operands);
+                }
+                finally
+                {
+                    _listener.CurrentTarget = previousTarget;
+                }
+            }
+        }
+
         private class ContentExtractionListener : IEventListener
         {
-            public List<PdfPageContent> Contents { get; } = new List<PdfPageContent>();
+            public List<PdfPageContent> Contents { get; } = new();
             private readonly float _pageHeight;
+            public TextOperationDescriptor? CurrentTarget { get; set; }
 
             public ContentExtractionListener(float pageHeight)
             {
@@ -714,136 +1100,71 @@ namespace PDF_simple_edit.Helpers
 
             public void EventOccurred(IEventData data, EventType type)
             {
-                if (type == EventType.RENDER_TEXT)
+                if (type != EventType.RENDER_TEXT || data is not TextRenderInfo textInfo)
+                    return;
+
+                var text = textInfo.GetText();
+                if (string.IsNullOrWhiteSpace(text))
+                    return;
+
+                var bounds = GetTextBounds(textInfo, _pageHeight);
+                float fontSize = ResolveFontSize(textInfo, bounds.height);
+                var baseline = textInfo.GetBaseline().GetStartPoint();
+                double baselineOffset = (_pageHeight - baseline.Get(1)) - bounds.y;
+                string rawFontName = GetRawFontName(textInfo);
+                string fontFamily = NormalizeFontFamily(rawFontName);
+                var (isBold, isItalic) = InferFontStyle(rawFontName);
+                string color = ColorToHex(textInfo.GetFillColor());
+                int originalFontObjectNumber = textInfo.GetFont()?.GetPdfObject()
+                    ?.GetIndirectReference()?.GetObjNumber() ?? -1;
+
+                TextOperationDescriptor? target = CurrentTarget;
+
+                var fragment = new PdfTextFragment
                 {
-                    var textInfo = (TextRenderInfo)data;
-                    var text = textInfo.GetText();
-                    if (string.IsNullOrWhiteSpace(text)) return;
+                    Text = text,
+                    X = bounds.x,
+                    Y = bounds.y,
+                    Width = bounds.width,
+                    Height = bounds.height,
+                    OriginalPdfX = bounds.originalPdfX,
+                    OriginalPdfY = bounds.originalPdfY,
+                    FontSize = fontSize,
+                    FontFamily = fontFamily,
+                    Color = color,
+                    IsBold = isBold,
+                    IsItalic = isItalic,
+                    ContentStreamIndex = target?.StreamIndex ?? -1,
+                    ContentStreamObjectNumber = target?.StreamObjectNumber ?? -1,
+                    OperationIndex = target?.OperationIndex ?? -1,
+                    TextRenderMode = target?.TextRenderMode ?? 0,
+                    BaselineOffset = baselineOffset,
+                    OriginalFontObjectNumber = originalFontObjectNumber
+                };
 
-                    var baseline = textInfo.GetBaseline().GetStartPoint();
-                    var ascent = textInfo.GetAscentLine().GetEndPoint();
-                    var descent = textInfo.GetDescentLine().GetStartPoint();
-
-                    float x = baseline.Get(0);
-                    float y = baseline.Get(1);
-                    float height = ascent.Get(1) - descent.Get(1);
-                    float width = ascent.Get(0) - baseline.Get(0);
-
-                    if (width <= 0) width = text.Length * (height > 0 ? height * 0.5f : 10);
-                    if (height <= 0) height = 12;
-
-                    // [수정 포인트 1] 폰트 크기 버그 수정:
-                    // GetFontSize()가 아닌, 실제 화면에 그려진 시각적 높이(height)를 폰트 크기로 사용합니다.
-                    float fontSize = height;
-
-                    // --- 폰트 이름 정제 로직 ---
-                    string cleanFontName = "맑은 고딕";
-                    try
-                    {
-                        var fontProgram = textInfo.GetFont()?.GetFontProgram();
-                        var fontNames = fontProgram?.GetFontNames();
-                        string? rawFontName = fontNames?.GetFontName();
-
-                        if (!string.IsNullOrEmpty(rawFontName))
-                        {
-                            cleanFontName = rawFontName;
-                            
-                            // 1. 서브셋 프리픽스(예: ABCDEF+) 제거
-                            if (cleanFontName.Contains("+"))
-                                cleanFontName = cleanFontName.Substring(cleanFontName.IndexOf('+') + 1);
-
-                            // 2. 불필요한 스타일/타입 접미사 제거 (UI가 인식할 수 있는 순수 Family Name만 남김)
-                            cleanFontName = cleanFontName.Replace("-Bold", "")
-                                                         .Replace("-Italic", "")
-                                                         .Replace("Bold", "")
-                                                         .Replace("Italic", "")
-                                                         .Replace("MT", "")
-                                                         .Replace("PS", "");
-
-                            string lowerFont = cleanFontName.ToLower();
-
-                            // 3. UI 프레임워크가 인식할 수 있는 실제 Windows 폰트명으로 강제 매핑
-                            if (lowerFont.Contains("malgun")) cleanFontName = "맑은 고딕";
-                            else if (lowerFont.Contains("gulim")) cleanFontName = "굴림";
-                            else if (lowerFont.Contains("dotum")) cleanFontName = "돋움";
-                            else if (lowerFont.Contains("batang")) cleanFontName = "바탕";
-                            else if (lowerFont.Contains("gungsuh")) cleanFontName = "궁서";
-                            else if (lowerFont.Contains("nanumgothic")) cleanFontName = "나눔고딕";
-                            else if (lowerFont.Contains("arial")) cleanFontName = "Arial";
-                            else if (lowerFont.Contains("times")) cleanFontName = "Times New Roman";
-                            else if (lowerFont.Contains("helvetica")) cleanFontName = "Arial"; // PDF 표준 폰트인 Helvetica는 Arial로 대체
-                            else if (lowerFont.Contains("courier")) cleanFontName = "Courier New";
-                            else if (lowerFont.Contains("tahoma")) cleanFontName = "Tahoma";
-                            else if (lowerFont.Contains("verdana")) cleanFontName = "Verdana";
-                            else if (lowerFont.Contains("segoe")) cleanFontName = "Segoe UI";
-                            else if (lowerFont.Contains("consolas")) cleanFontName = "Consolas";
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Font parsing error: {ex.Message}");
-                    }
-
-                    float convertedY = _pageHeight - y - height;
-
-                    // [수정 포인트 2] 인접한 텍스트 병합(Grouping) 로직
-                    var lastContent = Contents.LastOrDefault();
-                    if (lastContent != null)
-                    {
-                        // 같은 줄에 있는지 판별 (Y축 위치 차이가 폰트 높이의 30% 이내면 같은 줄로 간주)
-                        float yTolerance = height * 0.3f;
-                        bool isSameLine = Math.Abs((float)lastContent.OriginalPdfY - y) <= yTolerance;
-
-                        if (isSameLine)
-                        {
-                            // 이전 글자의 끝점과 현재 글자의 시작점 사이의 가로 간격 계산
-                            float gap = x - (float)(lastContent.OriginalPdfX + lastContent.Width);
-                            
-                            // 간격이 폰트 크기의 1.5배 이내면 같은 문장으로 간주하고 병합
-                            float xTolerance = height * 1.5f;
-                            if (gap > -xTolerance && gap < xTolerance)
-                            {
-                                // 띄어쓰기가 필요한 정도로 떨어져 있으면 스페이스바 추가
-                                bool needsSpace = gap > (height * 0.2f) && !text.StartsWith(" ") && !lastContent.Text.EndsWith(" ");
-                                lastContent.Text += (needsSpace ? " " : "") + text;
-                                
-                                // Width 박스 확장 (현재 글자의 끝점에서 이전 문장의 시작점을 뺌)
-                                lastContent.Width = (double)((x + width) - (float)lastContent.OriginalPdfX);
-                                
-                                // 현재 글자가 기존 글자보다 크면 Bounding Box 높이 및 폰트 크기 갱신
-                                if ((double)height > lastContent.Height)
-                                {
-                                    lastContent.Height = (double)height;
-                                    lastContent.FontSize = (double)fontSize;
-                                    lastContent.Y = (double)(_pageHeight - (float)lastContent.OriginalPdfY - (float)lastContent.Height);
-                                }
-
-                                // ⭐ [여기에 추가] 병합 시 기존 폰트가 맑은 고딕이었는데 새 텍스트가 명확한 폰트면 덮어쓰기
-                                if (lastContent.FontFamily == "맑은 고딕" && cleanFontName != "맑은 고딕")
-                                {
-                                    lastContent.FontFamily = cleanFontName;
-                                }
-
-                                return; // 병합 완료되었으므로 새 객체로 추가하지 않고 종료
-                            }
-                        }
-                    }
-
-                    // 병합되지 않은 새로운 문장의 시작점인 경우 리스트에 추가
-                    Contents.Add(new PdfPageContent
-                    {
-                        Type = PageContentType.Text,
-                        Text = text,
-                        X = x,
-                        Y = convertedY,
-                        Width = width,
-                        Height = height,
-                        FontSize = fontSize,
-                        FontFamily = cleanFontName,
-                        OriginalPdfX = x,
-                        OriginalPdfY = y
-                    });
-                }
+                Contents.Add(new PdfPageContent
+                {
+                    Type = PageContentType.Text,
+                    Text = text,
+                    X = bounds.x,
+                    Y = bounds.y,
+                    Width = bounds.width,
+                    Height = bounds.height,
+                    FontSize = fontSize,
+                    FontFamily = fontFamily,
+                    Color = color,
+                    IsBold = isBold,
+                    IsItalic = isItalic,
+                    OriginalPdfX = bounds.originalPdfX,
+                    OriginalPdfY = bounds.originalPdfY,
+                    ContentStreamIndex = fragment.ContentStreamIndex,
+                    ContentStreamObjectNumber = fragment.ContentStreamObjectNumber,
+                    OperationIndex = fragment.OperationIndex,
+                    TextRenderMode = fragment.TextRenderMode,
+                    BaselineOffset = baselineOffset,
+                    OriginalFontObjectNumber = originalFontObjectNumber,
+                    TextFragments = new List<PdfTextFragment> { fragment }
+                });
             }
 
             public ICollection<EventType> GetSupportedEvents()
@@ -855,6 +1176,7 @@ namespace PDF_simple_edit.Helpers
         private sealed class TextOperationTarget
         {
             public int StreamIndex { get; init; }
+            public int StreamObjectNumber { get; init; }
             public int OperationIndex { get; init; }
             public int TextRenderMode { get; init; }
         }
@@ -876,11 +1198,12 @@ namespace PDF_simple_edit.Helpers
             output.WriteNewLine();
         }
 
-        private static byte[]? RewriteContentStreamWithInvisibleText(byte[] contentBytes, IReadOnlyDictionary<int, int> targetRenderModes)
+        private static byte[]? RewriteContentStreamWithoutText(byte[] contentBytes, IReadOnlyCollection<int> targetOperationIndexes)
         {
-            if (targetRenderModes.Count == 0)
+            if (targetOperationIndexes.Count == 0)
                 return null;
 
+            var targets = targetOperationIndexes.ToHashSet();
             var sourceFactory = new RandomAccessSourceFactory();
             var randomSource = sourceFactory.CreateSource(contentBytes);
             var tokenizer = new PdfTokenizer(new RandomAccessFileOrArray(randomSource));
@@ -900,11 +1223,24 @@ namespace PDF_simple_edit.Helpers
                 if (parsedOperation[^1] is PdfLiteral literal && IsTextShowingOperator(literal.ToString()))
                 {
                     textOperationIndex++;
-                    if (targetRenderModes.TryGetValue(textOperationIndex, out int originalRenderMode))
+                    if (targets.Contains(textOperationIndex))
                     {
-                        WriteOperation(output, new PdfObject[] { new PdfNumber(3), new PdfLiteral("Tr") });
-                        WriteOperation(output, parsedOperation);
-                        WriteOperation(output, new PdfObject[] { new PdfNumber(originalRenderMode), new PdfLiteral("Tr") });
+                        string operatorName = literal.ToString();
+                        if (operatorName == "'")
+                        {
+                            // ' is equivalent to T* followed by Tj. Preserve only the line move.
+                            WriteOperation(output, new PdfObject[] { new PdfLiteral("T*") });
+                        }
+                        else if (operatorName == "\"" && parsedOperation.Count >= 4)
+                        {
+                            // " sets word/character spacing, moves to the next line, then shows text.
+                            // Preserve the state and line movement, but discard the string operand.
+                            WriteOperation(output, new PdfObject[] { parsedOperation[0], new PdfLiteral("Tw") });
+                            WriteOperation(output, new PdfObject[] { parsedOperation[1], new PdfLiteral("Tc") });
+                            WriteOperation(output, new PdfObject[] { new PdfLiteral("T*") });
+                        }
+                        // Tj/TJ are intentionally omitted in full. Their string operands are therefore
+                        // removed from the content stream while every non-text drawing operation remains.
                         modified = true;
                         continue;
                     }
@@ -916,20 +1252,42 @@ namespace PDF_simple_edit.Helpers
             return modified ? stream.ToArray() : null;
         }
 
-        private static bool TryHideTextOperations(PdfDocument doc, int pageIndex, IEnumerable<TextOperationTarget> targets)
+        private static bool TryRemoveTextOperations(PdfDocument doc, int pageIndex, IEnumerable<TextOperationTarget> targets)
         {
-            var groupedTargets = targets
-                .Where(t => t.StreamIndex >= 0 && t.OperationIndex >= 0)
-                .GroupBy(t => t.StreamIndex)
+            var validTargets = targets
+                .Where(target => target.OperationIndex >= 0 &&
+                    (target.StreamObjectNumber > 0 || target.StreamIndex >= 0))
                 .ToList();
 
-            if (groupedTargets.Count == 0)
+            if (validTargets.Count == 0)
                 return false;
 
             var page = doc.GetPage(pageIndex + 1);
             bool modified = false;
 
-            foreach (var group in groupedTargets)
+            foreach (var group in validTargets
+                .Where(target => target.StreamObjectNumber > 0)
+                .GroupBy(target => target.StreamObjectNumber))
+            {
+                if (doc.GetPdfObject(group.Key) is not PdfStream contentStream)
+                    continue;
+
+                var operationIndexes = group
+                    .Select(target => target.OperationIndex)
+                    .Distinct()
+                    .ToList();
+
+                byte[]? rewrittenBytes = RewriteContentStreamWithoutText(contentStream.GetBytes(), operationIndexes);
+                if (rewrittenBytes == null)
+                    continue;
+
+                contentStream.SetData(rewrittenBytes);
+                modified = true;
+            }
+
+            foreach (var group in validTargets
+                .Where(target => target.StreamObjectNumber <= 0)
+                .GroupBy(target => target.StreamIndex))
             {
                 if (group.Key >= page.GetContentStreamCount())
                     continue;
@@ -938,11 +1296,12 @@ namespace PDF_simple_edit.Helpers
                 if (contentStream == null)
                     continue;
 
-                var renderModes = group
-                    .GroupBy(t => t.OperationIndex)
-                    .ToDictionary(g => g.Key, g => g.First().TextRenderMode);
-
-                byte[]? rewrittenBytes = RewriteContentStreamWithInvisibleText(contentStream.GetBytes(), renderModes);
+                var operationIndexes = group
+                    .Select(target => target.OperationIndex)
+                    .Distinct()
+                    .ToList();
+                byte[]? rewrittenBytes = RewriteContentStreamWithoutText(
+                    contentStream.GetBytes(), operationIndexes);
                 if (rewrittenBytes == null)
                     continue;
 
@@ -981,12 +1340,15 @@ namespace PDF_simple_edit.Helpers
 
         public async Task<bool> RemoveTextAsync(int pageIndex, double x, double y, double width, double height, int contentStreamIndex = -1, int operationIndex = -1, int textRenderMode = 0)
         {
+            if (contentStreamIndex < 0 || operationIndex < 0)
+                return false;
+
             return await Task.Run(() =>
             {
                 bool success = false;
                 ApplyEdit(doc =>
                 {
-                    success = TryHideTextOperations(doc, pageIndex, new[]
+                    success = TryRemoveTextOperations(doc, pageIndex, new[]
                     {
                         new TextOperationTarget
                         {
@@ -996,13 +1358,6 @@ namespace PDF_simple_edit.Helpers
                         }
                     });
 
-                    if (!success)
-                    {
-                        success = RemoveTextByCleanup(doc, pageIndex, new List<(double x, double y, double w, double h)>
-                        {
-                            (x, y, width, height)
-                        });
-                    }
                 });
                 return success;
             });
@@ -1012,6 +1367,12 @@ namespace PDF_simple_edit.Helpers
         {
             if (annotations == null || annotations.Count == 0)
                 return true;
+            if (annotations.Any(annotation => annotation.TextFragments.Count > 0
+                ? annotation.TextFragments.Any(fragment => fragment.OperationIndex < 0 ||
+                    (fragment.ContentStreamObjectNumber <= 0 && fragment.ContentStreamIndex < 0))
+                : annotation.OperationIndex < 0 ||
+                    (annotation.ContentStreamObjectNumber <= 0 && annotation.ContentStreamIndex < 0)))
+                return false;
 
             return await Task.Run(() =>
             {
@@ -1019,26 +1380,33 @@ namespace PDF_simple_edit.Helpers
                 ApplyEdit(doc =>
                 {
                     var preciseTargets = annotations
-                        .Where(a => a.ContentStreamIndex >= 0 && a.OperationIndex >= 0)
-                        .Select(a => new TextOperationTarget
-                        {
-                            StreamIndex = a.ContentStreamIndex,
-                            OperationIndex = a.OperationIndex,
-                            TextRenderMode = a.TextRenderMode
-                        })
+                        .SelectMany(a => a.TextFragments.Count > 0
+                            ? a.TextFragments.Select(fragment => new TextOperationTarget
+                            {
+                                StreamIndex = fragment.ContentStreamIndex,
+                                StreamObjectNumber = fragment.ContentStreamObjectNumber,
+                                OperationIndex = fragment.OperationIndex,
+                                TextRenderMode = fragment.TextRenderMode
+                            })
+                            : new[]
+                            {
+                                new TextOperationTarget
+                                {
+                                    StreamIndex = a.ContentStreamIndex,
+                                    StreamObjectNumber = a.ContentStreamObjectNumber,
+                                    OperationIndex = a.OperationIndex,
+                                    TextRenderMode = a.TextRenderMode
+                                }
+                            })
+                        .Where(target => target.StreamIndex >= 0 && target.OperationIndex >= 0)
+                        .GroupBy(target => (
+                            target.StreamObjectNumber,
+                            target.StreamIndex,
+                            target.OperationIndex))
+                        .Select(group => group.First())
                         .ToList();
 
-                    success = TryHideTextOperations(doc, pageIndex, preciseTargets);
-
-                    var cleanupTargets = annotations
-                        .Where(a => a.ContentStreamIndex < 0 || a.OperationIndex < 0)
-                        .Select(a => (a.X, a.Y, a.Width, a.Height))
-                        .ToList();
-
-                    if (cleanupTargets.Count > 0)
-                    {
-                        success = RemoveTextByCleanup(doc, pageIndex, cleanupTargets) || success;
-                    }
+                    success = TryRemoveTextOperations(doc, pageIndex, preciseTargets);
                 });
 
                 return success;
