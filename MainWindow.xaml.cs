@@ -1940,20 +1940,29 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         }
                         else
                         {
+                            bool hasOriginalLineLayout = ann.TextFragments.Count > 1;
+                            bool containsLineBreak = ContainsLineBreak(ann.Content);
+                            double displayFontSize = hasOriginalLineLayout
+                                ? GetOriginalLayoutFontSize(ann, ann.Content)
+                                : ann.FontSize;
                             element = new TextBlock
                             {
                                 Text = ann.Content,
-                                TextWrapping = ann.TextFragments.Count > 1 || ContainsLineBreak(ann.Content)
-                                    ? TextWrapping.Wrap
-                                    : TextWrapping.NoWrap,
-                                Width = ann.TextFragments.Count > 1 || ContainsLineBreak(ann.Content)
+                                // 원문에서 가져온 텍스트는 PDF의 줄 경계를 그대로 사용합니다.
+                                // WinUI가 다시 폭을 계산하면 수정 후 줄이 추가되어 박스가 커집니다.
+                                TextWrapping = hasOriginalLineLayout
+                                    ? TextWrapping.NoWrap
+                                    : containsLineBreak ? TextWrapping.Wrap : TextWrapping.NoWrap,
+                                Width = hasOriginalLineLayout || containsLineBreak
                                     ? Math.Max(ann.Width * PdfToPixels, 1)
                                     : double.NaN,
-                                Height = ContainsLineBreak(ann.Content) || ann.TextFragments.Count > 1
-                                    ? GetLineAwareHeight(ann, ann.Content, ann.FontSize)
-                                    : double.NaN,
+                                Height = hasOriginalLineLayout
+                                    ? Math.Max(ann.Height * PdfToPixels, 1)
+                                    : containsLineBreak
+                                        ? GetLineAwareHeight(ann, ann.Content, ann.FontSize)
+                                        : double.NaN,
                                 FontFamily = new FontFamily(ann.FontFamily),
-                                FontSize = ann.FontSize * PdfToPixels,
+                                FontSize = displayFontSize * PdfToPixels,
                                 Foreground = new SolidColorBrush(ParseColor(ann.Color)),
                                 FontWeight = ann.IsBold
                                     ? Microsoft.UI.Text.FontWeights.Bold
@@ -1961,6 +1970,12 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                                 FontStyle = ann.IsItalic
                                     ? Windows.UI.Text.FontStyle.Italic
                                     : Windows.UI.Text.FontStyle.Normal,
+                                RenderTransform = hasOriginalLineLayout
+                                    ? new TranslateTransform
+                                    {
+                                        Y = GetOriginalLayoutTopOffset(ann, displayFontSize)
+                                    }
+                                    : null,
                                 Padding = new Thickness(0),
                                 Margin = new Thickness(0),
                                 IsHitTestVisible = false
@@ -2041,6 +2056,98 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             }
         }
 
+        private static double GetOriginalLayoutFontSize(PdfAnnotation annotation, string text)
+        {
+            if (annotation.FontSize <= 0 || annotation.Width <= 0 || annotation.TextFragments.Count < 2)
+                return annotation.FontSize;
+
+            try
+            {
+                // MeasureText는 PDF 포인트 단위의 실제 WinUI 측정 폭을 반환합니다.
+                // TextBox의 좌우 1px 테두리를 제외하고 원문 bounds 안에 들어오도록
+                // 표시용 크기만 보정합니다. PDF에 저장되는 ann.FontSize는 바꾸지 않습니다.
+                var measured = MeasureTextForOriginalLayout(
+                    text,
+                    annotation.FontFamily,
+                    annotation.FontSize,
+                    annotation.IsBold,
+                    annotation.IsItalic);
+                double availableWidth = Math.Max(annotation.Width - (2.0 / PdfToPixels), 1);
+                if (measured <= availableWidth)
+                    return annotation.FontSize;
+
+                double scale = availableWidth / measured;
+                return Math.Max(annotation.FontSize * scale, 1);
+            }
+            catch
+            {
+                return annotation.FontSize;
+            }
+        }
+
+        private static double GetOriginalLayoutTopOffset(PdfAnnotation annotation, double displayFontSize)
+        {
+            if (annotation.BaselineOffset <= 0.1)
+                return 0;
+
+            double uiBaselineOffset = displayFontSize * PdfToPixels * 0.8;
+            try
+            {
+                var sample = new TextBlock
+                {
+                    Text = "Ag",
+                    FontFamily = new FontFamily(annotation.FontFamily),
+                    FontSize = displayFontSize * PdfToPixels,
+                    FontWeight = annotation.IsBold
+                        ? Microsoft.UI.Text.FontWeights.Bold
+                        : Microsoft.UI.Text.FontWeights.Normal,
+                    FontStyle = annotation.IsItalic
+                        ? Windows.UI.Text.FontStyle.Italic
+                        : Windows.UI.Text.FontStyle.Normal,
+                    TextWrapping = TextWrapping.NoWrap,
+                    Padding = new Thickness(0)
+                };
+                sample.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+
+                var baselineProperty = typeof(TextBlock).GetProperty("BaselineOffset");
+                if (baselineProperty?.GetValue(sample) is double measuredBaseline && measuredBaseline > 0.1)
+                    uiBaselineOffset = measuredBaseline;
+            }
+            catch
+            {
+                // Use the font-size estimate when the platform does not expose the baseline.
+            }
+
+            // PDF bounds are top-based, while the text control positions its glyphs
+            // from the baseline. Account for the TextBox's 1px border as well.
+            return annotation.BaselineOffset * PdfToPixels - (uiBaselineOffset + 1);
+        }
+
+        private static double MeasureTextForOriginalLayout(
+            string text,
+            string fontFamily,
+            double fontSize,
+            bool isBold,
+            bool isItalic)
+        {
+            var textBlock = new TextBlock
+            {
+                Text = text,
+                FontFamily = new FontFamily(fontFamily),
+                FontSize = fontSize * PdfToPixels,
+                FontWeight = isBold
+                    ? Microsoft.UI.Text.FontWeights.Bold
+                    : Microsoft.UI.Text.FontWeights.Normal,
+                FontStyle = isItalic
+                    ? Windows.UI.Text.FontStyle.Italic
+                    : Windows.UI.Text.FontStyle.Normal,
+                TextWrapping = TextWrapping.NoWrap,
+                Padding = new Thickness(0)
+            };
+            textBlock.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+            return Math.Max((textBlock.DesiredSize.Width - 2.0) / PdfToPixels, 1);
+        }
+
         private void AddResizeHandles(PdfAnnotation ann, ref int insertIndex)
         {
             double x = ann.X * PdfToPixels;
@@ -2075,19 +2182,30 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                     IsHitTestVisible = true // 핸들은 클릭 가능해야 함
                 };
 
-                Canvas.SetLeft(rect, kvp.Value.X);
-                Canvas.SetTop(rect, kvp.Value.Y);
-                
-                // 핸들에 마우스 커서 설정
-                rect.PointerEntered += (s, e) => {
-                    string dir = (string)((FrameworkElement)s).Tag;
-                    SetElementCursor(OverlayCanvas, Microsoft.UI.Input.InputSystemCursor.Create(dir switch {
-                        "NW" or "SE" => Microsoft.UI.Input.InputSystemCursorShape.SizeNorthwestSoutheast,
-                        "NE" or "SW" => Microsoft.UI.Input.InputSystemCursorShape.SizeNortheastSouthwest,
-                        "N" or "S" => Microsoft.UI.Input.InputSystemCursorShape.SizeNorthSouth,
-                        "E" or "W" => Microsoft.UI.Input.InputSystemCursorShape.SizeWestEast,
-                        _ => Microsoft.UI.Input.InputSystemCursorShape.Arrow
-                    }));
+                rect.PointerPressed += (s, e) =>
+                {
+                    if (s is Microsoft.UI.Xaml.Shapes.Rectangle r && r.Tag is string dir)
+                    {
+                        _isResizingAnnotation = true;
+                        _resizeHandle = dir;
+                        _lastMousePos = e.GetCurrentPoint(OverlayCanvas).Position;
+                        OverlayCanvas.CapturePointer(e.Pointer);
+                        e.Handled = true;
+                    }
+                };
+                rect.PointerEntered += (s, e) =>
+                {
+                    if (s is Microsoft.UI.Xaml.Shapes.Rectangle r && r.Tag is string dir)
+                    {
+                        SetElementCursor(OverlayCanvas, Microsoft.UI.Input.InputSystemCursor.Create(dir switch
+                        {
+                            "NW" or "SE" => Microsoft.UI.Input.InputSystemCursorShape.SizeNorthwestSoutheast,
+                            "NE" or "SW" => Microsoft.UI.Input.InputSystemCursorShape.SizeNortheastSouthwest,
+                            "N" or "S" => Microsoft.UI.Input.InputSystemCursorShape.SizeNorthSouth,
+                            "E" or "W" => Microsoft.UI.Input.InputSystemCursorShape.SizeWestEast,
+                            _ => Microsoft.UI.Input.InputSystemCursorShape.Arrow
+                        }));
+                    }
                 };
                 rect.PointerExited += (s, e) => SetElementCursor(OverlayCanvas, Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.Arrow));
 
@@ -2166,7 +2284,6 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             textBlock.Measure(new Windows.Foundation.Size(width, double.PositiveInfinity));
             return textBlock.DesiredSize.Height + 8;
         }
-
         private static string NormalizeLineEndings(string text)
         {
             return text
@@ -2234,6 +2351,12 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             double inlineHeight = existingAnn != null
                 ? Math.Max(existingAnn.Height * PdfToPixels, 1)
                 : 24;
+            double displayFontSize = existingAnn != null
+                ? GetOriginalLayoutFontSize(existingAnn, initialText)
+                : fontSize;
+            double inlineTopOffset = existingAnn != null
+                ? GetOriginalLayoutTopOffset(existingAnn, displayFontSize)
+                : 0;
 
             var textBox = new TextBox
             {
@@ -2256,7 +2379,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 BorderThickness = new Thickness(1),
                 Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
                 BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
-                FontSize = fontSize * PdfToPixels,
+                FontSize = displayFontSize * PdfToPixels,
                 FontFamily = new FontFamily(fontFamily),
                 Foreground = new SolidColorBrush(ParseColor(color)),
                 FontWeight = isBold ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal,
@@ -2275,7 +2398,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             };
 
             Canvas.SetLeft(textBox, canvasX);
-            Canvas.SetTop(textBox, canvasY);
+            // Align the editable glyph baseline to the original PDF baseline.
+            Canvas.SetTop(textBox, canvasY + inlineTopOffset);
 
             textBox.Loaded += (s, e) => 
             {
@@ -2333,6 +2457,18 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             string changedText = textBox.Text;
             long changeVersion = ++session.TextChangeVersion;
             session.HasLiveChanges = true;
+
+            if (session.Annotation.TextFragments.Count > 1)
+            {
+                // 원문 bounds를 유지하면서도 편집 중 긴 문자열이 오른쪽에서
+                // 잘리지 않도록 표시용 글꼴 크기를 현재 내용에 맞춰 조정합니다.
+                double displayFontSize = GetOriginalLayoutFontSize(session.Annotation, changedText);
+                textBox.FontSize = displayFontSize * PdfToPixels;
+                Canvas.SetTop(
+                    textBox,
+                    session.Annotation.Y * PdfToPixels +
+                    GetOriginalLayoutTopOffset(session.Annotation, displayFontSize));
+            }
 
             if (session.Annotation.IsOriginalTextReplacement && session.RemovalTask == null)
             {
