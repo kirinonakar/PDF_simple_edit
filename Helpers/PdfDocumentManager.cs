@@ -801,6 +801,23 @@ namespace PDF_simple_edit.Helpers
             if (color == null)
                 return "#000000";
 
+            // DeviceCmyk stores four values (C, M, Y, K). It must be converted
+            // before the generic RGB/gray handling below; treating the first
+            // three CMYK channels as RGB changes colors such as the red title
+            // in the supplied AJCC PDF into cyan.
+            if (color is DeviceCmyk cmyk)
+            {
+                var rgb = Color.ConvertCmykToRgb(cmyk);
+                float[] rgbValues = rgb.GetColorValue();
+                if (rgbValues.Length >= 3)
+                {
+                    byte r = (byte)Math.Clamp((int)Math.Round(rgbValues[0] * 255), 0, 255);
+                    byte g = (byte)Math.Clamp((int)Math.Round(rgbValues[1] * 255), 0, 255);
+                    byte b = (byte)Math.Clamp((int)Math.Round(rgbValues[2] * 255), 0, 255);
+                    return $"#{r:X2}{g:X2}{b:X2}";
+                }
+            }
+
             float[] values = color.GetColorValue();
             if (values.Length >= 3)
             {
@@ -814,16 +831,6 @@ namespace PDF_simple_edit.Helpers
             {
                 byte gray = (byte)Math.Clamp((int)Math.Round(values[0] * 255), 0, 255);
                 return $"#{gray:X2}{gray:X2}{gray:X2}";
-            }
-
-            if (color is DeviceCmyk cmyk)
-            {
-                var rgb = Color.ConvertCmykToRgb(cmyk);
-                float[] rgbValues = rgb.GetColorValue();
-                byte r = (byte)Math.Clamp((int)Math.Round(rgbValues[0] * 255), 0, 255);
-                byte g = (byte)Math.Clamp((int)Math.Round(rgbValues[1] * 255), 0, 255);
-                byte b = (byte)Math.Clamp((int)Math.Round(rgbValues[2] * 255), 0, 255);
-                return $"#{r:X2}{g:X2}{b:X2}";
             }
 
             return "#000000";
@@ -1432,7 +1439,7 @@ namespace PDF_simple_edit.Helpers
             });
         }
 
-        public async Task<bool> MoveTextAsync(int pageIndex, string text, double oldX, double oldY, double width, double height, double newX, double newY, string fontFamily = "맑은 고딕", double fontSize = 12)
+        public async Task<bool> MoveTextAsync(int pageIndex, string text, double oldX, double oldY, double width, double height, double newX, double newY, string fontFamily = "맑은 고딕", double fontSize = 12, Color? color = null)
         {
             return await Task.Run(() =>
             {
@@ -1459,7 +1466,7 @@ namespace PDF_simple_edit.Helpers
                     cleaner.CleanUp();
 
                     // 수정된 부분: 하드코딩된 "맑은 고딕" 대신 파라미터로 받은 폰트와 사이즈 사용
-                    AddTextInternal(doc, pageIndex, newX, newY, text, fontFamily, fontSize, ColorConstants.BLACK);
+                    AddTextInternal(doc, pageIndex, newX, newY, text, fontFamily, fontSize, color ?? ColorConstants.BLACK);
                     success = true;
                 });
                 return success;
