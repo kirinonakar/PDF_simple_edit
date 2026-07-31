@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Windows.Storage.Pickers;
 using Windows.Storage;
@@ -67,6 +68,7 @@ namespace PDF_simple_edit
         private Microsoft.UI.Xaml.Shapes.Rectangle? _dragRect;
         private bool _isDialogOpen = false;
         private bool _isInlineEditing = false;
+        private bool _controlKeyIsDown;
         private System.Threading.CancellationTokenSource? _thumbnailCts;
 
         private sealed class InlineTextEditSession
@@ -75,6 +77,8 @@ namespace PDF_simple_edit
             public required string OriginalContent { get; init; }
             public bool HasLiveChanges { get; set; }
             public bool SuppressTextChanged { get; set; }
+            public bool IsFinishing { get; set; }
+            public long TextChangeVersion { get; set; }
             public bool OriginalRemovalCommitted { get; set; }
             public Task<bool>? RemovalTask { get; set; }
         }
@@ -98,12 +102,25 @@ namespace PDF_simple_edit
         // PDF는 72 DPI, Windows 논리 픽셀은 96 DPI입니다.
         private const double PdfToPixels = 96.0 / 72.0;
 
+        private const int VirtualKeyControl = 0x11;
+        private const int VirtualKeyLeftControl = 0xA2;
+        private const int VirtualKeyRightControl = 0xA3;
+
+        [DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int virtualKey);
+
         public MainWindow()
         {
             try
             {
                 InitializeComponent();
                 DocTabView.TabItemsSource = _tabs;
+                // TextBox 내부 처리로 이미 Handled 된 키도 편집 확정 로직에서
+                // 확인할 수 있도록 캔버스에 handledEventsToo 핸들러를 등록합니다.
+                OverlayCanvas.AddHandler(
+                    UIElement.KeyDownEvent,
+                    new KeyEventHandler(MainWindow_KeyDown),
+                    true);
 
                 // 1. 현재 윈도우의 핸들(HWND) 가져오기
                 IntPtr hWnd = WindowNative.GetWindowHandle(this);
@@ -1380,9 +1397,10 @@ private PdfAnnotation ConvertExistingContentToAnnotation(PdfPageContent content)
     double fontSize = isText && content.FontSize > 0 ? content.FontSize : (content.Height > 0 ? content.Height : 12);
     bool isBold = isText && content.IsBold;
     bool isItalic = isText && content.IsItalic;
-    
+
     double width = content.Width;
     double height = content.Height;
+    string editableText = isText ? BuildEditableText(content) : content.Text ?? string.Empty;
 
     return new PdfAnnotation
     {
@@ -1390,14 +1408,14 @@ private PdfAnnotation ConvertExistingContentToAnnotation(PdfPageContent content)
         PageIndex = _currentPageIndex,
         X = content.X,
         Y = content.Y,
-        Content = content.Text ?? string.Empty,
+        Content = editableText,
         Width = width,
         Height = height,
         IsOriginalTextReplacement = isText,
         IsOriginalImageReplacement = !isText,
         OriginalPdfX = content.OriginalPdfX,
         OriginalPdfY = content.OriginalPdfY,
-        OriginalText = content.Text ?? string.Empty,
+        OriginalText = editableText,
         OriginalImageName = isText ? null : content.ImageId,
         ImagePath = isText ? null : (string.IsNullOrEmpty(content.Text) ? null : content.Text),
         OperatorId = content.OperatorId,
@@ -1416,6 +1434,79 @@ private PdfAnnotation ConvertExistingContentToAnnotation(PdfPageContent content)
         IsItalic = isItalic,
         IsApplied = false
     };
+}
+
+private static string BuildEditableText(PdfPageContent content)
+{
+    string fallback = NormalizeLineEndings(content.Text ?? string.Empty);
+    if (content.TextFragments.Count < 2)
+        return fallback;
+
+    var indexedLines = content.TextFragments
+        .GroupBy(fragment => fragment.LineIndex)
+        .OrderBy(group => group.Key)
+        .Select(group => group.OrderBy(fragment => fragment.X).ToList())
+        .ToList();
+
+    // 일부 PDF는 여러 줄을 하나의 텍스트 그룹으로 추출하면서 모든 조각의
+    // LineIndex를 0으로 남깁니다. 이 경우 실제 화면 Y 좌표로 다시 나눕니다.
+    if (indexedLines.Count == 1)
+    {
+        indexedLines = new List<List<PdfTextFragment>>();
+        foreach (var fragment in content.TextFragments.OrderBy(fragment => fragment.Y).ThenBy(fragment => fragment.X))
+        {
+            var line = indexedLines.LastOrDefault();
+            double lineTolerance = Math.Max(1.25, Math.Max(fragment.FontSize, content.FontSize) * 0.35);
+            if (line == null || Math.Abs(fragment.Y - line.Average(item => item.Y)) > lineTolerance)
+                indexedLines.Add(new List<PdfTextFragment>());
+
+            indexedLines[^1].Add(fragment);
+        }
+    }
+
+    if (indexedLines.Count < 2)
+        return fallback;
+
+    var lines = indexedLines
+        .Select(line => JoinTextFragments(line.OrderBy(fragment => fragment.X)))
+        .Where(line => line.Length > 0)
+        .ToList();
+
+    return lines.Count >= 2 ? string.Join("\r\n", lines) : fallback;
+}
+
+private static string BuildEditableText(PdfAnnotation annotation)
+{
+    return BuildEditableText(new PdfPageContent
+    {
+        Text = annotation.Content,
+        FontSize = annotation.FontSize,
+        TextFragments = annotation.TextFragments
+    });
+}
+
+private static string JoinTextFragments(IEnumerable<PdfTextFragment> fragments)
+{
+    string result = string.Empty;
+    PdfTextFragment? previous = null;
+
+    foreach (var fragment in fragments)
+    {
+        if (previous != null)
+        {
+            double gap = fragment.X - (previous.X + previous.Width);
+            bool needsSpace = gap > Math.Max(previous.FontSize, fragment.FontSize) * 0.15
+                && !result.EndsWith(" ", StringComparison.Ordinal)
+                && !fragment.Text.StartsWith(" ", StringComparison.Ordinal);
+            if (needsSpace)
+                result += " ";
+        }
+
+        result += fragment.Text;
+        previous = fragment;
+    }
+
+    return result;
 }
 
 private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
@@ -1709,7 +1800,15 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                             element = new TextBlock
                             {
                                 Text = ann.Content,
-                                TextWrapping = TextWrapping.NoWrap,
+                                TextWrapping = ann.TextFragments.Count > 1 || ContainsLineBreak(ann.Content)
+                                    ? TextWrapping.Wrap
+                                    : TextWrapping.NoWrap,
+                                Width = ann.TextFragments.Count > 1 || ContainsLineBreak(ann.Content)
+                                    ? Math.Max(ann.Width * PdfToPixels, 1)
+                                    : double.NaN,
+                                Height = ContainsLineBreak(ann.Content) || ann.TextFragments.Count > 1
+                                    ? GetLineAwareHeight(ann, ann.Content, ann.FontSize)
+                                    : double.NaN,
                                 FontFamily = new FontFamily(ann.FontFamily),
                                 FontSize = ann.FontSize * PdfToPixels,
                                 Foreground = new SolidColorBrush(ParseColor(ann.Color)),
@@ -1871,6 +1970,99 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
         #region Text Input (Inline & Dialog)
 
+        private static bool ContainsLineBreak(string? text)
+        {
+            return !string.IsNullOrEmpty(text) &&
+                (text.Contains('\r') || text.Contains('\n'));
+        }
+
+        private static int GetLineCount(string? text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return 1;
+
+            return text.Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace('\r', '\n')
+                .Split('\n').Length;
+        }
+
+        private static double GetLineAwareHeight(PdfAnnotation annotation, string text, double fontSize)
+        {
+            // PDF의 LineHeight는 일부 파일에서 실제 UI 글꼴 높이보다 작게
+            // 추출됩니다. 실제 편집 글꼴 기준으로 필요한 높이를 계산합니다.
+            double uiLineHeight = Math.Max(
+                fontSize * PdfToPixels * 1.35,
+                annotation.LineHeight > 0.1 ? annotation.LineHeight * PdfToPixels : 0);
+            double requiredUiHeight = GetLineCount(text) * uiLineHeight + 8;
+            return Math.Max(annotation.Height * PdfToPixels, requiredUiHeight);
+        }
+
+        private static double MeasureInlineTextHeight(
+            string text,
+            double width,
+            string fontFamily,
+            double fontSize,
+            bool isBold,
+            bool isItalic)
+        {
+            var textBlock = new TextBlock
+            {
+                Text = text,
+                Width = Math.Max(width, 1),
+                FontFamily = new FontFamily(fontFamily),
+                FontSize = fontSize * PdfToPixels,
+                FontWeight = isBold
+                    ? Microsoft.UI.Text.FontWeights.Bold
+                    : Microsoft.UI.Text.FontWeights.Normal,
+                FontStyle = isItalic
+                    ? Windows.UI.Text.FontStyle.Italic
+                    : Windows.UI.Text.FontStyle.Normal,
+                TextWrapping = TextWrapping.Wrap,
+                Padding = new Thickness(0)
+            };
+            textBlock.Measure(new Windows.Foundation.Size(width, double.PositiveInfinity));
+            return textBlock.DesiredSize.Height + 8;
+        }
+
+        private static string NormalizeLineEndings(string text)
+        {
+            return text
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace('\r', '\n')
+                .Replace("\n", "\r\n", StringComparison.Ordinal);
+        }
+
+        private static bool IsControlKeyDown()
+        {
+            try
+            {
+                if ((GetAsyncKeyState(VirtualKeyControl) & 0x8000) != 0 ||
+                    (GetAsyncKeyState(VirtualKeyLeftControl) & 0x8000) != 0 ||
+                    (GetAsyncKeyState(VirtualKeyRightControl) & 0x8000) != 0)
+                    return true;
+            }
+            catch
+            {
+                // InputKeyboardSource fallback below handles restricted environments.
+            }
+
+            return new[]
+            {
+                Windows.System.VirtualKey.Control,
+                Windows.System.VirtualKey.LeftControl,
+                Windows.System.VirtualKey.RightControl
+            }.Any(key => Microsoft.UI.Input.InputKeyboardSource
+                .GetKeyStateForCurrentThread(key)
+                .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down));
+        }
+
+        private static bool IsControlVirtualKey(Windows.System.VirtualKey key)
+        {
+            return key == Windows.System.VirtualKey.Control ||
+                key == Windows.System.VirtualKey.LeftControl ||
+                key == Windows.System.VirtualKey.RightControl;
+        }
+
         private void AddInlineTextBox(double pdfX, double pdfY, PdfAnnotation? existingAnn = null)
         {
             // 실제 TextBox가 이미 있는지 확인하여 중복 생성 방지
@@ -1886,17 +2078,36 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             string color = existingAnn?.Color ?? _fontSettings.Color;
             bool isBold = existingAnn?.IsBold ?? _fontSettings.IsBold;
             bool isItalic = existingAnn?.IsItalic ?? _fontSettings.IsItalic;
-            string initialText = existingAnn?.Content ?? "";
+            string initialText = existingAnn != null
+                ? BuildEditableText(existingAnn)
+                : string.Empty;
+            double inlineWidth = existingAnn != null
+                ? Math.Max(existingAnn.Width * PdfToPixels, 1)
+                : double.NaN;
+            double inlineMinHeight = existingAnn != null
+                ? Math.Max(
+                    GetLineAwareHeight(existingAnn, initialText, fontSize),
+                    MeasureInlineTextHeight(
+                        initialText,
+                        inlineWidth,
+                        fontFamily,
+                        fontSize,
+                        isBold,
+                        isItalic))
+                : 24;
 
             var textBox = new TextBox
             {
                 Text = initialText,
                 AcceptsReturn = existingAnn != null,
-                TextWrapping = TextWrapping.NoWrap,
+                TextWrapping = existingAnn != null ? TextWrapping.Wrap : TextWrapping.NoWrap,
                 MinWidth = existingAnn != null ? 0 : 60,
-                MinHeight = existingAnn != null ? 0 : 24,
-                Width = existingAnn != null ? Math.Max(existingAnn.Width * PdfToPixels, 1) : double.NaN,
-                Height = existingAnn != null ? Math.Max(existingAnn.Height * PdfToPixels, fontSize * PdfToPixels * 1.2) : double.NaN,
+                // 고정 Height로 자르면 WinUI TextBox 내부 ScrollViewer가 첫 줄만
+                // 보여 주는 경우가 있어, 최소 높이만 먼저 지정하고 Loaded 후
+                // 실제 레이아웃 높이를 반영합니다.
+                MinHeight = inlineMinHeight,
+                Width = inlineWidth,
+                Height = double.NaN,
                 Padding = new Thickness(0),
                 Margin = new Thickness(0),
                 BorderThickness = new Thickness(1),
@@ -1911,7 +2122,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                     ? new InlineTextEditSession
                     {
                         Annotation = existingAnn,
-                        OriginalContent = existingAnn.Content
+                        OriginalContent = initialText
                     }
                     : (object)new Windows.Foundation.Point(pdfX, pdfY),
                 VerticalAlignment = VerticalAlignment.Top,
@@ -1926,6 +2137,11 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             textBox.Loaded += (s, e) => 
             {
                 // 포커스 강제 부여 및 전역 상태 보호
+                if (existingAnn != null)
+                {
+                    textBox.UpdateLayout();
+                    textBox.Height = Math.Max(inlineMinHeight, textBox.ActualHeight);
+                }
                 textBox.Focus(FocusState.Programmatic);
             };
 
@@ -1938,19 +2154,19 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
             textBox.KeyDown += async (s, e) =>
             {
-                var controlDown = Microsoft.UI.Input.InputKeyboardSource
-                    .GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
-                    .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+                var controlDown = IsControlKeyDown();
                 if (e.Key == Windows.System.VirtualKey.Enter &&
                     (!((TextBox)s).AcceptsReturn || controlDown))
                 {
-                    await ApplyInlineTextAsync((TextBox)s);
+                    // TextBox가 Enter를 기본 처리하여 줄바꿈을 넣기 전에 먼저 소비합니다.
+                    // await 뒤에 설정하면 기본 동작이 이미 실행될 수 있습니다.
                     e.Handled = true;
+                    await ApplyInlineTextAsync((TextBox)s);
                 }
                 else if (e.Key == Windows.System.VirtualKey.Escape)
                 {
-                    CancelInlineEdit(textBox);
                     e.Handled = true;
+                    CancelInlineEdit(textBox);
                 }
             };
 
@@ -1966,9 +2182,12 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         {
             if (sender is not TextBox textBox ||
                 textBox.Tag is not InlineTextEditSession session ||
-                session.SuppressTextChanged)
+                session.SuppressTextChanged ||
+                session.IsFinishing)
                 return;
 
+            string changedText = textBox.Text;
+            long changeVersion = ++session.TextChangeVersion;
             session.HasLiveChanges = true;
 
             if (session.Annotation.IsOriginalTextReplacement && session.RemovalTask == null)
@@ -1991,10 +2210,16 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             if (session.RemovalTask != null && !await session.RemovalTask)
                 return;
 
-            session.Annotation.Content = textBox.Text;
+            // 여러 키 입력이 원문 삭제 작업을 기다리는 동안 누적될 수 있습니다.
+            // 최신 이벤트가 아니면 오래된 문자열로 내용을 되돌리지 않습니다.
+            if (session.IsFinishing || changeVersion != session.TextChangeVersion ||
+                !OverlayCanvas.Children.Contains(textBox))
+                return;
+
+            session.Annotation.Content = changedText;
             session.Annotation.IsApplied = false;
 
-            TxtStatus.Text = string.IsNullOrEmpty(textBox.Text)
+            TxtStatus.Text = string.IsNullOrEmpty(changedText)
                 ? "텍스트가 삭제되었습니다 (편집 중)"
                 : "텍스트 편집 내용이 실시간 반영 중입니다.";
         }
@@ -2017,6 +2242,12 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         private async void CancelInlineEdit(TextBox textBox)
         {
             if (!_isInlineEditing || !OverlayCanvas.Children.Contains(textBox)) return;
+
+            if (textBox.Tag is InlineTextEditSession sessionToCancel)
+            {
+                sessionToCancel.IsFinishing = true;
+                sessionToCancel.TextChangeVersion++;
+            }
 
             _isInlineEditing = false;
             OverlayCanvas.Children.Remove(textBox);
@@ -2048,13 +2279,27 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         private async Task ApplyInlineTextAsync(TextBox textBox)
         {
             if (!_isInlineEditing || !OverlayCanvas.Children.Contains(textBox)) return;
+            if (textBox.Tag is InlineTextEditSession activeSession && activeSession.IsFinishing)
+                return;
 
             string text = textBox.Text;
             object tag = textBox.Tag;
             bool textWasRemoved = false;
+            var editSession = tag as InlineTextEditSession;
 
-            textBox.Text = ""; // 텍스트 상자 내용 지우기
+            if (editSession != null)
+            {
+                editSession.IsFinishing = true;
+                editSession.TextChangeVersion++;
+                editSession.SuppressTextChanged = true;
+            }
+
+            // TextChanged가 실행 중인 편집 내용을 빈 문자열로 덮어쓰지 않도록
+            // 이벤트를 억제한 뒤 편집창을 제거합니다.
+            textBox.Text = "";
             OverlayCanvas.Children.Remove(textBox);
+            if (editSession != null)
+                editSession.SuppressTextChanged = false;
             _isInlineEditing = false;
 
             try
@@ -2065,7 +2310,6 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                     PdfAnnotation annotation => annotation,
                     _ => null
                 };
-                var editSession = tag as InlineTextEditSession;
 
                 if (existingAnn != null)
                 {
@@ -2557,11 +2801,40 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         #region Keyboard Shortcuts Extension
         private async void MainWindow_KeyDown(object sender, KeyRoutedEventArgs e)
         {
+            if (IsControlVirtualKey(e.Key))
+            {
+                _controlKeyIsDown = true;
+                return;
+            }
+
+            // TextBox의 KeyDown에서 Ctrl 상태를 놓치는 경우에도 창 레벨에서
+            // Enter를 먼저 소비하여 줄바꿈 대신 편집을 확정합니다.
+            if (_isInlineEditing &&
+                e.Key == Windows.System.VirtualKey.Enter &&
+                (_controlKeyIsDown || IsControlKeyDown()))
+            {
+                var activeTextBox = OverlayCanvas.Children.OfType<TextBox>().FirstOrDefault();
+                if (activeTextBox == null ||
+                    activeTextBox.Tag is not InlineTextEditSession { IsFinishing: true })
+                {
+                    e.Handled = true;
+                    if (activeTextBox != null)
+                        await ApplyInlineTextAsync(activeTextBox);
+                }
+                return;
+            }
+
             if (e.Key == Windows.System.VirtualKey.Delete && _selectedAnnotation != null && !_isInlineEditing && !_isDialogOpen)
             {
                 await DeleteSelectedAnnotationsAsync();
                 e.Handled = true;
             }
+        }
+
+        private void MainWindow_KeyUp(object sender, KeyRoutedEventArgs e)
+        {
+            if (IsControlVirtualKey(e.Key))
+                _controlKeyIsDown = false;
         }
 
         private async Task<bool> DeleteSelectedAnnotationsAsync()

@@ -17,7 +17,8 @@
 
     <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
           AllowDrop="True" DragOver="Grid_DragOver" Drop="Grid_Drop"
-          KeyDown="MainWindow_KeyDown">
+          KeyDown="MainWindow_KeyDown"
+          KeyUp="MainWindow_KeyUp">
         <Grid.RowDefinitions>
             <RowDefinition Height="48"/>
             <RowDefinition Height="Auto"/>
