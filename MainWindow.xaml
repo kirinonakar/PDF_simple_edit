@@ -216,10 +216,13 @@
                                 Background="Yellow"/>
                     </StackPanel>
                     <FlyoutBase.AttachedFlyout>
-                        <Flyout x:Name="HighlightFlyout">
-                            <StackPanel Spacing="10" Width="240">
+                        <Flyout x:Name="HighlightFlyout"
+                                FlyoutBase.Placement="BottomEdgeAlignedRight">
+                            <StackPanel Spacing="10" Width="360" HorizontalAlignment="Left">
                                 <TextBlock Text="강조 색상 및 투명도" FontWeight="Bold"/>
                                 <ColorPicker x:Name="HighlightColorPicker" 
+                                             Width="340"
+                                             HorizontalAlignment="Left"
                                              IsAlphaEnabled="True"
                                              IsColorSpectrumVisible="True"
                                              IsColorSliderVisible="True"
@@ -302,9 +305,9 @@
                                 CornerRadius="1" Background="Black"/>
                     </StackPanel>
                     <DropDownButton.Flyout>
-                        <Flyout>
+                        <Flyout FlyoutBase.Placement="BottomEdgeAlignedRight">
                             <GridView x:Name="ColorPalette" SelectionChanged="FontColor_Changed"
-                                      MaxWidth="240">
+                                      Width="224" HorizontalAlignment="Left">
                             </GridView>
                         </Flyout>
                     </DropDownButton.Flyout>

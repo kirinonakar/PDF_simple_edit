@@ -10,6 +10,7 @@ using iText.Kernel.Colors;
 using iText.Kernel.Pdf;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -68,6 +69,8 @@ namespace PDF_simple_edit
         private Microsoft.UI.Xaml.Shapes.Rectangle? _dragRect;
         private bool _isDialogOpen = false;
         private bool _isInlineEditing = false;
+        private bool _isInitializing = true;
+        private bool _isRestoringSettings;
         private bool _controlKeyIsDown;
         private System.Threading.CancellationTokenSource? _thumbnailCts;
 
@@ -113,6 +116,12 @@ namespace PDF_simple_edit
         {
             try
             {
+                // XAML 컨트롤이 생성될 때 SelectionChanged가 발생할 수 있으므로
+                // 이벤트 처리보다 먼저 기본값을 준비합니다.
+                _fontSettings.FontFamily = "맑은 고딕";
+                _fontSettings.FontSize = 12;
+                _fontSettings.Color = "#000000";
+
                 InitializeComponent();
                 DocTabView.TabItemsSource = _tabs;
                 // TextBox 내부 처리로 이미 Handled 된 키도 편집 확정 로직에서
@@ -134,11 +143,6 @@ namespace PDF_simple_edit
                 string iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico");
                 appWindow.SetIcon(iconPath);
 
-                // Initialize font settings
-                _fontSettings.FontFamily = "맑은 고딕";
-                _fontSettings.FontSize = 12;
-                _fontSettings.Color = "#000000";
-
                 // Initialize color palette programmatically
                 InitializeColorPalette();
 
@@ -154,6 +158,7 @@ namespace PDF_simple_edit
 
                 Activated += MainWindow_Activated;
                 Closed += MainWindow_Closed;
+                _isInitializing = false;
             }
             catch (Exception ex)
             {
@@ -186,8 +191,8 @@ namespace PDF_simple_edit
                             appWindow.SetIcon(iconPath2);
                             appWindow.Closing += AppWindow_Closing;
                         }
-                        LoadWindowPosition();
                     }
+                    LoadWindowPosition();
                     UpdateTitleBar();
                 }
                 catch (Exception ex)
@@ -311,6 +316,94 @@ namespace PDF_simple_edit
                 }
                 ColorPalette.Items.Add(border);
             }
+        }
+
+        private void ApplyFontSettingsToControls()
+        {
+            if (CmbFontFamily != null)
+            {
+                var fontItem = CmbFontFamily.Items
+                    .OfType<ComboBoxItem>()
+                    .FirstOrDefault(item => string.Equals(
+                        item.Content?.ToString(),
+                        _fontSettings.FontFamily,
+                        StringComparison.Ordinal));
+
+                if (fontItem != null && !ReferenceEquals(CmbFontFamily.SelectedItem, fontItem))
+                    CmbFontFamily.SelectedItem = fontItem;
+            }
+
+            if (CmbFontSize != null)
+            {
+                string sizeText = _fontSettings.FontSize.ToString("0.##", CultureInfo.InvariantCulture);
+                var sizeItem = CmbFontSize.Items
+                    .OfType<ComboBoxItem>()
+                    .FirstOrDefault(item => string.Equals(
+                        item.Content?.ToString(),
+                        sizeText,
+                        StringComparison.Ordinal));
+
+                if (sizeItem != null && !ReferenceEquals(CmbFontSize.SelectedItem, sizeItem))
+                    CmbFontSize.SelectedItem = sizeItem;
+            }
+
+            if (BtnBold != null)
+                BtnBold.IsChecked = _fontSettings.IsBold;
+            if (BtnItalic != null)
+                BtnItalic.IsChecked = _fontSettings.IsItalic;
+            if (FontColorIndicator != null)
+                FontColorIndicator.Background = new SolidColorBrush(ParseColor(_fontSettings.Color));
+        }
+
+        private static void SetPersistedSetting(List<string> lines, string key, string value)
+        {
+            string prefix = key + "=";
+            int index = lines.FindIndex(line => line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+            string setting = prefix + value;
+
+            if (index >= 0)
+                lines[index] = setting;
+            else
+                lines.Add(setting);
+        }
+
+        private static Dictionary<string, string> ReadPersistedSettings(IEnumerable<string> lines)
+        {
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string line in lines)
+            {
+                int separator = line.IndexOf('=');
+                if (separator <= 0)
+                    continue;
+
+                string key = line[..separator].Trim();
+                string value = line[(separator + 1)..].Trim();
+                values[key] = value;
+            }
+
+            return values;
+        }
+
+        private void LoadPersistedFontSettings(IReadOnlyDictionary<string, string> values)
+        {
+            if (values.TryGetValue("FontFamily", out string? fontFamily) && !string.IsNullOrWhiteSpace(fontFamily))
+                _fontSettings.FontFamily = fontFamily;
+
+            if (values.TryGetValue("FontSize", out string? fontSizeText) &&
+                double.TryParse(fontSizeText, NumberStyles.Float, CultureInfo.InvariantCulture, out double fontSize) &&
+                fontSize > 0)
+            {
+                _fontSettings.FontSize = fontSize;
+            }
+
+            if (values.TryGetValue("FontColor", out string? color) && !string.IsNullOrWhiteSpace(color))
+                _fontSettings.Color = color;
+
+            if (values.TryGetValue("IsBold", out string? boldText) && bool.TryParse(boldText, out bool isBold))
+                _fontSettings.IsBold = isBold;
+
+            if (values.TryGetValue("IsItalic", out string? italicText) && bool.TryParse(italicText, out bool isItalic))
+                _fontSettings.IsItalic = isItalic;
         }
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
@@ -466,6 +559,10 @@ namespace PDF_simple_edit
 
         private async void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
         {
+            // AppWindow.Closing은 최종 Closed 이벤트보다 먼저 발생하므로,
+            // 일반 상태의 현재 위치와 크기를 이 시점에 확실히 기록합니다.
+            SaveWindowPosition();
+
             if (_isBypassingClosingCheck) return;
 
             var modifiedTabs = _tabs.Where(t => t.IsModified).ToList();
@@ -3179,6 +3276,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             {
                 string font = item.Content?.ToString() ?? "맑은 고딕";
                 _fontSettings.FontFamily = font;
+                SaveWindowPosition();
                 
                 if (_selectedAnnotation != null && (_selectedAnnotation.Type == AnnotationType.Text || _selectedAnnotation.Type == AnnotationType.FreeText))
                 {
@@ -3201,6 +3299,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 double.TryParse(item.Content?.ToString(), out double sizeVal))
             {
                 _fontSettings.FontSize = sizeVal;
+                SaveWindowPosition();
                 
                 if (_selectedAnnotation != null && (_selectedAnnotation.Type == AnnotationType.Text || _selectedAnnotation.Type == AnnotationType.FreeText))
                 {
@@ -3219,6 +3318,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         private async void FontBold_Click(object sender, RoutedEventArgs e)
         {
             _fontSettings.IsBold = BtnBold.IsChecked == true;
+            SaveWindowPosition();
             if (_selectedAnnotation != null && (_selectedAnnotation.Type == AnnotationType.Text || _selectedAnnotation.Type == AnnotationType.FreeText))
             {
                 if (!await PrepareOriginalTextForReplacementAsync(_selectedAnnotation))
@@ -3236,6 +3336,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
         private async void FontItalic_Click(object sender, RoutedEventArgs e)
         {
             _fontSettings.IsItalic = BtnItalic.IsChecked == true;
+            SaveWindowPosition();
             if (_selectedAnnotation != null && (_selectedAnnotation.Type == AnnotationType.Text || _selectedAnnotation.Type == AnnotationType.FreeText))
             {
                 if (!await PrepareOriginalTextForReplacementAsync(_selectedAnnotation))
@@ -3256,6 +3357,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             {
                 _fontSettings.Color = color;
                 FontColorIndicator.Background = new SolidColorBrush(ParseColor(color));
+                SaveWindowPosition();
 
                 if (_selectedAnnotation != null)
                 {
@@ -3602,13 +3704,22 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 "나눔고딕", "나눔명조", "Arial", "Times New Roman" })
             {
                 var item = new ComboBoxItem { Content = font };
-                if (font == _fontSettings.FontFamily) item.IsSelected = true;
                 defaultFont.Items.Add(item);
             }
+            defaultFont.SelectedItem = defaultFont.Items
+                .OfType<ComboBoxItem>()
+                .FirstOrDefault(item => string.Equals(
+                    item.Content?.ToString(),
+                    _fontSettings.FontFamily,
+                    StringComparison.Ordinal));
             defaultFont.SelectionChanged += (s, _) =>
             {
                 if (defaultFont.SelectedItem is ComboBoxItem item)
+                {
                     _fontSettings.FontFamily = item.Content?.ToString() ?? "맑은 고딕";
+                    SaveWindowPosition();
+                    ApplyFontSettingsToControls();
+                }
             };
             panel.Children.Add(defaultFont);
 
@@ -3621,18 +3732,25 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             defaultSize.SelectionChanged += (sender, args) =>
             {
                 if (double.TryParse(defaultSize.SelectedItem?.ToString(), out double sizeVal))
+                {
                     _fontSettings.FontSize = sizeVal;
+                    SaveWindowPosition();
+                    ApplyFontSettingsToControls();
+                }
             };
             panel.Children.Add(defaultSize);
 
             panel.Children.Add(new TextBlock
             {
-                Text = "설정은 현재 세션에만 적용됩니다.",
+                Text = "설정은 자동으로 저장되며 다음 실행에도 적용됩니다.",
                 Opacity = 0.5, FontSize = 12, Margin = new Thickness(0, 8, 0, 0)
             });
 
             dialog.Content = panel;
             await dialog.ShowAsync();
+
+            ApplyFontSettingsToControls();
+            SaveWindowPosition();
 
             if (_pdfManager.IsLoaded)
                 await RenderCurrentPageAsync();
@@ -3885,25 +4003,69 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
         private void SaveWindowPosition()
         {
+            // InitializeComponent 및 설정 복원 중에는 컨트롤 이벤트가 발생해도
+            // 아직 저장하지 않습니다. 이 시점에 저장하면 기존 설정을 기본값으로
+            // 덮어쓸 수 있습니다.
+            if (_isInitializing || _isRestoringSettings)
+                return;
+
             try
             {
+                string path = GetSettingsFilePath();
+                var lines = File.Exists(path)
+                    ? File.ReadAllLines(path).ToList()
+                    : new List<string>();
+
+                // 이전 버전은 위치와 크기를 숫자 4줄로 저장했습니다. 기존 값이
+                // 있으면 새 키 형식으로 옮긴 뒤, 이후에는 한 가지 형식만 유지합니다.
+                var existingValues = ReadPersistedSettings(lines);
+                bool hasKeyBounds = existingValues.ContainsKey("WindowX") &&
+                                    existingValues.ContainsKey("WindowY") &&
+                                    existingValues.ContainsKey("WindowWidth") &&
+                                    existingValues.ContainsKey("WindowHeight");
+                if (!hasKeyBounds && lines.Count >= 4 &&
+                    int.TryParse(lines[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int legacyX) &&
+                    int.TryParse(lines[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int legacyY) &&
+                    int.TryParse(lines[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int legacyWidth) &&
+                    int.TryParse(lines[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out int legacyHeight))
+                {
+                    SetPersistedSetting(lines, "WindowX", legacyX.ToString(CultureInfo.InvariantCulture));
+                    SetPersistedSetting(lines, "WindowY", legacyY.ToString(CultureInfo.InvariantCulture));
+                    SetPersistedSetting(lines, "WindowWidth", legacyWidth.ToString(CultureInfo.InvariantCulture));
+                    SetPersistedSetting(lines, "WindowHeight", legacyHeight.ToString(CultureInfo.InvariantCulture));
+                }
+
+                if (lines.Any(line => line.IndexOf('=') <= 0))
+                    lines = lines.Where(line => line.IndexOf('=') > 0).ToList();
+
                 var hwnd = WindowNative.GetWindowHandle(this);
                 var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
                 var appWindow = AppWindow.GetFromWindowId(windowId);
-                if (appWindow != null)
+
+                bool isMaximized = appWindow?.Presenter is OverlappedPresenter presenter &&
+                                   presenter.State == OverlappedPresenterState.Maximized;
+
+                // 최대화 중에는 현재 최대화된 크기를 저장하지 않습니다. 기존의
+                // 마지막 일반 창 크기를 보존하여 다음 실행 때 창이 과도하게 커지지
+                // 않도록 합니다.
+                if (appWindow != null && !isMaximized)
                 {
                     var pos = appWindow.Position;
                     var size = appWindow.Size;
-                    
-                    var lines = new[]
-                    {
-                        pos.X.ToString(),
-                        pos.Y.ToString(),
-                        size.Width.ToString(),
-                        size.Height.ToString()
-                    };
-                    File.WriteAllLines(GetSettingsFilePath(), lines);
+
+                    SetPersistedSetting(lines, "WindowX", pos.X.ToString(CultureInfo.InvariantCulture));
+                    SetPersistedSetting(lines, "WindowY", pos.Y.ToString(CultureInfo.InvariantCulture));
+                    SetPersistedSetting(lines, "WindowWidth", size.Width.ToString(CultureInfo.InvariantCulture));
+                    SetPersistedSetting(lines, "WindowHeight", size.Height.ToString(CultureInfo.InvariantCulture));
                 }
+
+                SetPersistedSetting(lines, "FontFamily", _fontSettings.FontFamily);
+                SetPersistedSetting(lines, "FontSize", _fontSettings.FontSize.ToString("0.##", CultureInfo.InvariantCulture));
+                SetPersistedSetting(lines, "FontColor", _fontSettings.Color);
+                SetPersistedSetting(lines, "IsBold", _fontSettings.IsBold.ToString(CultureInfo.InvariantCulture));
+                SetPersistedSetting(lines, "IsItalic", _fontSettings.IsItalic.ToString(CultureInfo.InvariantCulture));
+
+                File.WriteAllLines(path, lines);
             }
             catch (Exception ex)
             {
@@ -3913,17 +4075,38 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
         private void LoadWindowPosition()
         {
+            _isRestoringSettings = true;
             try
             {
                 string path = GetSettingsFilePath();
                 if (File.Exists(path))
                 {
                     var lines = File.ReadAllLines(path);
-                    if (lines.Length >= 4 &&
-                        int.TryParse(lines[0], out int x) &&
-                        int.TryParse(lines[1], out int y) &&
-                        int.TryParse(lines[2], out int width) &&
-                        int.TryParse(lines[3], out int height))
+                    var values = ReadPersistedSettings(lines);
+                    LoadPersistedFontSettings(values);
+
+                    int x = 0, y = 0, width = 0, height = 0;
+                    bool hasBounds =
+                        values.TryGetValue("WindowX", out string? xText) &&
+                        values.TryGetValue("WindowY", out string? yText) &&
+                        values.TryGetValue("WindowWidth", out string? widthText) &&
+                        values.TryGetValue("WindowHeight", out string? heightText) &&
+                        int.TryParse(xText, NumberStyles.Integer, CultureInfo.InvariantCulture, out x) &&
+                        int.TryParse(yText, NumberStyles.Integer, CultureInfo.InvariantCulture, out y) &&
+                        int.TryParse(widthText, NumberStyles.Integer, CultureInfo.InvariantCulture, out width) &&
+                        int.TryParse(heightText, NumberStyles.Integer, CultureInfo.InvariantCulture, out height);
+
+                    // 이전 버전의 4줄 형식도 읽을 수 있도록 유지합니다.
+                    if (!hasBounds && lines.Length >= 4 &&
+                        int.TryParse(lines[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out x) &&
+                        int.TryParse(lines[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out y) &&
+                        int.TryParse(lines[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out width) &&
+                        int.TryParse(lines[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out height))
+                    {
+                        hasBounds = true;
+                    }
+
+                    if (hasBounds)
                     {
                         var hwnd = WindowNative.GetWindowHandle(this);
                         var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
@@ -3931,9 +4114,12 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         if (appWindow != null)
                         {
                             appWindow.MoveAndResize(new Windows.Graphics.RectInt32(x, y, (int)width, (int)height));
-                            return;
                         }
                     }
+
+                    ApplyFontSettingsToControls();
+                    if (hasBounds)
+                        return;
                 }
 
                 var hwndDefault = WindowNative.GetWindowHandle(this);
@@ -3943,10 +4129,16 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 {
                     appWindowDefault.Resize(new Windows.Graphics.SizeInt32(1400, 900));
                 }
+
+                ApplyFontSettingsToControls();
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"LoadWindowPosition error: {ex.Message}");
+            }
+            finally
+            {
+                _isRestoringSettings = false;
             }
         }
 
