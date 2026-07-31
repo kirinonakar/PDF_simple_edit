@@ -1385,9 +1385,152 @@ private SearchResult? GetBestMatch(List<SearchResult> texts, double x, double y)
 private PdfPageContent? GetBestContentMatch(List<PdfPageContent> contents, double x, double y)
 {
     // Hit test with a small buffer for easier selection
-    return contents.FirstOrDefault(c => 
+    int matchIndex = contents.FindIndex(c =>
         x >= c.X - 5 && x <= c.X + c.Width + 5 &&
         y >= c.Y - 5 && y <= c.Y + c.Height + 5);
+
+    if (matchIndex < 0)
+        return null;
+
+    var match = contents[matchIndex];
+    if (match.Type != PageContentType.Text)
+        return match;
+
+    // A PDF can split one visible paragraph into several text regions even
+    // when the font and layout are continuous. Expand the selected region so
+    // editing the first line does not hide the following lines.
+    var expanded = ClonePageContentForEditing(match);
+    int startIndex = matchIndex;
+    while (startIndex > 0 && CanJoinTextRegions(contents[startIndex - 1], expanded, out bool prependNewLine))
+    {
+        expanded = MergeTextRegions(contents[startIndex - 1], expanded, prependNewLine);
+        startIndex--;
+    }
+
+    int nextIndex = matchIndex + 1;
+    while (nextIndex < contents.Count && CanJoinTextRegions(expanded, contents[nextIndex], out bool appendNewLine))
+    {
+        expanded = MergeTextRegions(expanded, contents[nextIndex], appendNewLine);
+        nextIndex++;
+    }
+
+    return expanded;
+}
+
+private static PdfPageContent ClonePageContentForEditing(PdfPageContent source)
+{
+    return new PdfPageContent
+    {
+        Type = source.Type,
+        X = source.X,
+        Y = source.Y,
+        Width = source.Width,
+        Height = source.Height,
+        Text = source.Text,
+        OriginalPdfX = source.OriginalPdfX,
+        OriginalPdfY = source.OriginalPdfY,
+        OperatorId = source.OperatorId,
+        FontSize = source.FontSize,
+        FontFamily = source.FontFamily,
+        Color = source.Color,
+        IsBold = source.IsBold,
+        IsItalic = source.IsItalic,
+        ContentStreamIndex = source.ContentStreamIndex,
+        ContentStreamObjectNumber = source.ContentStreamObjectNumber,
+        OperationIndex = source.OperationIndex,
+        TextRenderMode = source.TextRenderMode,
+        LineHeight = source.LineHeight,
+        BaselineOffset = source.BaselineOffset,
+        OriginalFontObjectNumber = source.OriginalFontObjectNumber,
+        TextFragments = source.TextFragments.Select(fragment => fragment.Clone()).ToList(),
+        ImageId = source.ImageId
+    };
+}
+
+private static bool CanJoinTextRegions(
+    PdfPageContent first,
+    PdfPageContent second,
+    out bool startsNewLine)
+{
+    startsNewLine = false;
+    if (first.Type != PageContentType.Text || second.Type != PageContentType.Text ||
+        first.TextFragments.Count == 0 || second.TextFragments.Count == 0)
+        return false;
+
+    double referenceSize = Math.Max(first.FontSize, 1);
+    if (!string.Equals(first.FontFamily, second.FontFamily, StringComparison.OrdinalIgnoreCase) ||
+        Math.Abs(first.FontSize - second.FontSize) > Math.Max(0.75, referenceSize * 0.2) ||
+        !string.Equals(first.Color, second.Color, StringComparison.OrdinalIgnoreCase) ||
+        first.IsBold != second.IsBold || first.IsItalic != second.IsItalic)
+        return false;
+
+    var previous = first.TextFragments[^1];
+    var current = second.TextFragments[0];
+    double fontSize = Math.Max(Math.Max(previous.FontSize, current.FontSize), 1);
+    double topDelta = Math.Abs(previous.Y - current.Y);
+    if (topDelta <= Math.Max(1.25, fontSize * 0.4))
+    {
+        double gap = current.X - (previous.X + previous.Width);
+        return gap >= -fontSize && gap <= fontSize * 2.75;
+    }
+
+    if (current.Y <= previous.Y || current.Y - previous.Y > Math.Max(fontSize * 1.8, 16))
+        return false;
+
+    double overlap = Math.Min(first.X + first.Width, current.X + current.Width)
+                   - Math.Max(first.X, current.X);
+    double minWidth = Math.Max(Math.Min(first.Width, current.Width), 1);
+    bool sameColumn = overlap / minWidth >= 0.25 ||
+        Math.Abs(current.X - first.X) <= Math.Max(24, fontSize * 2.5);
+    startsNewLine = sameColumn;
+    return sameColumn;
+}
+
+private static PdfPageContent MergeTextRegions(
+    PdfPageContent first,
+    PdfPageContent second,
+    bool startsNewLine)
+{
+    var merged = ClonePageContentForEditing(first);
+    var previous = merged.TextFragments[^1];
+    var current = second.TextFragments[0];
+
+    if (startsNewLine)
+    {
+        merged.Text = NormalizeLineEndings(merged.Text) + "\r\n" + NormalizeLineEndings(second.Text);
+        double detectedLineHeight = Math.Abs(current.Y - previous.Y);
+        if (detectedLineHeight > 0.1)
+            merged.LineHeight = merged.LineHeight > 0.1
+                ? (merged.LineHeight + detectedLineHeight) / 2.0
+                : detectedLineHeight;
+    }
+    else
+    {
+        double gap = current.X - (previous.X + previous.Width);
+        bool needsSpace = gap > Math.Max(previous.FontSize, current.FontSize) * 0.15 &&
+            !merged.Text.EndsWith(" ", StringComparison.Ordinal) &&
+            !second.Text.StartsWith(" ", StringComparison.Ordinal);
+        merged.Text = merged.Text + (needsSpace ? " " : string.Empty) + second.Text;
+    }
+
+    int sourceLine = second.TextFragments.Min(fragment => fragment.LineIndex);
+    int targetLine = merged.TextFragments.Max(fragment => fragment.LineIndex) +
+        (startsNewLine ? 1 : 0);
+    foreach (var fragment in second.TextFragments.Select(fragment => fragment.Clone()))
+    {
+        fragment.LineIndex += targetLine - sourceLine;
+        merged.TextFragments.Add(fragment);
+    }
+
+    double left = Math.Min(merged.X, second.X);
+    double top = Math.Min(merged.Y, second.Y);
+    double right = Math.Max(merged.X + merged.Width, second.X + second.Width);
+    double bottom = Math.Max(merged.Y + merged.Height, second.Y + second.Height);
+    merged.X = left;
+    merged.Y = top;
+    merged.Width = right - left;
+    merged.Height = bottom - top;
+    return merged;
 }
 
 private PdfAnnotation ConvertExistingContentToAnnotation(PdfPageContent content)
@@ -2084,30 +2227,30 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             double inlineWidth = existingAnn != null
                 ? Math.Max(existingAnn.Width * PdfToPixels, 1)
                 : double.NaN;
-            double inlineMinHeight = existingAnn != null
-                ? Math.Max(
-                    GetLineAwareHeight(existingAnn, initialText, fontSize),
-                    MeasureInlineTextHeight(
-                        initialText,
-                        inlineWidth,
-                        fontFamily,
-                        fontSize,
-                        isBold,
-                        isItalic))
+            // 기존 PDF 텍스트는 추출된 줄바꿈을 그대로 보여 주어야 합니다.
+            // 자동 줄바꿈을 다시 계산하면 PDF의 실제 글꼴 메트릭과 WinUI 메트릭의
+            // 아주 작은 차이만으로도 첫 줄 끝(naso-)이 다음 줄로 밀립니다.
+            TextWrapping inlineWrapping = TextWrapping.NoWrap;
+            double inlineHeight = existingAnn != null
+                ? Math.Max(existingAnn.Height * PdfToPixels, 1)
                 : 24;
 
             var textBox = new TextBox
             {
-                Text = initialText,
+                // 줄바꿈이 포함된 원문을 대입하기 전에 여러 줄 입력을
+                // 활성화해야 WinUI가 초기 줄바꿈을 제거하지 않습니다.
                 AcceptsReturn = existingAnn != null,
-                TextWrapping = existingAnn != null ? TextWrapping.Wrap : TextWrapping.NoWrap,
+                // 기존 원문의 줄바꿈은 PDF에서 추출한 실제 줄 경계입니다.
+                // NoWrap은 그 경계를 유지하고 WinUI의 재배치만 막습니다.
+                TextWrapping = inlineWrapping,
+                Text = initialText,
                 MinWidth = existingAnn != null ? 0 : 60,
-                // 고정 Height로 자르면 WinUI TextBox 내부 ScrollViewer가 첫 줄만
-                // 보여 주는 경우가 있어, 최소 높이만 먼저 지정하고 Loaded 후
-                // 실제 레이아웃 높이를 반영합니다.
-                MinHeight = inlineMinHeight,
+                // Canvas 안의 TextBox는 Height가 자동인 경우 내부 ScrollViewer가
+                // 한 줄 높이로 측정되는 경우가 있습니다. 여러 줄 원문은 필요한
+                // 높이를 처음부터 지정해 편집 시작 시 전체 내용을 표시합니다.
+                MinHeight = existingAnn != null ? 0 : 24,
                 Width = inlineWidth,
-                Height = double.NaN,
+                Height = existingAnn != null ? inlineHeight : double.NaN,
                 Padding = new Thickness(0),
                 Margin = new Thickness(0),
                 BorderThickness = new Thickness(1),
@@ -2140,7 +2283,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 if (existingAnn != null)
                 {
                     textBox.UpdateLayout();
-                    textBox.Height = Math.Max(inlineMinHeight, textBox.ActualHeight);
+                    // 선택 영역(PDF 원문 bounds)과 편집 박스의 높이를 동일하게 유지합니다.
+                    textBox.Height = inlineHeight;
                 }
                 textBox.Focus(FocusState.Programmatic);
             };

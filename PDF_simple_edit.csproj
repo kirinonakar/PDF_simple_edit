@@ -30,6 +30,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Keep local diagnostic probes out of the application compilation. -->
+    <Compile Remove="tmp\**" />
+    <None Remove="tmp\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Content Include="Assets\SplashScreen.scale-200.png" />
     <Content Include="Assets\LockScreenLogo.scale-200.png" />
     <Content Include="Assets\Square150x150Logo.scale-200.png" />

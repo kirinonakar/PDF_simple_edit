@@ -950,8 +950,12 @@ namespace PDF_simple_edit.Helpers
             var previous = region.TextFragments[^1];
             var current = next.TextFragments[0];
             double fontSize = Math.Max(Math.Max(previous.FontSize, current.FontSize), 1);
-            double baselineDelta = Math.Abs(previous.OriginalPdfY - current.OriginalPdfY);
-            bool sameLine = baselineDelta <= Math.Max(1.25, fontSize * 0.35);
+            // 일부 임베디드 폰트는 같은 PDF 줄에서도 글리프별 ascent/descent
+            // 메트릭이 달라 OriginalPdfY가 흔들립니다. 그 값을 기준으로 하면
+            // 한 줄의 단어가 여러 편집 영역으로 잘립니다. 화면 좌표의 상단
+            // 위치는 실제 줄 배치를 반영하므로 줄 판정에는 Y를 사용합니다.
+            double lineTopDelta = Math.Abs(previous.Y - current.Y);
+            bool sameLine = lineTopDelta <= Math.Max(1.25, fontSize * 0.35);
 
             if (sameLine)
             {
