@@ -92,6 +92,7 @@ namespace PDF_simple_edit.Helpers
     {
         private PrintDocument? _printDocument;
         private IPrintDocumentSource? _printDocumentSource;
+        private PrintManager? _printManager;
         private string? _filePath;
         private IntPtr _windowHandle;
         private Dictionary<int, Image> _pageCache = new();
@@ -101,13 +102,22 @@ namespace PDF_simple_edit.Helpers
         {
             try
             {
+                if (!PrintManager.IsSupported())
+                    throw new InvalidOperationException("이 장치에서는 인쇄를 지원하지 않습니다.");
+
+                // Paginate 이벤트는 동기적으로 페이지 수를 받아야 하므로,
+                // 인쇄 UI를 표시하기 전에 PDF의 페이지 수를 준비합니다.
+                _totalPageCount = await GetPageCountAsync(filePath);
+                if (_totalPageCount <= 0)
+                    throw new InvalidOperationException("인쇄할 PDF 페이지를 찾을 수 없습니다.");
+
                 _filePath = filePath;
                 _windowHandle = windowHandle;
                 _pageCache.Clear();
 
                 // Register for printing
-                PrintManager printManager = PrintManagerInterop.GetForWindow(_windowHandle);
-                printManager.PrintTaskRequested += PrintManager_PrintTaskRequested;
+                _printManager = PrintManagerInterop.GetForWindow(_windowHandle);
+                _printManager.PrintTaskRequested += PrintManager_PrintTaskRequested;
 
                 // Initialize PrintDocument
                 _printDocument = new PrintDocument();
@@ -121,9 +131,17 @@ namespace PDF_simple_edit.Helpers
             }
             catch (Exception ex)
             {
+                Cleanup();
                 System.Diagnostics.Debug.WriteLine($"Print error: {ex.Message}");
                 throw;
             }
+        }
+
+        private static async Task<int> GetPageCountAsync(string filePath)
+        {
+            var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(filePath);
+            var pdfDoc = await Windows.Data.Pdf.PdfDocument.LoadFromFileAsync(file);
+            return (int)pdfDoc.PageCount;
         }
 
         private void PrintManager_PrintTaskRequested(PrintManager sender, PrintTaskRequestedEventArgs args)
@@ -136,28 +154,18 @@ namespace PDF_simple_edit.Helpers
             printTask.Completed += (s, e) =>
             {
                 // Clean up after printing
-                _pageCache.Clear();
-                _filePath = null;
-                sender.PrintTaskRequested -= PrintManager_PrintTaskRequested;
+                Cleanup();
             };
         }
 
-        private async void PrintDocument_Paginate(object sender, PaginateEventArgs e)
+        private void PrintDocument_Paginate(object sender, PaginateEventArgs e)
         {
-            if (_filePath == null) return;
+            if (_totalPageCount <= 0) return;
 
-            try
-            {
-                var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(_filePath);
-                var pdfDoc = await Windows.Data.Pdf.PdfDocument.LoadFromFileAsync(file);
-                _totalPageCount = (int)pdfDoc.PageCount;
-
-                _printDocument?.SetPreviewPageCount(_totalPageCount, PreviewPageCountType.Intermediate);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Paginate error: {ex.Message}");
-            }
+            // 페이지 수를 미리 알고 있으므로 최종 개수로 즉시 알립니다.
+            ((PrintDocument)sender).SetPreviewPageCount(
+                _totalPageCount,
+                PreviewPageCountType.Final);
         }
 
         private async void PrintDocument_GetPreviewPage(object sender, GetPreviewPageEventArgs e)
@@ -177,14 +185,22 @@ namespace PDF_simple_edit.Helpers
                     {
                         var bitmap = new BitmapImage();
                         await bitmap.SetSourceAsync(ms.AsRandomAccessStream());
-                        var image = new Image { Source = bitmap, Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform };
+                        var image = new Image
+                        {
+                            Source = bitmap,
+                            Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform,
+                            Width = bitmap.PixelWidth / 2.0,
+                            Height = bitmap.PixelHeight / 2.0,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center
+                        };
                         _pageCache[pageIdx] = image;
                     }
                 }
 
                 if (_pageCache.TryGetValue(pageIdx, out var cachedImage))
                 {
-                    _printDocument?.SetPreviewPage(e.PageNumber, cachedImage);
+                    ((PrintDocument)sender).SetPreviewPage(e.PageNumber, cachedImage);
                 }
             }
             catch (Exception ex)
@@ -210,7 +226,15 @@ namespace PDF_simple_edit.Helpers
                         {
                             var bitmap = new BitmapImage();
                             await bitmap.SetSourceAsync(ms.AsRandomAccessStream());
-                            var image = new Image { Source = bitmap, Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform };
+                            var image = new Image
+                            {
+                                Source = bitmap,
+                                Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform,
+                                Width = bitmap.PixelWidth / 3.0,
+                                Height = bitmap.PixelHeight / 3.0,
+                                HorizontalAlignment = HorizontalAlignment.Center,
+                                VerticalAlignment = VerticalAlignment.Center
+                            };
                             _pageCache[i] = image;
                         }
                     }
@@ -227,6 +251,25 @@ namespace PDF_simple_edit.Helpers
             }
             _printDocument?.AddPagesComplete();
         }
+
+        private void Cleanup()
+        {
+            if (_printDocument != null)
+            {
+                _printDocument.Paginate -= PrintDocument_Paginate;
+                _printDocument.GetPreviewPage -= PrintDocument_GetPreviewPage;
+                _printDocument.AddPages -= PrintDocument_AddPages;
+            }
+
+            if (_printManager != null)
+                _printManager.PrintTaskRequested -= PrintManager_PrintTaskRequested;
+
+            _pageCache.Clear();
+            _printDocument = null;
+            _printDocumentSource = null;
+            _printManager = null;
+            _filePath = null;
+            _totalPageCount = 0;
+        }
     }
 }
-

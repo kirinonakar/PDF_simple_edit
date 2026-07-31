@@ -1205,7 +1205,7 @@ private void FitToPage()
                 double y = (pageSize.height - 150) / 2;
                 double w = 150, h = 150;
 
-                _annotations.Add(new PdfAnnotation
+                var imageAnnotation = new PdfAnnotation
                 {
                     Type = AnnotationType.Image,
                     PageIndex = _currentPageIndex,
@@ -1215,9 +1215,16 @@ private void FitToPage()
                     Height = h,
                     ImagePath = file.Path,
                     IsApplied = false
-                });
+                };
+                _annotations.Add(imageAnnotation);
                 _pdfManager.MarkModified();
 
+                // 이미지를 추가한 뒤 바로 핸들이 보이도록 선택 도구로 전환하고
+                // 새 이미지를 선택 상태로 둡니다.
+                SetToolMode(EditToolMode.Select);
+                _selectedAnnotations.Clear();
+                _selectedAnnotations.Add(imageAnnotation);
+                _selectedAnnotation = imageAnnotation;
                 TxtStatus.Text = "이미지가 추가되었습니다 (저장 시 반영)";
                 RenderAnnotationOverlays();
             }
@@ -2278,6 +2285,12 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                     Tag = kvp.Key,
                     IsHitTestVisible = true // 핸들은 클릭 가능해야 함
                 };
+
+                // AddResizeHandles 계산값은 페이지 좌표(픽셀)입니다. Canvas의 기본
+                // 위치는 (0, 0)이므로 좌표를 지정하지 않으면 모든 핸들이 페이지
+                // 좌측 상단에 겹쳐서 이미지의 크기를 조절할 수 없습니다.
+                Canvas.SetLeft(rect, kvp.Value.X);
+                Canvas.SetTop(rect, kvp.Value.Y);
 
                 rect.PointerPressed += (s, e) =>
                 {
