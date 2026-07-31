@@ -6,6 +6,7 @@ using Windows.Graphics.Printing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Printing;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using WinRT.Interop;
 using System.Collections.Generic;
@@ -95,8 +96,10 @@ namespace PDF_simple_edit.Helpers
         private PrintManager? _printManager;
         private string? _filePath;
         private IntPtr _windowHandle;
-        private Dictionary<int, Image> _pageCache = new();
+        private Dictionary<int, UIElement> _pageCache = new();
         private int _totalPageCount = 0;
+        private PrintPageDescription _printPageDescription;
+        private bool _hasPrintPageDescription;
 
         public async Task PrintAsync(string filePath, IntPtr windowHandle)
         {
@@ -114,6 +117,7 @@ namespace PDF_simple_edit.Helpers
                 _filePath = filePath;
                 _windowHandle = windowHandle;
                 _pageCache.Clear();
+                _hasPrintPageDescription = false;
 
                 // Register for printing
                 _printManager = PrintManagerInterop.GetForWindow(_windowHandle);
@@ -162,6 +166,13 @@ namespace PDF_simple_edit.Helpers
         {
             if (_totalPageCount <= 0) return;
 
+            // PrintPageDescription의 PageSize/ImageableRect는 모두 DIPs입니다.
+            // PDF 페이지도 Windows.Data.Pdf의 DIPs 기준으로 배치해야 실제 용지
+            // 크기와 위치가 어긋나지 않습니다.
+            _printPageDescription = e.PrintTaskOptions.GetPageDescription(0);
+            _hasPrintPageDescription = true;
+            _pageCache.Clear();
+
             // 페이지 수를 미리 알고 있으므로 최종 개수로 즉시 알립니다.
             ((PrintDocument)sender).SetPreviewPageCount(
                 _totalPageCount,
@@ -179,23 +190,9 @@ namespace PDF_simple_edit.Helpers
             {
                 if (!_pageCache.ContainsKey(pageIdx))
                 {
-                    // Render page on demand (use 2.0 scale for preview to save memory)
-                    var ms = await PdfRenderHelper.RenderPageWithWindowsPdfAsync(_filePath, pageIdx, 2.0);
-                    if (ms != null)
-                    {
-                        var bitmap = new BitmapImage();
-                        await bitmap.SetSourceAsync(ms.AsRandomAccessStream());
-                        var image = new Image
-                        {
-                            Source = bitmap,
-                            Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform,
-                            Width = bitmap.PixelWidth / 2.0,
-                            Height = bitmap.PixelHeight / 2.0,
-                            HorizontalAlignment = HorizontalAlignment.Center,
-                            VerticalAlignment = VerticalAlignment.Center
-                        };
-                        _pageCache[pageIdx] = image;
-                    }
+                    var previewPage = await CreatePrintPageAsync(pageIdx, 2.0);
+                    if (previewPage != null)
+                        _pageCache[pageIdx] = previewPage;
                 }
 
                 if (_pageCache.TryGetValue(pageIdx, out var cachedImage))
@@ -213,6 +210,7 @@ namespace PDF_simple_edit.Helpers
         {
             if (_filePath == null) return;
 
+            var printDocument = (PrintDocument)sender;
             for (int i = 0; i < _totalPageCount; i++)
             {
                 try
@@ -221,35 +219,94 @@ namespace PDF_simple_edit.Helpers
                     // We can reuse cache if already rendered at high enough quality
                     if (!_pageCache.ContainsKey(i))
                     {
-                        var ms = await PdfRenderHelper.RenderPageWithWindowsPdfAsync(_filePath, i, 3.0);
-                        if (ms != null)
-                        {
-                            var bitmap = new BitmapImage();
-                            await bitmap.SetSourceAsync(ms.AsRandomAccessStream());
-                            var image = new Image
-                            {
-                                Source = bitmap,
-                                Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform,
-                                Width = bitmap.PixelWidth / 3.0,
-                                Height = bitmap.PixelHeight / 3.0,
-                                HorizontalAlignment = HorizontalAlignment.Center,
-                                VerticalAlignment = VerticalAlignment.Center
-                            };
-                            _pageCache[i] = image;
-                        }
+                        var printPage = await CreatePrintPageAsync(i, 3.0);
+                        if (printPage != null)
+                            _pageCache[i] = printPage;
                     }
 
                     if (_pageCache.TryGetValue(i, out var page))
-                    {
-                        _printDocument?.AddPage(page);
-                    }
+                        printDocument.AddPage(page);
                 }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"AddPage error at index {i}: {ex.Message}");
                 }
             }
-            _printDocument?.AddPagesComplete();
+            printDocument.AddPagesComplete();
+        }
+
+        private async Task<UIElement?> CreatePrintPageAsync(int pageIndex, double renderScale)
+        {
+            if (_filePath == null)
+                return null;
+
+            var ms = await PdfRenderHelper.RenderPageWithWindowsPdfAsync(
+                _filePath,
+                pageIndex,
+                renderScale);
+            if (ms == null)
+                return null;
+
+            var bitmap = new BitmapImage();
+            await bitmap.SetSourceAsync(ms.AsRandomAccessStream());
+
+            // RenderPageWithWindowsPdfAsync renders at page DIPs * renderScale,
+            // so converting the bitmap back gives the document's real page size.
+            double documentWidth = bitmap.PixelWidth / renderScale;
+            double documentHeight = bitmap.PixelHeight / renderScale;
+            double pageWidth = documentWidth;
+            double pageHeight = documentHeight;
+            double printableX = 0;
+            double printableY = 0;
+            double printableWidth = pageWidth;
+            double printableHeight = pageHeight;
+
+            if (_hasPrintPageDescription &&
+                _printPageDescription.PageSize.Width > 0 &&
+                _printPageDescription.PageSize.Height > 0)
+            {
+                pageWidth = _printPageDescription.PageSize.Width;
+                pageHeight = _printPageDescription.PageSize.Height;
+
+                var imageable = _printPageDescription.ImageableRect;
+                printableX = imageable.X;
+                printableY = imageable.Y;
+                printableWidth = imageable.Width > 0 ? imageable.Width : pageWidth;
+                printableHeight = imageable.Height > 0 ? imageable.Height : pageHeight;
+            }
+
+            // Keep the PDF at its real size whenever it fits. If the selected
+            // printer paper is smaller, reduce it just enough to avoid cropping.
+            double fitScale = Math.Min(
+                1.0,
+                Math.Min(printableWidth / documentWidth, printableHeight / documentHeight));
+            if (double.IsNaN(fitScale) || double.IsInfinity(fitScale) || fitScale <= 0)
+                fitScale = 1.0;
+
+            double imageWidth = documentWidth * fitScale;
+            double imageHeight = documentHeight * fitScale;
+            double imageX = printableX + Math.Max(0, (printableWidth - imageWidth) / 2.0);
+            double imageY = printableY + Math.Max(0, (printableHeight - imageHeight) / 2.0);
+
+            var pageCanvas = new Canvas
+            {
+                Width = pageWidth,
+                Height = pageHeight,
+                Background = new SolidColorBrush(Microsoft.UI.Colors.White)
+            };
+            var image = new Image
+            {
+                Source = bitmap,
+                Width = imageWidth,
+                Height = imageHeight,
+                Stretch = Microsoft.UI.Xaml.Media.Stretch.Fill,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top
+            };
+            Canvas.SetLeft(image, imageX);
+            Canvas.SetTop(image, imageY);
+            pageCanvas.Children.Add(image);
+            return pageCanvas;
         }
 
         private void Cleanup()
@@ -270,6 +327,7 @@ namespace PDF_simple_edit.Helpers
             _printManager = null;
             _filePath = null;
             _totalPageCount = 0;
+            _hasPrintPageDescription = false;
         }
     }
 }
