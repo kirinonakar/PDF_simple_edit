@@ -143,6 +143,11 @@ namespace PDF_simple_edit
                 string iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico");
                 appWindow.SetIcon(iconPath);
 
+                // 창이 활성화되기 전에 저장된 위치와 크기를 복원해야 첫 프레임부터
+                // 저장된 위치에 표시됩니다. Activated에서 복원하면 기본 위치에서
+                // 한 번 그려진 뒤 이동하는 현상이 발생합니다.
+                LoadWindowPosition();
+
                 // Initialize color palette programmatically
                 InitializeColorPalette();
 
@@ -179,7 +184,7 @@ namespace PDF_simple_edit
                     ExtendsContentIntoTitleBar = true;
                     SetTitleBar(AppTitleBar);
 
-                    // Set window icon and position
+                    // Set window icon
                     var hwnd = WindowNative.GetWindowHandle(this);
                     if (hwnd != IntPtr.Zero)
                     {
@@ -192,7 +197,6 @@ namespace PDF_simple_edit
                             appWindow.Closing += AppWindow_Closing;
                         }
                     }
-                    LoadWindowPosition();
                     UpdateTitleBar();
                 }
                 catch (Exception ex)
@@ -609,9 +613,8 @@ namespace PDF_simple_edit
             string title = "PDF Simple Editor";
             if (_pdfManager.IsLoaded)
             {
-                string fileName = _pdfManager.FilePath != null
-                    ? Path.GetFileName(_pdfManager.FilePath) : "새 문서";
-                title = $"PDF Simple Editor - {fileName}{(_pdfManager.IsModified ? " ●" : "")}";
+                string filePath = _pdfManager.FilePath ?? "새 문서";
+                title = $"PDF Simple Editor - {filePath}{(_pdfManager.IsModified ? " ●" : "")}";
             }
             TitleText.Text = title;
             Title = title;
