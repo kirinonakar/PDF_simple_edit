@@ -73,6 +73,20 @@ public static class AnnotationTextLayoutService
         return Math.Max(annotation.Height * PdfToPixels, requiredHeight);
     }
 
+    public static (double width, double height) MeasureBounds(
+        string text,
+        string fontFamily,
+        double fontSize,
+        bool isBold,
+        bool isItalic)
+    {
+        TextBlock textBlock = CreateTextBlock(text, fontFamily, fontSize, isBold, isItalic);
+        textBlock.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+        return (
+            (textBlock.DesiredSize.Width + 2.0) / PdfToPixels,
+            textBlock.DesiredSize.Height / PdfToPixels);
+    }
+
     private static int GetLineCount(string? text)
     {
         if (string.IsNullOrEmpty(text))
