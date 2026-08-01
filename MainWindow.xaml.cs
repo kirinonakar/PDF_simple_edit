@@ -67,6 +67,7 @@ namespace PDF_simple_edit
         private readonly InlineTextEditorController _inlineTextEditorController = new();
         private readonly PdfSaveService _pdfSaveService;
         private readonly AnnotationSelectionController _annotationSelectionController;
+        private bool _isSaveInProgress;
         private bool _isInitializing = true;
         private bool _isRestoringSettings;
         private bool _controlKeyIsDown;
@@ -718,8 +719,9 @@ namespace PDF_simple_edit
 
             if (_pdfManager.FilePath != null)
             {
-                await PerformSaveAsync(_pdfManager.FilePath, true);
-                AddToRecentFiles(_pdfManager.FilePath);
+                string filePath = _pdfManager.FilePath;
+                if (await PerformSaveAsync(filePath, true))
+                    AddToRecentFiles(filePath);
             }
             else
             {
@@ -742,8 +744,8 @@ namespace PDF_simple_edit
             var file = await picker.PickSaveFileAsync();
             if (file != null)
             {
-                await PerformSaveAsync(file.Path, true);
-                AddToRecentFiles(file.Path);
+                if (await PerformSaveAsync(file.Path, true))
+                    AddToRecentFiles(file.Path);
             }
         }
 
@@ -763,7 +765,8 @@ namespace PDF_simple_edit
             {
                 // 인쇄 시에는 현재 모든 어노테이션이 반영된 상태여야 하므로 임시 파일로 플래트닝하여 저장
                 string tempPath = Path.Combine(Path.GetTempPath(), $"print_{Guid.NewGuid()}.pdf");
-                await PerformSaveAsync(tempPath, false);
+                if (!await PerformSaveAsync(tempPath, false))
+                    return;
 
                 var hwnd = WindowNative.GetWindowHandle(this);
                 // PerformSaveAsync handles iText 9 document flushing
@@ -1846,19 +1849,30 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
         #region Helpers
 
-        private async Task PerformSaveAsync(string filePath, bool isUserSave)
+        private async Task<bool> PerformSaveAsync(string filePath, bool isUserSave)
         {
-            if (!_pdfManager.IsLoaded) return;
+            if (!_pdfManager.IsLoaded || _isSaveInProgress)
+                return false;
 
-            // 저장 전 활성화된 인라인 편집이 있다면 강제로 적용
-            if (_inlineTextEditorController.IsEditing)
-                await _inlineTextEditorController.FinishActiveEditAsync();
-
+            _isSaveInProgress = true;
+            string? previousRenderPath = null;
+            if (isUserSave)
+            {
+                // OpenAsync에서 발생하는 DocumentChanged가 저장 완료 직후 렌더링을
+                // 예약합니다. 이때 이전 임시 파일이 남아 있으면 저장 전 화면을
+                // 다시 사용하므로, 실제 저장을 시작하기 전에 캐시를 무효화합니다.
+                previousRenderPath = _renderTempPath;
+                _renderTempPath = null;
+            }
             TxtStatus.Text = isUserSave ? "저장 중..." : "렌더링 준비 중...";
             LoadingRing.IsActive = true;
 
             try
             {
+                // 저장 버튼을 누르는 순간 아직 인라인 편집 중인 텍스트도 먼저 확정합니다.
+                if (_inlineTextEditorController.IsEditing)
+                    await _inlineTextEditorController.FinishActiveEditAsync();
+
                 await _pdfSaveService.SaveAsync(
                     _pdfManager,
                     _annotations,
@@ -1867,19 +1881,32 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
                 if (isUserSave)
                 {
-                    _renderTempPath = null;
+                    _pageRenderService.DeleteTemporaryFile(previousRenderPath);
+                    previousRenderPath = null;
                     if (_activeTab != null)
                         _activeTab.FilePath = filePath;
-                    _currentPageIndex = 0;
+
+                    // 이벤트 큐의 실행 순서와 무관하게 최종 화면이 방금 저장한
+                    // PDF를 사용하도록 한 번 더 명시적으로 갱신합니다.
+                    await RenderCurrentPageAsync();
                 }
+
+                return true;
             }
             catch (Exception ex)
             {
+                if (isUserSave && _renderTempPath == null &&
+                    previousRenderPath != null && File.Exists(previousRenderPath))
+                {
+                    _renderTempPath = previousRenderPath;
+                }
                 await ShowErrorDialogAsync("저장 오류", $"저장 중 오류가 발생했습니다: {ex.Message}");
+                return false;
             }
             finally
             {
                 LoadingRing.IsActive = false;
+                _isSaveInProgress = false;
                 UpdateUIState();
             }
         }

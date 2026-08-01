@@ -9,6 +9,7 @@ namespace PDF_simple_edit.Services;
 
 public sealed class PdfSaveService
 {
+    private const int FileReplaceAttempts = 5;
     private readonly PdfAnnotationDocumentService _annotationDocumentService;
 
     public PdfSaveService(PdfAnnotationDocumentService annotationDocumentService)
@@ -22,38 +23,68 @@ public sealed class PdfSaveService
         string filePath,
         bool isUserSave)
     {
-        if (isUserSave)
-        {
-            manager.ApplyBatchEdit(document =>
-            {
-                foreach (PdfAnnotation annotation in annotations)
-                {
-                    _annotationDocumentService.Apply(manager, document, annotation);
-                    annotation.IsApplied = true;
-                }
-            });
-
-            if (!await manager.SaveAsAsync(filePath, true))
-                throw new InvalidOperationException("저장에 실패했습니다.");
-
-            annotations.Clear();
-            await manager.OpenAsync(filePath);
-            return;
-        }
-
-        byte[]? temporaryBytes = manager.GetPdfBytesWithEdits(document =>
+        byte[] editedBytes = manager.CreatePdfBytesWithEdits(document =>
         {
             foreach (PdfAnnotation annotation in annotations)
                 _annotationDocumentService.Apply(manager, document, annotation);
         });
 
-        if (temporaryBytes != null)
+        if (!isUserSave)
         {
-            await File.WriteAllBytesAsync(filePath, temporaryBytes);
+            await File.WriteAllBytesAsync(filePath, editedBytes);
+            return;
         }
-        else
+
+        await WriteAtomicallyAsync(filePath, editedBytes);
+
+        if (!await manager.OpenAsync(filePath))
+            throw new InvalidOperationException("저장된 PDF를 다시 열 수 없습니다.");
+
+        annotations.Clear();
+    }
+
+    private static async Task WriteAtomicallyAsync(string filePath, byte[] contents)
+    {
+        string fullPath = Path.GetFullPath(filePath);
+        string? directory = Path.GetDirectoryName(fullPath);
+        if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+            throw new DirectoryNotFoundException($"저장할 폴더를 찾을 수 없습니다: {directory}");
+
+        string temporaryPath = Path.Combine(
+            directory,
+            $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+
+        try
         {
-            await manager.SaveAsAsync(filePath, false);
+            await File.WriteAllBytesAsync(temporaryPath, contents);
+
+            for (int attempt = 1; attempt <= FileReplaceAttempts; attempt++)
+            {
+                try
+                {
+                    File.Move(temporaryPath, fullPath, true);
+                    return;
+                }
+                catch (IOException) when (attempt < FileReplaceAttempts)
+                {
+                    await Task.Delay(attempt * 100);
+                }
+            }
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            throw new IOException($"파일에 쓸 권한이 없습니다: {fullPath}", ex);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(temporaryPath))
+                    File.Delete(temporaryPath);
+            }
+            catch
+            {
+            }
         }
     }
 }

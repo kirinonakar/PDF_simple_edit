@@ -207,32 +207,42 @@ namespace PDF_simple_edit.Helpers
             }
         }
 
-        public byte[]? GetPdfBytesWithEdits(Action<PdfDocument> editAction)
+        public byte[] CreatePdfBytesWithEdits(Action<PdfDocument> editAction)
         {
-            if (_pdfBytes == null) return null;
+            ArgumentNullException.ThrowIfNull(editAction);
+            if (_pdfBytes == null)
+                throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
 
             lock (_docLock)
             {
-                try
-                {
-                    using var msInput = new MemoryStream(_pdfBytes);
-                    using var msOutput = new MemoryStream();
+                using var msInput = new MemoryStream(_pdfBytes);
+                using var msOutput = new MemoryStream();
 
-                    using (var reader = new PdfReader(msInput))
-                    using (var writer = new PdfWriter(msOutput))
-                    using (var doc = new PdfDocument(reader, writer))
-                    {
-                        editAction(doc);
-                        doc.Close();
-                    }
-
-                    return msOutput.ToArray();
-                }
-                catch (Exception ex)
+                using (var reader = new PdfReader(msInput))
+                using (var writer = new PdfWriter(msOutput))
+                using (var doc = new PdfDocument(reader, writer, new StampingProperties()))
                 {
-                    System.Diagnostics.Debug.WriteLine($"Error getting PDF bytes with edits: {ex.Message}");
-                    return null;
+                    editAction(doc);
                 }
+
+                byte[] result = msOutput.ToArray();
+                if (result.Length == 0)
+                    throw new InvalidOperationException("편집된 PDF 데이터가 생성되지 않았습니다.");
+
+                return result;
+            }
+        }
+
+        public byte[]? GetPdfBytesWithEdits(Action<PdfDocument> editAction)
+        {
+            try
+            {
+                return CreatePdfBytesWithEdits(editAction);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error getting PDF bytes with edits: {ex.Message}");
+                return null;
             }
         }
 
@@ -260,10 +270,6 @@ namespace PDF_simple_edit.Helpers
                 ? (float)lineXOffsets[0]
                 : 0;
             float pdfX = rect.GetLeft() + (float)x + firstLineXOffset;
-            float resolvedBaselineOffset = lineBaselineOffsets != null && lineBaselineOffsets.Count > 0
-                ? (float)lineBaselineOffsets[0]
-                : (float)(baselineOffset > 0.1 ? baselineOffset : fontSize);
-            float pdfY = rect.GetBottom() + (rect.GetHeight() - (float)y - resolvedBaselineOffset);
             string[] lines = (text ?? string.Empty)
                 .Replace("\r\n", "\n", StringComparison.Ordinal)
                 .Replace('\r', '\n')
@@ -351,16 +357,36 @@ namespace PDF_simple_edit.Helpers
                     : 0)
                 .ToList();
 
+            bool hasExplicitBaseline =
+                (lineBaselineOffsets != null && lineBaselineOffsets.Count > 0) ||
+                baselineOffset > 0.1;
+            float resolvedBaselineOffset = lineBaselineOffsets != null && lineBaselineOffsets.Count > 0
+                ? (float)lineBaselineOffsets[0]
+                : baselineOffset > 0.1
+                    ? (float)baselineOffset
+                    : Math.Max(
+                        resolvedLineFonts[0].Font.GetAscent(
+                            lines[0],
+                            (float)Math.Max(fontSize, 1)),
+                        0);
+            float firstLineFallbackAdjustment = hasExplicitBaseline
+                ? (float)fallbackBaselineAdjustments[0]
+                : 0;
+            float pdfY = rect.GetBottom() +
+                (rect.GetHeight() - (float)y - resolvedBaselineOffset);
+
             // 3. 로우레벨(Low-level) API로 확실하게 텍스트 박아넣기
-            PdfStream stream = page.NewContentStreamAfter(); 
-            PdfCanvas canvas = new PdfCanvas(stream, page.GetResources(), doc);
+            // 기존 콘텐츠 스트림이 q/Q 없이 좌표 변환을 남긴 PDF도 있습니다.
+            // wrapOldContent=true로 기존 그래픽 상태를 격리해야 새 글자의 위치,
+            // 크기와 방향이 화면 좌표 그대로 유지됩니다.
+            PdfCanvas canvas = new PdfCanvas(page, true);
             
             canvas.SaveState();
             canvas.BeginText();
             canvas.SetFillColor(color ?? ColorConstants.BLACK);
 
             // 텍스트 이동 및 쓰기. 줄바꿈은 기존 편집 구역의 줄 간격을 유지합니다.
-            canvas.MoveText(pdfX, pdfY - fallbackBaselineAdjustments[0]);
+            canvas.MoveText(pdfX, pdfY - firstLineFallbackAdjustment);
             float resolvedLineHeight = (float)(lineHeight > 0.1 ? lineHeight : Math.Max(fontSize * 1.2, 1));
             for (int i = 0; i < lines.Length; i++)
             {
@@ -465,7 +491,7 @@ namespace PDF_simple_edit.Helpers
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages()) return;
 
             var page = doc.GetPage(pageIndex + 1);
-            var canvas = new PdfCanvas(page);
+            var canvas = new PdfCanvas(page, true);
             
             canvas.SaveState();
             
@@ -509,7 +535,7 @@ namespace PDF_simple_edit.Helpers
             iText.Layout.Element.Image img = new iText.Layout.Element.Image(data);
             
             // Use iText.Layout.Canvas for easy positioning
-            using var canvasLayout = new iText.Layout.Canvas(new PdfCanvas(page), pageSize);
+            using var canvasLayout = new iText.Layout.Canvas(new PdfCanvas(page, true), pageSize);
             img.SetFixedPosition((float)x, pdfY, (float)width);
             if (height > 0) img.SetHeight((float)height);
             canvasLayout.Add(img);
