@@ -26,14 +26,24 @@ public sealed class PdfAnnotationDocumentService
                         .Select(fragment => fragment.OriginalFontObjectNumber)
                         .FirstOrDefault(number => number > 0, annotation.OriginalFontObjectNumber))
                     .ToList();
+                // TextFragments retain the coordinates of the original PDF text so
+                // that removal can still identify it after the annotation is moved.
+                // Use that immutable source origin for per-line offsets. Computing
+                // offsets from annotation.X/Y would cancel the user's move on save.
+                double sourceX = annotation.TextFragments.Count > 0
+                    ? annotation.TextFragments.Min(fragment => fragment.X)
+                    : annotation.X;
+                double sourceY = annotation.TextFragments.Count > 0
+                    ? annotation.TextFragments.Min(fragment => fragment.Y)
+                    : annotation.Y;
                 var xOffsets = lineGroups
-                    .Select(group => group.Min(fragment => fragment.X) - annotation.X)
+                    .Select(group => group.Min(fragment => fragment.X) - sourceX)
                     .ToList();
                 var baselineOffsets = lineGroups
                     .Select(group =>
                     {
                         PdfTextFragment first = group.OrderBy(fragment => fragment.X).First();
-                        return first.Y + first.BaselineOffset - annotation.Y;
+                        return first.Y + first.BaselineOffset - sourceY;
                     })
                     .ToList();
                 double baselineOffset = lineGroups.Count > 0
