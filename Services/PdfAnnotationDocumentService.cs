@@ -36,6 +36,13 @@ public sealed class PdfAnnotationDocumentService
                         return first.Y + first.BaselineOffset - annotation.Y;
                     })
                     .ToList();
+                double baselineOffset = lineGroups.Count > 0
+                    ? annotation.BaselineOffset
+                    : AnnotationTextLayoutService.GetDisplayBaselineOffset(
+                        annotation.FontFamily,
+                        annotation.FontSize,
+                        annotation.IsBold,
+                        annotation.IsItalic);
                 manager.AddTextInternal(
                     document,
                     annotation.PageIndex,
@@ -48,7 +55,7 @@ public sealed class PdfAnnotationDocumentService
                     annotation.IsBold,
                     annotation.IsItalic,
                     annotation.LineHeight,
-                    annotation.BaselineOffset,
+                    baselineOffset,
                     annotation.OriginalFontObjectNumber,
                     fontObjectNumbers,
                     xOffsets,

@@ -9,6 +9,7 @@ namespace PDF_simple_edit.Services;
 public static class AnnotationTextLayoutService
 {
     private const double PdfToPixels = 96.0 / 72.0;
+    public const double InlineEditorTopInset = 1.0;
 
     public static bool ContainsLineBreak(string? text) =>
         !string.IsNullOrEmpty(text) && (text.Contains('\r') || text.Contains('\n'));
@@ -42,15 +43,33 @@ public static class AnnotationTextLayoutService
         if (annotation.BaselineOffset <= 0.1)
             return 0;
 
-        double baselineOffset = displayFontSize * PdfToPixels * 0.8;
+        double baselineOffset = GetDisplayBaselineOffset(
+            annotation.FontFamily,
+            displayFontSize,
+            annotation.IsBold,
+            annotation.IsItalic) * PdfToPixels;
+
+        return annotation.BaselineOffset * PdfToPixels - baselineOffset;
+    }
+
+    public static double GetDisplayBaselineOffset(
+        string fontFamily,
+        double fontSize,
+        bool isBold,
+        bool isItalic)
+    {
+        // The PDF annotation Y coordinate is the top of the WinUI text layout box.
+        // Save against the same baseline instead of the PDF glyph's ink bounds so
+        // the rendered PDF does not appear a few pixels above the preview.
+        double baselineOffset = Math.Max(fontSize, 1) * PdfToPixels;
         try
         {
             var sample = CreateTextBlock(
-                "Ag",
-                annotation.FontFamily,
-                displayFontSize,
-                annotation.IsBold,
-                annotation.IsItalic);
+                "가Ag",
+                fontFamily,
+                fontSize,
+                isBold,
+                isItalic);
             sample.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
             var baselineProperty = typeof(TextBlock).GetProperty("BaselineOffset");
             if (baselineProperty?.GetValue(sample) is double measuredBaseline && measuredBaseline > 0.1)
@@ -61,7 +80,7 @@ public static class AnnotationTextLayoutService
             // The font-size estimate is sufficient when the platform omits BaselineOffset.
         }
 
-        return annotation.BaselineOffset * PdfToPixels - (baselineOffset + 1);
+        return (baselineOffset + InlineEditorTopInset) / PdfToPixels;
     }
 
     public static double GetMultilineHeight(PdfAnnotation annotation, string text, double fontSize)

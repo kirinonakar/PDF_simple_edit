@@ -357,9 +357,8 @@ namespace PDF_simple_edit.Helpers
                     : 0)
                 .ToList();
 
-            bool hasExplicitBaseline =
-                (lineBaselineOffsets != null && lineBaselineOffsets.Count > 0) ||
-                baselineOffset > 0.1;
+            bool hasOriginalLineBaselines =
+                lineBaselineOffsets != null && lineBaselineOffsets.Count > 0;
             float resolvedBaselineOffset = lineBaselineOffsets != null && lineBaselineOffsets.Count > 0
                 ? (float)lineBaselineOffsets[0]
                 : baselineOffset > 0.1
@@ -369,7 +368,10 @@ namespace PDF_simple_edit.Helpers
                             lines[0],
                             (float)Math.Max(fontSize, 1)),
                         0);
-            float firstLineFallbackAdjustment = hasExplicitBaseline
+            // A baseline measured from the on-screen WinUI text box must be used
+            // as-is. The fallback adjustment only applies to baselines extracted
+            // from original PDF text fragments.
+            float firstLineFallbackAdjustment = hasOriginalLineBaselines
                 ? (float)fallbackBaselineAdjustments[0]
                 : 0;
             float pdfY = rect.GetBottom() +

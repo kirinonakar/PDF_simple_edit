@@ -165,7 +165,12 @@ public sealed class AnnotationOverlayController
                 {
                     Y = AnnotationTextLayoutService.GetTopOffset(annotation, displayFontSize)
                 }
-                : null,
+                : new TranslateTransform
+                {
+                    // Match the one-pixel text inset of the inline TextBox so the
+                    // edit preview, committed overlay and saved PDF stay aligned.
+                    Y = AnnotationTextLayoutService.InlineEditorTopInset
+                },
             Padding = new Thickness(0),
             Margin = new Thickness(0),
             IsHitTestVisible = false
