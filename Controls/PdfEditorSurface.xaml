@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PDF_simple_edit.Controls.PdfEditorSurface"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Background="#F0F0F0">
+        <StackPanel x:Name="Welcome" x:FieldModifier="public" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
+            <FontIcon Glyph="&#xEA90;" FontSize="64" Foreground="#0078D4" Opacity="0.6"/>
+            <TextBlock Text="PDF Simple Editor" FontSize="28" FontWeight="SemiBold" HorizontalAlignment="Center" Opacity="0.8"/>
+            <TextBlock Text="PDF 파일을 열거나 새로 만드세요" FontSize="14" HorizontalAlignment="Center" Opacity="0.5"/>
+            <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" Margin="0,16,0,0">
+                <Button x:Name="OpenButton" x:FieldModifier="public" Content="파일 열기" Style="{StaticResource AccentButtonStyle}" Padding="24,10"/>
+                <Button x:Name="NewButton" x:FieldModifier="public" Content="새로 만들기" Padding="24,10"/>
+            </StackPanel>
+        </StackPanel>
+
+        <ScrollViewer x:Name="Viewer" x:FieldModifier="public" Visibility="Collapsed" ZoomMode="Enabled"
+                      MinZoomFactor="0.25" MaxZoomFactor="5"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <Grid x:Name="ContentGrid" x:FieldModifier="public" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="20">
+                <Image x:Name="PageImage" x:FieldModifier="public" Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Top"/>
+                <Canvas x:Name="AnnotationCanvas" x:FieldModifier="public" HorizontalAlignment="Center" VerticalAlignment="Top" Background="Transparent">
+                    <Canvas.ContextFlyout>
+                        <MenuFlyout>
+                            <MenuFlyoutItem x:Name="AlignLeftItem" x:FieldModifier="public" Text="왼쪽 맞춤">
+                                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E4;"/></MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                            <MenuFlyoutItem x:Name="AlignRightItem" x:FieldModifier="public" Text="오른쪽 맞춤">
+                                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E2;"/></MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                            <MenuFlyoutItem x:Name="AlignTopItem" x:FieldModifier="public" Text="위쪽 맞춤">
+                                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E3;"/></MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                            <MenuFlyoutItem x:Name="AlignBottomItem" x:FieldModifier="public" Text="아래쪽 맞춤">
+                                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E1;"/></MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                            <MenuFlyoutSeparator/>
+                            <MenuFlyoutItem x:Name="DeleteItem" x:FieldModifier="public" Text="삭제">
+                                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74D;"/></MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                        </MenuFlyout>
+                    </Canvas.ContextFlyout>
+                </Canvas>
+            </Grid>
+        </ScrollViewer>
+
+        <ProgressRing x:Name="LoadingIndicator" x:FieldModifier="public" IsActive="False" Width="48" Height="48"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+    </Grid>
+</UserControl>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PDF_simple_edit.Controls.FindPanelControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Background="#0A000000" BorderBrush="#20000000" BorderThickness="1,0,0,0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Grid Padding="12,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="찾기" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            <Button x:Name="CloseButton" x:FieldModifier="public" Grid.Column="1" Background="Transparent" BorderThickness="0" Padding="6">
+                <FontIcon Glyph="&#xE711;" FontSize="12"/>
+            </Button>
+        </Grid>
+        <StackPanel Grid.Row="1" Padding="12,0,12,12" Spacing="8">
+            <TextBox x:Name="QueryTextBox" x:FieldModifier="public" PlaceholderText="찾을 텍스트..."/>
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <Button x:Name="PreviousButton" x:FieldModifier="public" Content="이전" Padding="12,6"/>
+                <Button x:Name="NextButton" x:FieldModifier="public" Content="다음" Padding="12,6"/>
+                <TextBlock x:Name="ResultCountText" x:FieldModifier="public" VerticalAlignment="Center" Margin="8,0" Opacity="0.6" FontSize="12"/>
+            </StackPanel>
+            <CheckBox x:Name="MatchCaseCheckBox" x:FieldModifier="public" Content="대소문자 구분"/>
+        </StackPanel>
+    </Grid>
+</UserControl>

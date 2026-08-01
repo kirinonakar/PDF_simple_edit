@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PDF_simple_edit.Controls.EditorStatusBar"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Padding="12,0" BorderBrush="#30000000" BorderThickness="0,1,0,0">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+            <Button x:Name="PreviousPageButton" x:FieldModifier="public" Padding="4,2" Background="Transparent" BorderThickness="0" IsEnabled="False">
+                <FontIcon Glyph="&#xE76B;" FontSize="12"/>
+            </Button>
+            <TextBlock x:Name="PageInfoText" x:FieldModifier="public" Text="페이지: 0 / 0" FontSize="12" VerticalAlignment="Center"/>
+            <Button x:Name="NextPageButton" x:FieldModifier="public" Padding="4,2" Background="Transparent" BorderThickness="0" IsEnabled="False">
+                <FontIcon Glyph="&#xE76C;" FontSize="12"/>
+            </Button>
+            <TextBox x:Name="GoToPageTextBox" x:FieldModifier="public" Width="40" PlaceholderText="이동" FontSize="11"
+                     Padding="4,2" VerticalAlignment="Center" MinHeight="24"/>
+        </StackPanel>
+        <AppBarSeparator Grid.Column="1" Opacity="0.3"/>
+        <TextBlock x:Name="StatusText" x:FieldModifier="public" Grid.Column="2" Text="준비" FontSize="12" VerticalAlignment="Center"/>
+        <TextBlock x:Name="ToolModeText" x:FieldModifier="public" Grid.Column="3" FontSize="12" VerticalAlignment="Center" Margin="8,0"/>
+        <AppBarSeparator Grid.Column="4" Opacity="0.3"/>
+        <TextBlock x:Name="FileInfoText" x:FieldModifier="public" Grid.Column="5" FontSize="12" VerticalAlignment="Center"/>
+    </Grid>
+</UserControl>

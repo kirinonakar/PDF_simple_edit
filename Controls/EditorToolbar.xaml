@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PDF_simple_edit.Controls.EditorToolbar"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Padding="8,4" BorderBrush="#30000000" BorderThickness="0,0,0,1">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2">
+            <Button x:Name="OpenButton" x:FieldModifier="public" ToolTipService.ToolTip="열기 (Ctrl+O)" Padding="8,6" Background="Transparent" BorderThickness="0">
+                <FontIcon Glyph="&#xE8E5;" FontSize="16"/>
+            </Button>
+            <Button x:Name="SaveButton" x:FieldModifier="public" ToolTipService.ToolTip="저장 (Ctrl+S)" Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                <FontIcon Glyph="&#xE74E;" FontSize="16"/>
+            </Button>
+            <Button x:Name="SaveAsButton" x:FieldModifier="public" ToolTipService.ToolTip="다른 이름으로 저장 (Ctrl+Shift+S)" Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                <FontIcon Glyph="&#xE792;" FontSize="16"/>
+            </Button>
+            <Button x:Name="PrintButton" x:FieldModifier="public" ToolTipService.ToolTip="인쇄 (Ctrl+P)" Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                <FontIcon Glyph="&#xE749;" FontSize="16"/>
+            </Button>
+            <AppBarSeparator/>
+            <Button x:Name="UndoButton" x:FieldModifier="public" ToolTipService.ToolTip="실행 취소 (Ctrl+Z)" Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                <FontIcon Glyph="&#xE7A7;" FontSize="16"/>
+            </Button>
+            <Button x:Name="RedoButton" x:FieldModifier="public" ToolTipService.ToolTip="다시 실행 (Ctrl+Y)" Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                <FontIcon Glyph="&#xE7A6;" FontSize="16"/>
+            </Button>
+            <AppBarSeparator/>
+        </StackPanel>
+
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
+            <ToggleButton x:Name="SelectButton" x:FieldModifier="public" ToolTipService.ToolTip="선택 (S)" IsEnabled="False" Padding="8,6">
+                <FontIcon Glyph="&#xEF20;" FontSize="16"/>
+            </ToggleButton>
+            <ToggleButton x:Name="AddTextButton" x:FieldModifier="public" ToolTipService.ToolTip="텍스트 추가" IsEnabled="False" Padding="8,6">
+                <FontIcon Glyph="&#xE8D2;" FontSize="16"/>
+            </ToggleButton>
+            <ToggleButton x:Name="HighlightButton" x:FieldModifier="public" ToolTipService.ToolTip="텍스트 강조" IsEnabled="False" Padding="8,6">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <FontIcon Glyph="&#xE7E6;" FontSize="16"/>
+                    <Border x:Name="HighlightIndicator" x:FieldModifier="public" Width="12" Height="4" CornerRadius="1"
+                            VerticalAlignment="Bottom" Margin="0,0,0,2" Background="Yellow"/>
+                </StackPanel>
+                <FlyoutBase.AttachedFlyout>
+                    <Flyout x:Name="HighlightSettingsFlyout" x:FieldModifier="public" FlyoutBase.Placement="BottomEdgeAlignedRight">
+                        <StackPanel Spacing="10" Width="360" HorizontalAlignment="Left">
+                            <TextBlock Text="강조 색상 및 투명도" FontWeight="Bold"/>
+                            <ColorPicker x:Name="HighlightPicker" x:FieldModifier="public" Width="340" HorizontalAlignment="Left"
+                                         IsAlphaEnabled="True" IsColorSpectrumVisible="True"
+                                         IsColorSliderVisible="True" IsHexInputVisible="True"/>
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <TextBlock Text="투명도" VerticalAlignment="Center"/>
+                                <Slider x:Name="HighlightOpacitySlider" x:FieldModifier="public" Minimum="0" Maximum="1"
+                                        StepFrequency="0.05" Value="0.3" Width="100"/>
+                                <TextBlock x:Name="HighlightOpacityText" x:FieldModifier="public" Text="30%" VerticalAlignment="Center" FontSize="12"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Flyout>
+                </FlyoutBase.AttachedFlyout>
+            </ToggleButton>
+            <Button x:Name="HighlightSettingsButton" x:FieldModifier="public" ToolTipService.ToolTip="강조 설정"
+                    Padding="4,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                <FontIcon Glyph="&#xE713;" FontSize="12"/>
+            </Button>
+            <ToggleButton x:Name="ColorPickerButton" x:FieldModifier="public" ToolTipService.ToolTip="색상 추출 (Eyedropper)" IsEnabled="False" Padding="8,6">
+                <FontIcon Glyph="&#xEF3C;" FontSize="16"/>
+            </ToggleButton>
+            <Button x:Name="AddImageButton" x:FieldModifier="public" ToolTipService.ToolTip="이미지 추가" Padding="8,6"
+                    IsEnabled="False" Background="Transparent" BorderThickness="0">
+                <FontIcon Glyph="&#xE8B9;" FontSize="16"/>
+            </Button>
+            <AppBarSeparator/>
+        </StackPanel>
+
+        <StackPanel x:Name="FontControls" x:FieldModifier="public" Grid.Column="2" Orientation="Horizontal" Spacing="4">
+            <ComboBox x:Name="FontFamilyComboBox" x:FieldModifier="public" Width="150" PlaceholderText="폰트" VerticalAlignment="Center">
+                <ComboBoxItem Content="맑은 고딕" IsSelected="True"/>
+                <ComboBoxItem Content="굴림"/>
+                <ComboBoxItem Content="돋움"/>
+                <ComboBoxItem Content="바탕"/>
+                <ComboBoxItem Content="궁서"/>
+                <ComboBoxItem Content="나눔고딕"/>
+                <ComboBoxItem Content="나눔명조"/>
+                <ComboBoxItem Content="Arial"/>
+                <ComboBoxItem Content="Times New Roman"/>
+                <ComboBoxItem Content="Courier New"/>
+                <ComboBoxItem Content="Verdana"/>
+                <ComboBoxItem Content="Calibri"/>
+                <ComboBoxItem Content="Segoe UI"/>
+            </ComboBox>
+            <ComboBox x:Name="FontSizeComboBox" x:FieldModifier="public" Width="90" VerticalAlignment="Center">
+                <ComboBoxItem Content="8"/>
+                <ComboBoxItem Content="9"/>
+                <ComboBoxItem Content="10"/>
+                <ComboBoxItem Content="11"/>
+                <ComboBoxItem Content="12" IsSelected="True"/>
+                <ComboBoxItem Content="14"/>
+                <ComboBoxItem Content="16"/>
+                <ComboBoxItem Content="18"/>
+                <ComboBoxItem Content="20"/>
+                <ComboBoxItem Content="24"/>
+                <ComboBoxItem Content="28"/>
+                <ComboBoxItem Content="32"/>
+                <ComboBoxItem Content="36"/>
+                <ComboBoxItem Content="48"/>
+                <ComboBoxItem Content="72"/>
+            </ComboBox>
+            <ToggleButton x:Name="BoldButton" x:FieldModifier="public" ToolTipService.ToolTip="굵게" Padding="8,6">
+                <FontIcon Glyph="&#xE8DD;" FontSize="14"/>
+            </ToggleButton>
+            <ToggleButton x:Name="ItalicButton" x:FieldModifier="public" ToolTipService.ToolTip="기울임" Padding="8,6">
+                <FontIcon Glyph="&#xE8DB;" FontSize="14"/>
+            </ToggleButton>
+            <DropDownButton x:Name="FontColorButton" x:FieldModifier="public" ToolTipService.ToolTip="글자 색상" Padding="8,6">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <FontIcon Glyph="&#xE8D3;" FontSize="14"/>
+                    <Border x:Name="FontColorIndicatorElement" x:FieldModifier="public" Width="14" Height="4" CornerRadius="1" Background="Black"/>
+                </StackPanel>
+                <DropDownButton.Flyout>
+                    <Flyout FlyoutBase.Placement="BottomEdgeAlignedRight">
+                        <GridView x:Name="ColorPaletteGrid" x:FieldModifier="public" Width="224" HorizontalAlignment="Left"/>
+                    </Flyout>
+                </DropDownButton.Flyout>
+            </DropDownButton>
+            <AppBarSeparator/>
+        </StackPanel>
+
+        <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="2">
+            <Button x:Name="ZoomOutButton" x:FieldModifier="public" Padding="8,6" ToolTipService.ToolTip="축소" Background="Transparent" BorderThickness="0">
+                <FontIcon Glyph="&#xE71F;" FontSize="14"/>
+            </Button>
+            <TextBlock x:Name="ZoomText" x:FieldModifier="public" Text="100%" VerticalAlignment="Center" MinWidth="40" TextAlignment="Center" Margin="4,0"/>
+            <Button x:Name="ZoomInButton" x:FieldModifier="public" Padding="8,6" ToolTipService.ToolTip="확대" Background="Transparent" BorderThickness="0">
+                <FontIcon Glyph="&#xE8A3;" FontSize="14"/>
+            </Button>
+            <AppBarSeparator/>
+            <Button x:Name="FitToPageButton" x:FieldModifier="public" Padding="8,6" ToolTipService.ToolTip="페이지에 맞추기" Background="Transparent" BorderThickness="0">
+                <FontIcon Glyph="&#xE9A6;" FontSize="14"/>
+            </Button>
+        </StackPanel>
+    </Grid>
+</UserControl>

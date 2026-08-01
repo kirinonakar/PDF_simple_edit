@@ -6,6 +6,8 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using PDF_simple_edit.Helpers;
 using PDF_simple_edit.Models;
+using PDF_simple_edit.Controls;
+using PDF_simple_edit.Services;
 using iText.Kernel.Colors;
 using iText.Kernel.Pdf;
 using System;
@@ -60,8 +62,10 @@ namespace PDF_simple_edit
         private string? _resizeHandle = null; // "NW", "N", "NE", "W", "E", "SW", "S", "SE"
         private Windows.Foundation.Point _lastMousePos;
 
-        private readonly List<string> _recentFiles = new();
-        private const int MaxRecentFiles = 10;
+        private readonly RecentFilesService _recentFilesService = new();
+        private readonly EditorSettingsService _settingsService = new();
+        private readonly PdfSearchService _pdfSearchService = new();
+        private readonly AnnotationContentService _annotationContentService = new();
 
         // For highlight drag
         private bool _isDragging;
@@ -109,6 +113,54 @@ namespace PDF_simple_edit
         private const int VirtualKeyLeftControl = 0xA2;
         private const int VirtualKeyRightControl = 0xA3;
 
+        // MainWindow composes focused UserControls. These aliases keep the
+        // document workflow independent from the controls' internal XAML names.
+        private Button BtnOpen => EditorToolbar.OpenButton;
+        private Button BtnSave => EditorToolbar.SaveButton;
+        private Button BtnSaveAs => EditorToolbar.SaveAsButton;
+        private Button BtnPrint => EditorToolbar.PrintButton;
+        private Button BtnUndo => EditorToolbar.UndoButton;
+        private Button BtnRedo => EditorToolbar.RedoButton;
+        private ToggleButton BtnSelect => EditorToolbar.SelectButton;
+        private ToggleButton BtnAddText => EditorToolbar.AddTextButton;
+        private ToggleButton BtnHighlight => EditorToolbar.HighlightButton;
+        private Border HighlightColorIndicator => EditorToolbar.HighlightIndicator;
+        private Flyout HighlightFlyout => EditorToolbar.HighlightSettingsFlyout;
+        private ColorPicker HighlightColorPicker => EditorToolbar.HighlightPicker;
+        private Slider SldHighlightOpacity => EditorToolbar.HighlightOpacitySlider;
+        private TextBlock TxtHighlightOpacity => EditorToolbar.HighlightOpacityText;
+        private Button BtnHighlightSettings => EditorToolbar.HighlightSettingsButton;
+        private ToggleButton BtnColorPicker => EditorToolbar.ColorPickerButton;
+        private Button BtnAddImage => EditorToolbar.AddImageButton;
+        private StackPanel FontToolbar => EditorToolbar.FontControls;
+        private ComboBox CmbFontFamily => EditorToolbar.FontFamilyComboBox;
+        private ComboBox CmbFontSize => EditorToolbar.FontSizeComboBox;
+        private ToggleButton BtnBold => EditorToolbar.BoldButton;
+        private ToggleButton BtnItalic => EditorToolbar.ItalicButton;
+        private DropDownButton BtnFontColor => EditorToolbar.FontColorButton;
+        private Border FontColorIndicator => EditorToolbar.FontColorIndicatorElement;
+        private GridView ColorPalette => EditorToolbar.ColorPaletteGrid;
+        private TextBlock TxtZoom => EditorToolbar.ZoomText;
+
+        private ListView PageListView => PagePanel.ListView;
+        private StackPanel WelcomePanel => PdfSurface.Welcome;
+        private ScrollViewer PdfScrollViewer => PdfSurface.Viewer;
+        private Grid PdfContentGrid => PdfSurface.ContentGrid;
+        private Image PdfPageImage => PdfSurface.PageImage;
+        private Canvas OverlayCanvas => PdfSurface.AnnotationCanvas;
+        private ProgressRing LoadingRing => PdfSurface.LoadingIndicator;
+
+        private TextBox TxtFindText => FindPanel.QueryTextBox;
+        private TextBlock TxtFindCount => FindPanel.ResultCountText;
+        private CheckBox ChkMatchCase => FindPanel.MatchCaseCheckBox;
+        private Button BtnPrevPage => StatusBar.PreviousPageButton;
+        private TextBlock TxtPageInfo => StatusBar.PageInfoText;
+        private Button BtnNextPage => StatusBar.NextPageButton;
+        private TextBox TxtGoToPage => StatusBar.GoToPageTextBox;
+        private TextBlock TxtStatus => StatusBar.StatusText;
+        private TextBlock TxtToolMode => StatusBar.ToolModeText;
+        private TextBlock TxtFileInfo => StatusBar.FileInfoText;
+
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int virtualKey);
 
@@ -123,6 +175,7 @@ namespace PDF_simple_edit
                 _fontSettings.Color = "#000000";
 
                 InitializeComponent();
+                WireChildControlEvents();
                 DocTabView.TabItemsSource = _tabs;
                 // TextBox 내부 처리로 이미 Handled 된 키도 편집 확정 로직에서
                 // 확인할 수 있도록 캔버스에 handledEventsToo 핸들러를 등록합니다.
@@ -157,7 +210,7 @@ namespace PDF_simple_edit
                 HighlightColorIndicator.Background = new SolidColorBrush(ParseColor(_fontSettings.HighlightColor));
                 TxtHighlightOpacity.Text = $"{(int)(_fontSettings.HighlightOpacity * 100)}%";
 
-                LoadRecentFiles();
+                _recentFilesService.Load();
                 UpdateRecentFilesMenu();
                 InitializeZoomAccelerators();
 
@@ -322,6 +375,56 @@ namespace PDF_simple_edit
             }
         }
 
+        private void WireChildControlEvents()
+        {
+            BtnOpen.Click += OpenFile_Click;
+            BtnSave.Click += SaveFile_Click;
+            BtnSaveAs.Click += SaveAsFile_Click;
+            BtnPrint.Click += Print_Click;
+            BtnUndo.Click += Undo_Click;
+            BtnRedo.Click += Redo_Click;
+            BtnSelect.Click += SelectTool_Click;
+            BtnAddText.Click += AddTextTool_Click;
+            BtnHighlight.Click += HighlightTool_Click;
+            BtnHighlightSettings.Click += HighlightSettings_Click;
+            BtnColorPicker.Click += ColorPickerTool_Click;
+            BtnAddImage.Click += AddImageTool_Click;
+            HighlightColorPicker.ColorChanged += HighlightColorPicker_ColorChanged;
+            SldHighlightOpacity.ValueChanged += HighlightOpacity_Changed;
+            CmbFontFamily.SelectionChanged += FontFamily_Changed;
+            CmbFontSize.SelectionChanged += FontSize_Changed;
+            BtnBold.Click += FontBold_Click;
+            BtnItalic.Click += FontItalic_Click;
+            ColorPalette.SelectionChanged += FontColor_Changed;
+            EditorToolbar.ZoomOutButton.Click += ZoomOut_Click;
+            EditorToolbar.ZoomInButton.Click += ZoomIn_Click;
+            EditorToolbar.FitToPageButton.Click += FitToPage_Click;
+
+            PageListView.SelectionChanged += PageListView_SelectionChanged;
+            PdfSurface.OpenButton.Click += OpenFile_Click;
+            PdfSurface.NewButton.Click += NewDocument_Click;
+            PdfScrollViewer.ViewChanged += PdfScrollViewer_ViewChanged;
+            OverlayCanvas.PointerPressed += OverlayCanvas_PointerPressed;
+            OverlayCanvas.PointerMoved += OverlayCanvas_PointerMoved;
+            OverlayCanvas.PointerReleased += OverlayCanvas_PointerReleased;
+            OverlayCanvas.DoubleTapped += OverlayCanvas_DoubleTapped;
+            PdfSurface.AlignLeftItem.Click += AlignLeft_Click;
+            PdfSurface.AlignRightItem.Click += AlignRight_Click;
+            PdfSurface.AlignTopItem.Click += AlignTop_Click;
+            PdfSurface.AlignBottomItem.Click += AlignBottom_Click;
+            PdfSurface.DeleteItem.Click += DeleteAnnotation_Click;
+
+            FindPanel.CloseButton.Click += CloseFindPanel_Click;
+            FindPanel.QueryTextBox.TextChanged += FindText_Changed;
+            FindPanel.QueryTextBox.KeyDown += TxtFindText_KeyDown;
+            FindPanel.PreviousButton.Click += FindPrevious_Click;
+            FindPanel.NextButton.Click += FindNext_Click;
+
+            BtnPrevPage.Click += PrevPage_Click;
+            BtnNextPage.Click += NextPage_Click;
+            TxtGoToPage.KeyDown += GoToPage_KeyDown;
+        }
+
         private void ApplyFontSettingsToControls()
         {
             if (CmbFontFamily != null)
@@ -357,57 +460,6 @@ namespace PDF_simple_edit
                 BtnItalic.IsChecked = _fontSettings.IsItalic;
             if (FontColorIndicator != null)
                 FontColorIndicator.Background = new SolidColorBrush(ParseColor(_fontSettings.Color));
-        }
-
-        private static void SetPersistedSetting(List<string> lines, string key, string value)
-        {
-            string prefix = key + "=";
-            int index = lines.FindIndex(line => line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
-            string setting = prefix + value;
-
-            if (index >= 0)
-                lines[index] = setting;
-            else
-                lines.Add(setting);
-        }
-
-        private static Dictionary<string, string> ReadPersistedSettings(IEnumerable<string> lines)
-        {
-            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string line in lines)
-            {
-                int separator = line.IndexOf('=');
-                if (separator <= 0)
-                    continue;
-
-                string key = line[..separator].Trim();
-                string value = line[(separator + 1)..].Trim();
-                values[key] = value;
-            }
-
-            return values;
-        }
-
-        private void LoadPersistedFontSettings(IReadOnlyDictionary<string, string> values)
-        {
-            if (values.TryGetValue("FontFamily", out string? fontFamily) && !string.IsNullOrWhiteSpace(fontFamily))
-                _fontSettings.FontFamily = fontFamily;
-
-            if (values.TryGetValue("FontSize", out string? fontSizeText) &&
-                double.TryParse(fontSizeText, NumberStyles.Float, CultureInfo.InvariantCulture, out double fontSize) &&
-                fontSize > 0)
-            {
-                _fontSettings.FontSize = fontSize;
-            }
-
-            if (values.TryGetValue("FontColor", out string? color) && !string.IsNullOrWhiteSpace(color))
-                _fontSettings.Color = color;
-
-            if (values.TryGetValue("IsBold", out string? boldText) && bool.TryParse(boldText, out bool isBold))
-                _fontSettings.IsBold = isBold;
-
-            if (values.TryGetValue("IsItalic", out string? italicText) && bool.TryParse(italicText, out bool isItalic))
-                _fontSettings.IsItalic = isItalic;
         }
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
@@ -1069,7 +1121,7 @@ private void FitToPage()
             TxtZoom.Text = $"{(int)(_zoomLevel * 100)}%";
         }
 
-        private void PdfScrollViewer_ViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
+        private void PdfScrollViewer_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)
         {
             if (PdfScrollViewer != null)
             {
@@ -1274,17 +1326,18 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 return;
             }
 
-            var found = FindAnnotationAt(pdfX, pdfY);
+            var found = _annotationContentService.FindAnnotationAt(
+                _annotations, _currentPageIndex, pdfX, pdfY);
 
             if (found == null)
             {
                 // 원본 콘텐츠(텍스트/이미지) 추출 및 히트 테스트
                 TxtStatus.Text = "페이지 콘텐츠 분석 중...";
                 var pageContents = await _pdfManager.ExtractPageContentsAsync(_currentPageIndex);
-                var match = GetBestContentMatch(pageContents, pdfX, pdfY);
+                var match = _annotationContentService.FindEditableContent(pageContents, pdfX, pdfY);
                 if (match != null)
                 {
-                    found = ConvertExistingContentToAnnotation(match);
+                    found = _annotationContentService.ConvertToAnnotation(match, _currentPageIndex);
 
                     if (found != null)
                     {
@@ -1448,348 +1501,6 @@ private async Task<Windows.UI.Color?> GetColorAtPointAsync(UIElement element, Wi
         System.Diagnostics.Debug.WriteLine($"Error picking color: {ex.Message}");
     }
     return null;
-}
-
-private PdfAnnotation? FindAnnotationAt(double pdfX, double pdfY)
-{
-    // 탐색 순서를 역순으로 하여 가장 위에 있는 것부터 찾음
-    for (int i = _annotations.Count - 1; i >= 0; i--)
-    {
-        var ann = _annotations[i];
-        if (ann.PageIndex != _currentPageIndex) continue;
-
-        if (ann.Type == AnnotationType.Text || ann.Type == AnnotationType.FreeText)
-        {
-            // 텍스트의 경우 대략적인 범위 계산 (패딩 넉넉히)
-            double width = ann.Width > 0 ? ann.Width : (ann.Content.Length * ann.FontSize * 0.8) + 10;
-            double height = ann.Height > 0 ? ann.Height : ann.FontSize * 1.4;
-            if (pdfX >= ann.X - 5 && pdfX <= ann.X + width &&
-                pdfY >= ann.Y - 5 && pdfY <= ann.Y + height)
-            {
-                return ann;
-            }
-        }
-        else if (ann.Type == AnnotationType.Highlight || ann.Type == AnnotationType.Image)
-        {
-            if (pdfX >= ann.X && pdfX <= ann.X + ann.Width &&
-                pdfY >= ann.Y && pdfY <= ann.Y + ann.Height)
-            {
-                return ann;
-            }
-        }
-    }
-    return null;
-}
-
-private SearchResult? GetBestMatch(List<SearchResult> texts, double x, double y)
-{
-    // Find text that contains the point, or is very close
-    return texts.FirstOrDefault(t => 
-        x >= t.X - 2 && x <= t.X + t.Width + 2 &&
-        y >= t.Y - 2 && y <= t.Y + t.Height + 2);
-}
-
-private PdfPageContent? GetBestContentMatch(List<PdfPageContent> contents, double x, double y)
-{
-    // Hit test with a small buffer for easier selection
-    int matchIndex = contents.FindIndex(c =>
-        x >= c.X - 5 && x <= c.X + c.Width + 5 &&
-        y >= c.Y - 5 && y <= c.Y + c.Height + 5);
-
-    if (matchIndex < 0)
-        return null;
-
-    var match = contents[matchIndex];
-    if (match.Type != PageContentType.Text)
-        return match;
-
-    // A PDF can split one visible paragraph into several text regions even
-    // when the font and layout are continuous. Expand the selected region so
-    // editing the first line does not hide the following lines.
-    var expanded = ClonePageContentForEditing(match);
-    int startIndex = matchIndex;
-    while (startIndex > 0 && CanJoinTextRegions(contents[startIndex - 1], expanded, out bool prependNewLine))
-    {
-        expanded = MergeTextRegions(contents[startIndex - 1], expanded, prependNewLine);
-        startIndex--;
-    }
-
-    int nextIndex = matchIndex + 1;
-    while (nextIndex < contents.Count && CanJoinTextRegions(expanded, contents[nextIndex], out bool appendNewLine))
-    {
-        expanded = MergeTextRegions(expanded, contents[nextIndex], appendNewLine);
-        nextIndex++;
-    }
-
-    return expanded;
-}
-
-private static PdfPageContent ClonePageContentForEditing(PdfPageContent source)
-{
-    return new PdfPageContent
-    {
-        Type = source.Type,
-        X = source.X,
-        Y = source.Y,
-        Width = source.Width,
-        Height = source.Height,
-        Text = source.Text,
-        OriginalPdfX = source.OriginalPdfX,
-        OriginalPdfY = source.OriginalPdfY,
-        OperatorId = source.OperatorId,
-        FontSize = source.FontSize,
-        FontFamily = source.FontFamily,
-        Color = source.Color,
-        IsBold = source.IsBold,
-        IsItalic = source.IsItalic,
-        ContentStreamIndex = source.ContentStreamIndex,
-        ContentStreamObjectNumber = source.ContentStreamObjectNumber,
-        OperationIndex = source.OperationIndex,
-        TextRenderMode = source.TextRenderMode,
-        LineHeight = source.LineHeight,
-        BaselineOffset = source.BaselineOffset,
-        OriginalFontObjectNumber = source.OriginalFontObjectNumber,
-        TextFragments = source.TextFragments.Select(fragment => fragment.Clone()).ToList(),
-        ImageId = source.ImageId
-    };
-}
-
-private static bool CanJoinTextRegions(
-    PdfPageContent first,
-    PdfPageContent second,
-    out bool startsNewLine)
-{
-    startsNewLine = false;
-    if (first.Type != PageContentType.Text || second.Type != PageContentType.Text ||
-        first.TextFragments.Count == 0 || second.TextFragments.Count == 0)
-        return false;
-
-    double referenceSize = Math.Max(first.FontSize, 1);
-    if (!string.Equals(first.FontFamily, second.FontFamily, StringComparison.OrdinalIgnoreCase) ||
-        Math.Abs(first.FontSize - second.FontSize) > Math.Max(0.75, referenceSize * 0.2) ||
-        !string.Equals(first.Color, second.Color, StringComparison.OrdinalIgnoreCase) ||
-        first.IsBold != second.IsBold || first.IsItalic != second.IsItalic)
-        return false;
-
-    var previous = first.TextFragments[^1];
-    var current = second.TextFragments[0];
-    double fontSize = Math.Max(Math.Max(previous.FontSize, current.FontSize), 1);
-    double topDelta = Math.Abs(previous.Y - current.Y);
-    if (topDelta <= Math.Max(1.25, fontSize * 0.4))
-    {
-        double gap = current.X - (previous.X + previous.Width);
-        return gap >= -fontSize && gap <= fontSize * 2.75;
-    }
-
-    if (current.Y <= previous.Y || current.Y - previous.Y > Math.Max(fontSize * 1.8, 16))
-        return false;
-
-    double overlap = Math.Min(first.X + first.Width, current.X + current.Width)
-                   - Math.Max(first.X, current.X);
-    double minWidth = Math.Max(Math.Min(first.Width, current.Width), 1);
-    bool sameColumn = overlap / minWidth >= 0.25 ||
-        Math.Abs(current.X - first.X) <= Math.Max(24, fontSize * 2.5);
-    startsNewLine = sameColumn;
-    return sameColumn;
-}
-
-private static PdfPageContent MergeTextRegions(
-    PdfPageContent first,
-    PdfPageContent second,
-    bool startsNewLine)
-{
-    var merged = ClonePageContentForEditing(first);
-    var previous = merged.TextFragments[^1];
-    var current = second.TextFragments[0];
-
-    if (startsNewLine)
-    {
-        merged.Text = NormalizeLineEndings(merged.Text) + "\r\n" + NormalizeLineEndings(second.Text);
-        double detectedLineHeight = Math.Abs(current.Y - previous.Y);
-        if (detectedLineHeight > 0.1)
-            merged.LineHeight = merged.LineHeight > 0.1
-                ? (merged.LineHeight + detectedLineHeight) / 2.0
-                : detectedLineHeight;
-    }
-    else
-    {
-        double gap = current.X - (previous.X + previous.Width);
-        bool needsSpace = gap > Math.Max(previous.FontSize, current.FontSize) * 0.15 &&
-            !merged.Text.EndsWith(" ", StringComparison.Ordinal) &&
-            !second.Text.StartsWith(" ", StringComparison.Ordinal);
-        merged.Text = merged.Text + (needsSpace ? " " : string.Empty) + second.Text;
-    }
-
-    int sourceLine = second.TextFragments.Min(fragment => fragment.LineIndex);
-    int targetLine = merged.TextFragments.Max(fragment => fragment.LineIndex) +
-        (startsNewLine ? 1 : 0);
-    foreach (var fragment in second.TextFragments.Select(fragment => fragment.Clone()))
-    {
-        fragment.LineIndex += targetLine - sourceLine;
-        merged.TextFragments.Add(fragment);
-    }
-
-    double left = Math.Min(merged.X, second.X);
-    double top = Math.Min(merged.Y, second.Y);
-    double right = Math.Max(merged.X + merged.Width, second.X + second.Width);
-    double bottom = Math.Max(merged.Y + merged.Height, second.Y + second.Height);
-    merged.X = left;
-    merged.Y = top;
-    merged.Width = right - left;
-    merged.Height = bottom - top;
-    return merged;
-}
-
-private PdfAnnotation ConvertExistingContentToAnnotation(PdfPageContent content)
-{
-    bool isText = content.Type == PageContentType.Text;
-    string fontFamily = isText && !string.IsNullOrEmpty(content.FontFamily) ? content.FontFamily : "맑은 고딕";
-    double fontSize = isText && content.FontSize > 0 ? content.FontSize : (content.Height > 0 ? content.Height : 12);
-    bool isBold = isText && content.IsBold;
-    bool isItalic = isText && content.IsItalic;
-
-    double width = content.Width;
-    double height = content.Height;
-    string editableText = isText ? BuildEditableText(content) : content.Text ?? string.Empty;
-
-    return new PdfAnnotation
-    {
-        Type = isText ? AnnotationType.Text : AnnotationType.Image,
-        PageIndex = _currentPageIndex,
-        X = content.X,
-        Y = content.Y,
-        Content = editableText,
-        Width = width,
-        Height = height,
-        IsOriginalTextReplacement = isText,
-        IsOriginalImageReplacement = !isText,
-        OriginalPdfX = content.OriginalPdfX,
-        OriginalPdfY = content.OriginalPdfY,
-        OriginalText = editableText,
-        OriginalImageName = isText ? null : content.ImageId,
-        ImagePath = isText ? null : (string.IsNullOrEmpty(content.Text) ? null : content.Text),
-        OperatorId = content.OperatorId,
-        ContentStreamIndex = content.ContentStreamIndex,
-        ContentStreamObjectNumber = content.ContentStreamObjectNumber,
-        OperationIndex = content.OperationIndex,
-        TextRenderMode = content.TextRenderMode,
-        LineHeight = content.LineHeight,
-        BaselineOffset = content.BaselineOffset,
-        OriginalFontObjectNumber = content.OriginalFontObjectNumber,
-        TextFragments = content.TextFragments.Select(fragment => fragment.Clone()).ToList(),
-        FontSize = fontSize,
-        FontFamily = fontFamily,
-        Color = content.Color,
-        IsBold = isBold,
-        IsItalic = isItalic,
-        IsApplied = false
-    };
-}
-
-private static string BuildEditableText(PdfPageContent content)
-{
-    string fallback = NormalizeLineEndings(content.Text ?? string.Empty);
-    if (content.TextFragments.Count < 2)
-        return fallback;
-
-    var indexedLines = content.TextFragments
-        .GroupBy(fragment => fragment.LineIndex)
-        .OrderBy(group => group.Key)
-        .Select(group => group.OrderBy(fragment => fragment.X).ToList())
-        .ToList();
-
-    // 일부 PDF는 여러 줄을 하나의 텍스트 그룹으로 추출하면서 모든 조각의
-    // LineIndex를 0으로 남깁니다. 이 경우 실제 화면 Y 좌표로 다시 나눕니다.
-    if (indexedLines.Count == 1)
-    {
-        indexedLines = new List<List<PdfTextFragment>>();
-        foreach (var fragment in content.TextFragments.OrderBy(fragment => fragment.Y).ThenBy(fragment => fragment.X))
-        {
-            var line = indexedLines.LastOrDefault();
-            double lineTolerance = Math.Max(1.25, Math.Max(fragment.FontSize, content.FontSize) * 0.35);
-            if (line == null || Math.Abs(fragment.Y - line.Average(item => item.Y)) > lineTolerance)
-                indexedLines.Add(new List<PdfTextFragment>());
-
-            indexedLines[^1].Add(fragment);
-        }
-    }
-
-    if (indexedLines.Count < 2)
-        return fallback;
-
-    var lines = indexedLines
-        .Select(line => JoinTextFragments(line.OrderBy(fragment => fragment.X)))
-        .Where(line => line.Length > 0)
-        .ToList();
-
-    return lines.Count >= 2 ? string.Join("\r\n", lines) : fallback;
-}
-
-private static string BuildEditableText(PdfAnnotation annotation)
-{
-    return BuildEditableText(new PdfPageContent
-    {
-        Text = annotation.Content,
-        FontSize = annotation.FontSize,
-        TextFragments = annotation.TextFragments
-    });
-}
-
-private static string JoinTextFragments(IEnumerable<PdfTextFragment> fragments)
-{
-    string result = string.Empty;
-    PdfTextFragment? previous = null;
-
-    foreach (var fragment in fragments)
-    {
-        if (previous != null)
-        {
-            double gap = fragment.X - (previous.X + previous.Width);
-            bool needsSpace = gap > Math.Max(previous.FontSize, fragment.FontSize) * 0.15
-                && !result.EndsWith(" ", StringComparison.Ordinal)
-                && !fragment.Text.StartsWith(" ", StringComparison.Ordinal);
-            if (needsSpace)
-                result += " ";
-        }
-
-        result += fragment.Text;
-        previous = fragment;
-    }
-
-    return result;
-}
-
-private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
-{
-    string fontFamily = !string.IsNullOrEmpty(textObj.FontFamily) ? textObj.FontFamily : "맑은 고딕";
-    double fontSize = textObj.FontSize > 0 ? textObj.FontSize : (textObj.Height > 0 ? textObj.Height : 12);
-    bool isBold = textObj.IsBold;
-    bool isItalic = textObj.IsItalic;
-    
-    return new PdfAnnotation
-    {
-        Type = AnnotationType.Text,
-        PageIndex = _currentPageIndex,
-        X = textObj.X,
-        Y = textObj.Y,
-        Content = textObj.FoundText ?? string.Empty,
-        Width = textObj.Width,
-        Height = textObj.Height,
-        IsOriginalTextReplacement = true,
-        OriginalPdfX = textObj.OriginalPdfX,
-        OriginalPdfY = textObj.OriginalPdfY,
-        OriginalText = textObj.FoundText ?? string.Empty,
-        OperatorId = textObj.OperatorId,
-        ContentStreamIndex = textObj.ContentStreamIndex,
-        OperationIndex = textObj.OperationIndex,
-        TextRenderMode = textObj.TextRenderMode,
-        FontSize = fontSize,
-        FontFamily = fontFamily,
-        Color = textObj.Color,
-        IsBold = isBold,
-        IsItalic = isItalic,
-        IsApplied = false
-    };
 }
 
         private void OverlayCanvas_PointerMoved(object sender, PointerRoutedEventArgs e)
@@ -1980,7 +1691,8 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             double pdfX = pos.X / PdfToPixels;
             double pdfY = pos.Y / PdfToPixels;
 
-            var ann = FindAnnotationAt(pdfX, pdfY);
+            var ann = _annotationContentService.FindAnnotationAt(
+                _annotations, _currentPageIndex, pdfX, pdfY);
             if (ann != null)
             {
                 EditAnnotationContent(ann);
@@ -2048,9 +1760,9 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         else
                         {
                             bool hasOriginalLineLayout = ann.TextFragments.Count > 1;
-                            bool containsLineBreak = ContainsLineBreak(ann.Content);
+                            bool containsLineBreak = AnnotationTextLayoutService.ContainsLineBreak(ann.Content);
                             double displayFontSize = hasOriginalLineLayout
-                                ? GetOriginalLayoutFontSize(ann, ann.Content)
+                                ? AnnotationTextLayoutService.GetDisplayFontSize(ann, ann.Content)
                                 : ann.FontSize;
                             element = new TextBlock
                             {
@@ -2066,7 +1778,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                                 Height = hasOriginalLineLayout
                                     ? Math.Max(ann.Height * PdfToPixels, 1)
                                     : containsLineBreak
-                                        ? GetLineAwareHeight(ann, ann.Content, ann.FontSize)
+                                        ? AnnotationTextLayoutService.GetMultilineHeight(ann, ann.Content, ann.FontSize)
                                         : double.NaN,
                                 FontFamily = new FontFamily(ann.FontFamily),
                                 FontSize = displayFontSize * PdfToPixels,
@@ -2080,7 +1792,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                                 RenderTransform = hasOriginalLineLayout
                                     ? new TranslateTransform
                                     {
-                                        Y = GetOriginalLayoutTopOffset(ann, displayFontSize)
+                                        Y = AnnotationTextLayoutService.GetTopOffset(ann, displayFontSize)
                                     }
                                     : null,
                                 Padding = new Thickness(0),
@@ -2161,98 +1873,6 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                         }
                     }
             }
-        }
-
-        private static double GetOriginalLayoutFontSize(PdfAnnotation annotation, string text)
-        {
-            if (annotation.FontSize <= 0 || annotation.Width <= 0 || annotation.TextFragments.Count < 2)
-                return annotation.FontSize;
-
-            try
-            {
-                // MeasureText는 PDF 포인트 단위의 실제 WinUI 측정 폭을 반환합니다.
-                // TextBox의 좌우 1px 테두리를 제외하고 원문 bounds 안에 들어오도록
-                // 표시용 크기만 보정합니다. PDF에 저장되는 ann.FontSize는 바꾸지 않습니다.
-                var measured = MeasureTextForOriginalLayout(
-                    text,
-                    annotation.FontFamily,
-                    annotation.FontSize,
-                    annotation.IsBold,
-                    annotation.IsItalic);
-                double availableWidth = Math.Max(annotation.Width - (2.0 / PdfToPixels), 1);
-                if (measured <= availableWidth)
-                    return annotation.FontSize;
-
-                double scale = availableWidth / measured;
-                return Math.Max(annotation.FontSize * scale, 1);
-            }
-            catch
-            {
-                return annotation.FontSize;
-            }
-        }
-
-        private static double GetOriginalLayoutTopOffset(PdfAnnotation annotation, double displayFontSize)
-        {
-            if (annotation.BaselineOffset <= 0.1)
-                return 0;
-
-            double uiBaselineOffset = displayFontSize * PdfToPixels * 0.8;
-            try
-            {
-                var sample = new TextBlock
-                {
-                    Text = "Ag",
-                    FontFamily = new FontFamily(annotation.FontFamily),
-                    FontSize = displayFontSize * PdfToPixels,
-                    FontWeight = annotation.IsBold
-                        ? Microsoft.UI.Text.FontWeights.Bold
-                        : Microsoft.UI.Text.FontWeights.Normal,
-                    FontStyle = annotation.IsItalic
-                        ? Windows.UI.Text.FontStyle.Italic
-                        : Windows.UI.Text.FontStyle.Normal,
-                    TextWrapping = TextWrapping.NoWrap,
-                    Padding = new Thickness(0)
-                };
-                sample.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
-
-                var baselineProperty = typeof(TextBlock).GetProperty("BaselineOffset");
-                if (baselineProperty?.GetValue(sample) is double measuredBaseline && measuredBaseline > 0.1)
-                    uiBaselineOffset = measuredBaseline;
-            }
-            catch
-            {
-                // Use the font-size estimate when the platform does not expose the baseline.
-            }
-
-            // PDF bounds are top-based, while the text control positions its glyphs
-            // from the baseline. Account for the TextBox's 1px border as well.
-            return annotation.BaselineOffset * PdfToPixels - (uiBaselineOffset + 1);
-        }
-
-        private static double MeasureTextForOriginalLayout(
-            string text,
-            string fontFamily,
-            double fontSize,
-            bool isBold,
-            bool isItalic)
-        {
-            var textBlock = new TextBlock
-            {
-                Text = text,
-                FontFamily = new FontFamily(fontFamily),
-                FontSize = fontSize * PdfToPixels,
-                FontWeight = isBold
-                    ? Microsoft.UI.Text.FontWeights.Bold
-                    : Microsoft.UI.Text.FontWeights.Normal,
-                FontStyle = isItalic
-                    ? Windows.UI.Text.FontStyle.Italic
-                    : Windows.UI.Text.FontStyle.Normal,
-                TextWrapping = TextWrapping.NoWrap,
-                Padding = new Thickness(0)
-            };
-            textBlock.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
-            return Math.Max((textBlock.DesiredSize.Width - 2.0) / PdfToPixels, 1);
         }
 
         private void AddResizeHandles(PdfAnnotation ann, ref int insertIndex)
@@ -2344,67 +1964,6 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
         #region Text Input (Inline & Dialog)
 
-        private static bool ContainsLineBreak(string? text)
-        {
-            return !string.IsNullOrEmpty(text) &&
-                (text.Contains('\r') || text.Contains('\n'));
-        }
-
-        private static int GetLineCount(string? text)
-        {
-            if (string.IsNullOrEmpty(text))
-                return 1;
-
-            return text.Replace("\r\n", "\n", StringComparison.Ordinal)
-                .Replace('\r', '\n')
-                .Split('\n').Length;
-        }
-
-        private static double GetLineAwareHeight(PdfAnnotation annotation, string text, double fontSize)
-        {
-            // PDF의 LineHeight는 일부 파일에서 실제 UI 글꼴 높이보다 작게
-            // 추출됩니다. 실제 편집 글꼴 기준으로 필요한 높이를 계산합니다.
-            double uiLineHeight = Math.Max(
-                fontSize * PdfToPixels * 1.35,
-                annotation.LineHeight > 0.1 ? annotation.LineHeight * PdfToPixels : 0);
-            double requiredUiHeight = GetLineCount(text) * uiLineHeight + 8;
-            return Math.Max(annotation.Height * PdfToPixels, requiredUiHeight);
-        }
-
-        private static double MeasureInlineTextHeight(
-            string text,
-            double width,
-            string fontFamily,
-            double fontSize,
-            bool isBold,
-            bool isItalic)
-        {
-            var textBlock = new TextBlock
-            {
-                Text = text,
-                Width = Math.Max(width, 1),
-                FontFamily = new FontFamily(fontFamily),
-                FontSize = fontSize * PdfToPixels,
-                FontWeight = isBold
-                    ? Microsoft.UI.Text.FontWeights.Bold
-                    : Microsoft.UI.Text.FontWeights.Normal,
-                FontStyle = isItalic
-                    ? Windows.UI.Text.FontStyle.Italic
-                    : Windows.UI.Text.FontStyle.Normal,
-                TextWrapping = TextWrapping.Wrap,
-                Padding = new Thickness(0)
-            };
-            textBlock.Measure(new Windows.Foundation.Size(width, double.PositiveInfinity));
-            return textBlock.DesiredSize.Height + 8;
-        }
-        private static string NormalizeLineEndings(string text)
-        {
-            return text
-                .Replace("\r\n", "\n", StringComparison.Ordinal)
-                .Replace('\r', '\n')
-                .Replace("\n", "\r\n", StringComparison.Ordinal);
-        }
-
         private static bool IsControlKeyDown()
         {
             try
@@ -2452,7 +2011,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             bool isBold = existingAnn?.IsBold ?? _fontSettings.IsBold;
             bool isItalic = existingAnn?.IsItalic ?? _fontSettings.IsItalic;
             string initialText = existingAnn != null
-                ? BuildEditableText(existingAnn)
+                ? _annotationContentService.BuildEditableText(existingAnn)
                 : string.Empty;
             double inlineWidth = existingAnn != null
                 ? Math.Max(existingAnn.Width * PdfToPixels, 1)
@@ -2465,10 +2024,10 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                 ? Math.Max(existingAnn.Height * PdfToPixels, 1)
                 : 24;
             double displayFontSize = existingAnn != null
-                ? GetOriginalLayoutFontSize(existingAnn, initialText)
+                ? AnnotationTextLayoutService.GetDisplayFontSize(existingAnn, initialText)
                 : fontSize;
             double inlineTopOffset = existingAnn != null
-                ? GetOriginalLayoutTopOffset(existingAnn, displayFontSize)
+                ? AnnotationTextLayoutService.GetTopOffset(existingAnn, displayFontSize)
                 : 0;
 
             var textBox = new TextBox
@@ -2575,12 +2134,12 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             {
                 // 원문 bounds를 유지하면서도 편집 중 긴 문자열이 오른쪽에서
                 // 잘리지 않도록 표시용 글꼴 크기를 현재 내용에 맞춰 조정합니다.
-                double displayFontSize = GetOriginalLayoutFontSize(session.Annotation, changedText);
+                double displayFontSize = AnnotationTextLayoutService.GetDisplayFontSize(session.Annotation, changedText);
                 textBox.FontSize = displayFontSize * PdfToPixels;
                 Canvas.SetTop(
                     textBox,
                     session.Annotation.Y * PdfToPixels +
-                    GetOriginalLayoutTopOffset(session.Annotation, displayFontSize));
+                    AnnotationTextLayoutService.GetTopOffset(session.Annotation, displayFontSize));
             }
 
             if (session.Annotation.IsOriginalTextReplacement && session.RemovalTask == null)
@@ -2996,58 +2555,30 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             
             try
             {
-                var result = await Task.Run(() => {
-                    var pdfBytes = _pdfManager.GetPdfBytes();
-                    if (pdfBytes == null) return null;
+                byte[]? pdfBytes = _pdfManager.GetPdfBytes();
+                if (pdfBytes == null)
+                    return;
+                PdfSearchMatch? result = await _pdfSearchService.FindAsync(
+                    pdfBytes,
+                    searchText,
+                    _currentPageIndex,
+                    forward,
+                    ChkMatchCase.IsChecked == true);
 
-                    using (var ms = new MemoryStream(pdfBytes))
-                    using (var reader = new PdfReader(ms))
-                    using (var doc = new PdfDocument(reader))
-                    {
-                        int totalPages = doc.GetNumberOfPages();
-                        int startPage = _currentPageIndex + 1;
-                        
-                        for (int i = 0; i < totalPages; i++)
-                        {
-                            int pageNum = forward
-                                ? ((startPage + i - 1) % totalPages) + 1
-                                : ((startPage - i - 1 + totalPages) % totalPages) + 1;
-                            
-                            var page = doc.GetPage(pageNum);
-                            var strategy = new SimpleTextLocationStrategy(searchText);
-                            var processor = new iText.Kernel.Pdf.Canvas.Parser.PdfCanvasProcessor(strategy);
-                            processor.ProcessPageContent(page);
-                            strategy.FindMatches();
-                            
-                            if (strategy.ResultRects.Count > 0)
-                            {
-                                return new { 
-                                    PageNum = pageNum, 
-                                    Found = true, 
-                                    Rects = strategy.ResultRects.Select(r => new { L = r.GetLeft(), B = r.GetBottom(), W = r.GetWidth(), H = r.GetHeight(), T = r.GetTop() }).ToList() 
-                                };
-                            }
-                        }
-                    }
-                    return null;
-                });
-
-                if (result != null && result.Found)
+                if (result != null)
                 {
-                    if (_currentPageIndex != result.PageNum - 1)
+                    if (_currentPageIndex != result.PageNumber - 1)
                     {
-                        _currentPageIndex = result.PageNum - 1;
+                        _currentPageIndex = result.PageNumber - 1;
                         await RenderCurrentPageAsync();
                         SyncPageListSelection();
                     }
                     
                     ClearSearchHighlights();
-                    foreach (var r in result.Rects)
-                    {
-                        HighlightSearchMatch(new iText.Kernel.Geom.Rectangle((float)r.L, (float)r.B, (float)r.W, (float)r.H));
-                    }
+                    foreach (var rectangle in result.Rectangles)
+                        HighlightSearchMatch(rectangle);
 
-                    TxtStatus.Text = $"{result.PageNum} 페이지에서 {result.Rects.Count}개의 일치 항목을 찾았습니다.";
+                    TxtStatus.Text = $"{result.PageNumber} 페이지에서 {result.Rectangles.Count}개의 일치 항목을 찾았습니다.";
                 }
                 else
                 {
@@ -3105,88 +2636,6 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
             // 해당 위치로 스크롤 (첫 번째 일치 항목만 스크롤하도록 호출자가 제어할 수도 있지만 여기서는 일단 이동)
             PdfScrollViewer.ChangeView(x * _zoomLevel, y * _zoomLevel, null);
-        }
-
-        private class SimpleTextLocationStrategy : iText.Kernel.Pdf.Canvas.Parser.Listener.ITextExtractionStrategy
-        {
-            private readonly string _query;
-            private readonly List<iText.Kernel.Pdf.Canvas.Parser.Data.TextRenderInfo> _infos = new();
-            public List<iText.Kernel.Geom.Rectangle> ResultRects { get; } = new();
-
-            public SimpleTextLocationStrategy(string query)
-            {
-                _query = query.Normalize(System.Text.NormalizationForm.FormC).ToLower();
-            }
-
-            public void EventOccurred(iText.Kernel.Pdf.Canvas.Parser.Data.IEventData data, iText.Kernel.Pdf.Canvas.Parser.EventType type)
-            {
-                if (type == iText.Kernel.Pdf.Canvas.Parser.EventType.RENDER_TEXT)
-                {
-                    var textInfo = (iText.Kernel.Pdf.Canvas.Parser.Data.TextRenderInfo)data;
-                    textInfo.PreserveGraphicsState();
-                    _infos.Add(textInfo);
-                }
-            }
-
-            public ICollection<iText.Kernel.Pdf.Canvas.Parser.EventType> GetSupportedEvents() => 
-                new[] { iText.Kernel.Pdf.Canvas.Parser.EventType.RENDER_TEXT };
-
-            public string GetResultantText() => "";
-
-            public void FindMatches()
-            {
-                if (string.IsNullOrEmpty(_query)) return;
-
-                System.Text.StringBuilder sb = new System.Text.StringBuilder();
-                List<int> charToInfoIndex = new List<int>();
-
-                for (int i = 0; i < _infos.Count; i++)
-                {
-                    string text = _infos[i].GetText();
-                    if (string.IsNullOrEmpty(text)) continue;
-                    
-                    text = text.Normalize(System.Text.NormalizationForm.FormC).ToLower();
-                    foreach (char c in text)
-                    {
-                        sb.Append(c);
-                        charToInfoIndex.Add(i);
-                    }
-                    // Add a space to separate tokens if they are logically separate, 
-                    // but iText usually provides spaces as separate RENDER_TEXT events.
-                }
-
-                string fullText = sb.ToString();
-                int idx = fullText.IndexOf(_query);
-                while (idx != -1)
-                {
-                    int lastCharIdx = idx + _query.Length - 1;
-                    if (lastCharIdx < charToInfoIndex.Count)
-                    {
-                        int startInfo = charToInfoIndex[idx];
-                        int endInfo = charToInfoIndex[lastCharIdx];
-
-                        float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
-                        for (int i = startInfo; i <= endInfo; i++)
-                        {
-                            var info = _infos[i];
-                            var baseline = info.GetBaseline().GetStartPoint();
-                            var ascent = info.GetAscentLine().GetEndPoint();
-                            var descent = info.GetDescentLine().GetStartPoint();
-
-                            minX = Math.Min(minX, Math.Min(baseline.Get(0), info.GetAscentLine().GetStartPoint().Get(0)));
-                            minY = Math.Min(minY, descent.Get(1));
-                            maxX = Math.Max(maxX, Math.Max(info.GetAscentLine().GetEndPoint().Get(0), info.GetBaseline().GetEndPoint().Get(0)));
-                            maxY = Math.Max(maxY, ascent.Get(1));
-                        }
-
-                        if (minX != float.MaxValue)
-                        {
-                            ResultRects.Add(new iText.Kernel.Geom.Rectangle(minX, minY, maxX - minX, maxY - minY));
-                        }
-                    }
-                    idx = fullText.IndexOf(_query, idx + 1);
-                }
-            }
         }
 
         #endregion
@@ -4010,83 +3459,22 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             await dialog.ShowAsync();
         }
 
-        private string GetSettingsFilePath()
-        {
-            var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PDF_simple_edit");
-            if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
-            return Path.Combine(folder, "window_settings.txt");
-        }
-
         private void SaveWindowPosition()
         {
-            // InitializeComponent 및 설정 복원 중에는 컨트롤 이벤트가 발생해도
-            // 아직 저장하지 않습니다. 이 시점에 저장하면 기존 설정을 기본값으로
-            // 덮어쓸 수 있습니다.
             if (_isInitializing || _isRestoringSettings)
                 return;
 
-            try
-            {
-                string path = GetSettingsFilePath();
-                var lines = File.Exists(path)
-                    ? File.ReadAllLines(path).ToList()
-                    : new List<string>();
-
-                // 이전 버전은 위치와 크기를 숫자 4줄로 저장했습니다. 기존 값이
-                // 있으면 새 키 형식으로 옮긴 뒤, 이후에는 한 가지 형식만 유지합니다.
-                var existingValues = ReadPersistedSettings(lines);
-                bool hasKeyBounds = existingValues.ContainsKey("WindowX") &&
-                                    existingValues.ContainsKey("WindowY") &&
-                                    existingValues.ContainsKey("WindowWidth") &&
-                                    existingValues.ContainsKey("WindowHeight");
-                if (!hasKeyBounds && lines.Count >= 4 &&
-                    int.TryParse(lines[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int legacyX) &&
-                    int.TryParse(lines[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int legacyY) &&
-                    int.TryParse(lines[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int legacyWidth) &&
-                    int.TryParse(lines[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out int legacyHeight))
-                {
-                    SetPersistedSetting(lines, "WindowX", legacyX.ToString(CultureInfo.InvariantCulture));
-                    SetPersistedSetting(lines, "WindowY", legacyY.ToString(CultureInfo.InvariantCulture));
-                    SetPersistedSetting(lines, "WindowWidth", legacyWidth.ToString(CultureInfo.InvariantCulture));
-                    SetPersistedSetting(lines, "WindowHeight", legacyHeight.ToString(CultureInfo.InvariantCulture));
-                }
-
-                if (lines.Any(line => line.IndexOf('=') <= 0))
-                    lines = lines.Where(line => line.IndexOf('=') > 0).ToList();
-
-                var hwnd = WindowNative.GetWindowHandle(this);
-                var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
-                var appWindow = AppWindow.GetFromWindowId(windowId);
-
-                bool isMaximized = appWindow?.Presenter is OverlappedPresenter presenter &&
-                                   presenter.State == OverlappedPresenterState.Maximized;
-
-                // 최대화 중에는 현재 최대화된 크기를 저장하지 않습니다. 기존의
-                // 마지막 일반 창 크기를 보존하여 다음 실행 때 창이 과도하게 커지지
-                // 않도록 합니다.
-                if (appWindow != null && !isMaximized)
-                {
-                    var pos = appWindow.Position;
-                    var size = appWindow.Size;
-
-                    SetPersistedSetting(lines, "WindowX", pos.X.ToString(CultureInfo.InvariantCulture));
-                    SetPersistedSetting(lines, "WindowY", pos.Y.ToString(CultureInfo.InvariantCulture));
-                    SetPersistedSetting(lines, "WindowWidth", size.Width.ToString(CultureInfo.InvariantCulture));
-                    SetPersistedSetting(lines, "WindowHeight", size.Height.ToString(CultureInfo.InvariantCulture));
-                }
-
-                SetPersistedSetting(lines, "FontFamily", _fontSettings.FontFamily);
-                SetPersistedSetting(lines, "FontSize", _fontSettings.FontSize.ToString("0.##", CultureInfo.InvariantCulture));
-                SetPersistedSetting(lines, "FontColor", _fontSettings.Color);
-                SetPersistedSetting(lines, "IsBold", _fontSettings.IsBold.ToString(CultureInfo.InvariantCulture));
-                SetPersistedSetting(lines, "IsItalic", _fontSettings.IsItalic.ToString(CultureInfo.InvariantCulture));
-
-                File.WriteAllLines(path, lines);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"SaveWindowPosition error: {ex.Message}");
-            }
+            AppWindow? appWindow = GetAppWindow();
+            bool isMaximized = appWindow?.Presenter is OverlappedPresenter presenter &&
+                               presenter.State == OverlappedPresenterState.Maximized;
+            WindowPlacement? placement = appWindow != null && !isMaximized
+                ? new WindowPlacement(
+                    appWindow.Position.X,
+                    appWindow.Position.Y,
+                    appWindow.Size.Width,
+                    appWindow.Size.Height)
+                : null;
+            _settingsService.Save(placement, _fontSettings);
         }
 
         private void LoadWindowPosition()
@@ -4094,63 +3482,14 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             _isRestoringSettings = true;
             try
             {
-                string path = GetSettingsFilePath();
-                if (File.Exists(path))
-                {
-                    var lines = File.ReadAllLines(path);
-                    var values = ReadPersistedSettings(lines);
-                    LoadPersistedFontSettings(values);
-
-                    int x = 0, y = 0, width = 0, height = 0;
-                    bool hasBounds =
-                        values.TryGetValue("WindowX", out string? xText) &&
-                        values.TryGetValue("WindowY", out string? yText) &&
-                        values.TryGetValue("WindowWidth", out string? widthText) &&
-                        values.TryGetValue("WindowHeight", out string? heightText) &&
-                        int.TryParse(xText, NumberStyles.Integer, CultureInfo.InvariantCulture, out x) &&
-                        int.TryParse(yText, NumberStyles.Integer, CultureInfo.InvariantCulture, out y) &&
-                        int.TryParse(widthText, NumberStyles.Integer, CultureInfo.InvariantCulture, out width) &&
-                        int.TryParse(heightText, NumberStyles.Integer, CultureInfo.InvariantCulture, out height);
-
-                    // 이전 버전의 4줄 형식도 읽을 수 있도록 유지합니다.
-                    if (!hasBounds && lines.Length >= 4 &&
-                        int.TryParse(lines[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out x) &&
-                        int.TryParse(lines[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out y) &&
-                        int.TryParse(lines[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out width) &&
-                        int.TryParse(lines[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out height))
-                    {
-                        hasBounds = true;
-                    }
-
-                    if (hasBounds)
-                    {
-                        var hwnd = WindowNative.GetWindowHandle(this);
-                        var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
-                        var appWindow = AppWindow.GetFromWindowId(windowId);
-                        if (appWindow != null)
-                        {
-                            appWindow.MoveAndResize(new Windows.Graphics.RectInt32(x, y, (int)width, (int)height));
-                        }
-                    }
-
-                    ApplyFontSettingsToControls();
-                    if (hasBounds)
-                        return;
-                }
-
-                var hwndDefault = WindowNative.GetWindowHandle(this);
-                var windowIdDefault = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwndDefault);
-                var appWindowDefault = AppWindow.GetFromWindowId(windowIdDefault);
-                if (appWindowDefault != null)
-                {
-                    appWindowDefault.Resize(new Windows.Graphics.SizeInt32(1400, 900));
-                }
-
+                WindowPlacement? placement = _settingsService.Load(_fontSettings);
+                AppWindow? appWindow = GetAppWindow();
+                if (appWindow != null && placement != null)
+                    appWindow.MoveAndResize(new Windows.Graphics.RectInt32(
+                        placement.X, placement.Y, placement.Width, placement.Height));
+                else
+                    appWindow?.Resize(new Windows.Graphics.SizeInt32(1400, 900));
                 ApplyFontSettingsToControls();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"LoadWindowPosition error: {ex.Message}");
             }
             finally
             {
@@ -4158,66 +3497,15 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             }
         }
 
-        private string GetRecentFilesFilePath()
+        private AppWindow? GetAppWindow()
         {
-            var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PDF_simple_edit");
-            if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
-            return Path.Combine(folder, "recent_files.txt");
-        }
-
-        private void LoadRecentFiles()
-        {
-            try
-            {
-                string path = GetRecentFilesFilePath();
-                if (File.Exists(path))
-                {
-                    var lines = File.ReadAllLines(path);
-                    _recentFiles.Clear();
-                    foreach (var line in lines)
-                    {
-                        if (!string.IsNullOrWhiteSpace(line) && File.Exists(line))
-                        {
-                            _recentFiles.Add(line);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"LoadRecentFiles error: {ex.Message}");
-            }
-        }
-
-        private void SaveRecentFiles()
-        {
-            try
-            {
-                File.WriteAllLines(GetRecentFilesFilePath(), _recentFiles);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"SaveRecentFiles error: {ex.Message}");
-            }
+            IntPtr hwnd = WindowNative.GetWindowHandle(this);
+            return AppWindow.GetFromWindowId(Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd));
         }
 
         private void AddToRecentFiles(string filePath)
         {
-            if (string.IsNullOrEmpty(filePath)) return;
-
-            // Remove if already exists to move to top
-            _recentFiles.Remove(filePath);
-            
-            // Insert at top
-            _recentFiles.Insert(0, filePath);
-
-            // Keep only max items
-            while (_recentFiles.Count > MaxRecentFiles)
-            {
-                _recentFiles.RemoveAt(_recentFiles.Count - 1);
-            }
-
-            SaveRecentFiles();
+            _recentFilesService.Add(filePath);
             UpdateRecentFilesMenu();
         }
 
@@ -4227,13 +3515,13 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
 
             MenuRecentFiles.Items.Clear();
 
-            if (_recentFiles.Count == 0)
+            if (_recentFilesService.Files.Count == 0)
             {
                 MenuRecentFiles.Items.Add(new MenuFlyoutItem { Text = "최근 파일 없음", IsEnabled = false });
                 return;
             }
 
-            foreach (var filePath in _recentFiles)
+            foreach (var filePath in _recentFilesService.Files)
             {
                 var item = new MenuFlyoutItem
                 {
@@ -4249,8 +3537,7 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
             var clearItem = new MenuFlyoutItem { Text = "최근 파일 목록 지우기" };
             clearItem.Click += (s, e) =>
             {
-                _recentFiles.Clear();
-                SaveRecentFiles();
+                _recentFilesService.Clear();
                 UpdateRecentFilesMenu();
             };
             MenuRecentFiles.Items.Add(clearItem);
@@ -4270,17 +3557,14 @@ private PdfAnnotation ConvertExistingTextToAnnotation(SearchResult textObj)
                     catch (Exception ex)
                     {
                         await ShowErrorDialogAsync("오류", $"파일을 여는 중 오류가 발생했습니다: {ex.Message}");
-                        // Optional: remove non-existent file from list
-                        _recentFiles.Remove(filePath);
-                        SaveRecentFiles();
+                        _recentFilesService.Remove(filePath);
                         UpdateRecentFilesMenu();
                     }
                 }
                 else
                 {
                     await ShowErrorDialogAsync("오류", "파일을 찾을 수 없습니다.");
-                    _recentFiles.Remove(filePath);
-                    SaveRecentFiles();
+                    _recentFilesService.Remove(filePath);
                     UpdateRecentFilesMenu();
                 }
             }
