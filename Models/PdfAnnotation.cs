@@ -31,6 +31,7 @@ namespace PDF_simple_edit.Models
         public string FontFamily { get; set; } = "맑은 고딕";
         public double FontSize { get; set; } = 12;
         public string Color { get; set; } = "#000000";
+        public int FontWeight { get; set; } = 400;
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
         public double Opacity { get; set; } = 1.0;
@@ -70,6 +71,7 @@ namespace PDF_simple_edit.Models
                 FontFamily = this.FontFamily,
                 FontSize = this.FontSize,
                 Color = this.Color,
+                FontWeight = this.FontWeight,
                 IsBold = this.IsBold,
                 IsItalic = this.IsItalic,
                 Opacity = this.Opacity,
@@ -112,6 +114,7 @@ namespace PDF_simple_edit.Models
         public double FontSize { get; set; }
         public string FontFamily { get; set; } = string.Empty;
         public string Color { get; set; } = "#000000";
+        public int FontWeight { get; set; } = 400;
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
         public int ContentStreamIndex { get; set; } = -1;
@@ -163,6 +166,7 @@ namespace PDF_simple_edit.Models
         public double FontSize { get; set; }
         public string FontFamily { get; set; } = string.Empty;
         public string Color { get; set; } = "#000000";
+        public int FontWeight { get; set; } = 400;
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
         public int ContentStreamIndex { get; set; } = -1;
@@ -201,6 +205,7 @@ namespace PDF_simple_edit.Models
         public double FontSize { get; set; }
         public string FontFamily { get; set; } = string.Empty;
         public string Color { get; set; } = "#000000";
+        public int FontWeight { get; set; } = 400;
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
         public int ContentStreamIndex { get; set; } = -1;

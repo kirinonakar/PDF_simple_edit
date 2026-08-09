@@ -103,6 +103,7 @@ public sealed class AnnotationContentService
                 : content.Height > 0 ? content.Height : 12,
             FontFamily = isText && !string.IsNullOrEmpty(content.FontFamily) ? content.FontFamily : "맑은 고딕",
             Color = content.Color,
+            FontWeight = isText ? content.FontWeight : 400,
             IsBold = isText && content.IsBold,
             IsItalic = isText && content.IsItalic,
             IsApplied = false
@@ -130,6 +131,7 @@ public sealed class AnnotationContentService
         FontSize = source.FontSize,
         FontFamily = source.FontFamily,
         Color = source.Color,
+        FontWeight = source.FontWeight,
         IsBold = source.IsBold,
         IsItalic = source.IsItalic,
         ContentStreamIndex = source.ContentStreamIndex,
@@ -154,6 +156,7 @@ public sealed class AnnotationContentService
         if (!string.Equals(first.FontFamily, second.FontFamily, StringComparison.OrdinalIgnoreCase) ||
             Math.Abs(first.FontSize - second.FontSize) > Math.Max(0.75, referenceSize * 0.2) ||
             !string.Equals(first.Color, second.Color, StringComparison.OrdinalIgnoreCase) ||
+            first.FontWeight != second.FontWeight ||
             first.IsBold != second.IsBold || first.IsItalic != second.IsItalic)
             return false;
 

@@ -26,7 +26,8 @@ public static class AnnotationTextLayoutService
                 annotation.FontFamily,
                 annotation.FontSize,
                 annotation.IsBold,
-                annotation.IsItalic);
+                annotation.IsItalic,
+                annotation.FontWeight);
             double availableWidth = Math.Max(annotation.Width - (2.0 / PdfToPixels), 1);
             return measured <= availableWidth
                 ? annotation.FontSize
@@ -47,7 +48,8 @@ public static class AnnotationTextLayoutService
             annotation.FontFamily,
             displayFontSize,
             annotation.IsBold,
-            annotation.IsItalic) * PdfToPixels;
+            annotation.IsItalic,
+            annotation.FontWeight) * PdfToPixels;
 
         return annotation.BaselineOffset * PdfToPixels - baselineOffset;
     }
@@ -56,7 +58,8 @@ public static class AnnotationTextLayoutService
         string fontFamily,
         double fontSize,
         bool isBold,
-        bool isItalic)
+        bool isItalic,
+        int fontWeight = 0)
     {
         // The PDF annotation Y coordinate is the top of the WinUI text layout box.
         // Save against the same baseline instead of the PDF glyph's ink bounds so
@@ -69,7 +72,8 @@ public static class AnnotationTextLayoutService
                 fontFamily,
                 fontSize,
                 isBold,
-                isItalic);
+                isItalic,
+                fontWeight);
             sample.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
             var baselineProperty = typeof(TextBlock).GetProperty("BaselineOffset");
             if (baselineProperty?.GetValue(sample) is double measuredBaseline && measuredBaseline > 0.1)
@@ -97,9 +101,10 @@ public static class AnnotationTextLayoutService
         string fontFamily,
         double fontSize,
         bool isBold,
-        bool isItalic)
+        bool isItalic,
+        int fontWeight = 0)
     {
-        TextBlock textBlock = CreateTextBlock(text, fontFamily, fontSize, isBold, isItalic);
+        TextBlock textBlock = CreateTextBlock(text, fontFamily, fontSize, isBold, isItalic, fontWeight);
         textBlock.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
         return (
             (textBlock.DesiredSize.Width + 2.0) / PdfToPixels,
@@ -120,9 +125,10 @@ public static class AnnotationTextLayoutService
         string fontFamily,
         double fontSize,
         bool isBold,
-        bool isItalic)
+        bool isItalic,
+        int fontWeight)
     {
-        TextBlock textBlock = CreateTextBlock(text, fontFamily, fontSize, isBold, isItalic);
+        TextBlock textBlock = CreateTextBlock(text, fontFamily, fontSize, isBold, isItalic, fontWeight);
         textBlock.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
         return Math.Max((textBlock.DesiredSize.Width - 2.0) / PdfToPixels, 1);
     }
@@ -132,14 +138,23 @@ public static class AnnotationTextLayoutService
         string fontFamily,
         double fontSize,
         bool isBold,
-        bool isItalic) => new()
+        bool isItalic,
+        int fontWeight = 0) => new()
     {
         Text = text,
         FontFamily = new FontFamily(fontFamily),
         FontSize = fontSize * PdfToPixels,
-        FontWeight = isBold ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal,
+        FontWeight = ResolveFontWeight(fontWeight, isBold),
         FontStyle = isItalic ? Windows.UI.Text.FontStyle.Italic : Windows.UI.Text.FontStyle.Normal,
         TextWrapping = TextWrapping.NoWrap,
         Padding = new Thickness(0)
     };
+
+    public static Windows.UI.Text.FontWeight ResolveFontWeight(int fontWeight, bool isBold)
+    {
+        int resolvedWeight = fontWeight is >= 1 and <= 999 ? fontWeight : 400;
+        if (isBold && resolvedWeight < 600)
+            resolvedWeight = 700;
+        return new Windows.UI.Text.FontWeight { Weight = (ushort)resolvedWeight };
+    }
 }

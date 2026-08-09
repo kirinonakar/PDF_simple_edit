@@ -170,9 +170,9 @@ public sealed class AnnotationOverlayController
             FontFamily = new FontFamily(annotation.FontFamily),
             FontSize = displayFontSize * PdfToPixels,
             Foreground = new SolidColorBrush(parseColor(annotation.Color)),
-            FontWeight = annotation.IsBold
-                ? Microsoft.UI.Text.FontWeights.Bold
-                : Microsoft.UI.Text.FontWeights.Normal,
+            FontWeight = AnnotationTextLayoutService.ResolveFontWeight(
+                annotation.FontWeight,
+                annotation.IsBold),
             FontStyle = annotation.IsItalic
                 ? Windows.UI.Text.FontStyle.Italic
                 : Windows.UI.Text.FontStyle.Normal,

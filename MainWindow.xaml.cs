@@ -1648,6 +1648,7 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 if (!await PrepareOriginalTextForReplacementAsync(_selectedAnnotation))
                     return;
                 _selectedAnnotation.IsBold = _fontSettings.IsBold;
+                _selectedAnnotation.FontWeight = _fontSettings.IsBold ? 700 : 400;
                 _selectedAnnotation.OriginalFontObjectNumber = -1;
                 var size = AnnotationTextLayoutService.MeasureBounds(_selectedAnnotation.Content, _selectedAnnotation.FontFamily, _selectedAnnotation.FontSize, _selectedAnnotation.IsBold, _selectedAnnotation.IsItalic);
                 _selectedAnnotation.Width = size.width;

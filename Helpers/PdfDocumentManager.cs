@@ -758,18 +758,19 @@ namespace PDF_simple_edit.Helpers
             return 12f;
         }
 
-        private static string GetRawFontName(TextRenderInfo textInfo)
+        private static PdfFontMetadata GetFontMetadata(
+            TextRenderInfo textInfo,
+            IDictionary<int, PdfFontMetadata> cache)
         {
-            try
-            {
-                var fontProgram = textInfo.GetFont()?.GetFontProgram();
-                var fontNames = fontProgram?.GetFontNames();
-                return fontNames?.GetFontName() ?? string.Empty;
-            }
-            catch
-            {
-                return string.Empty;
-            }
+            PdfFont? font = textInfo.GetFont();
+            int objectNumber = font?.GetPdfObject()?.GetIndirectReference()?.GetObjNumber() ?? -1;
+            if (objectNumber > 0 && cache.TryGetValue(objectNumber, out PdfFontMetadata cached))
+                return cached;
+
+            PdfFontMetadata metadata = PdfFontMetadataResolver.Resolve(font);
+            if (objectNumber > 0)
+                cache[objectNumber] = metadata;
+            return metadata;
         }
 
         private static string NormalizeFontFamily(string rawFontName)
@@ -801,6 +802,8 @@ namespace PDF_simple_edit.Helpers
             if (lowerFont.Contains("nanumgothic")) return "나눔고딕";
             if (lowerFont.Contains("notosanscjkkr") || lowerFont.Contains("notosanskr")) return "Noto Sans KR";
             if (lowerFont.Contains("notoserifcjkkr") || lowerFont.Contains("notoserifkr")) return "Noto Serif KR";
+            if (lowerFont.Contains("cambriamath")) return "Cambria Math";
+            if (lowerFont.Contains("cambria")) return "Cambria";
             if (lowerFont.Contains("arial")) return "Arial";
             if (lowerFont.Contains("times")) return "Times New Roman";
             if (lowerFont.Contains("helvetica")) return "Arial";
@@ -813,13 +816,10 @@ namespace PDF_simple_edit.Helpers
             return string.IsNullOrWhiteSpace(cleanFontName) ? "맑은 고딕" : cleanFontName;
         }
 
-        private static (bool isBold, bool isItalic) InferFontStyle(string rawFontName)
+        private static (bool isBold, bool isItalic) InferFontStyle(string rawFontName, int fontWeight)
         {
-            if (string.IsNullOrWhiteSpace(rawFontName))
-                return (false, false);
-
-            string lower = rawFontName.ToLowerInvariant();
-            bool isBold = lower.Contains("bold");
+            string lower = rawFontName?.ToLowerInvariant() ?? string.Empty;
+            bool isBold = fontWeight >= 600 || lower.Contains("bold");
             bool isItalic = lower.Contains("italic") || lower.Contains("oblique");
             return (isBold, isItalic);
         }
@@ -972,6 +972,7 @@ namespace PDF_simple_edit.Helpers
             return string.Equals(region.FontFamily, next.FontFamily, StringComparison.OrdinalIgnoreCase)
                 && Math.Abs(region.FontSize - next.FontSize) <= Math.Max(0.75, referenceSize * 0.15)
                 && string.Equals(region.Color, next.Color, StringComparison.OrdinalIgnoreCase)
+                && region.FontWeight == next.FontWeight
                 && region.IsBold == next.IsBold
                 && region.IsItalic == next.IsItalic;
         }
@@ -1130,6 +1131,7 @@ namespace PDF_simple_edit.Helpers
         {
             public List<PdfPageContent> Contents { get; } = new();
             private readonly float _pageHeight;
+            private readonly Dictionary<int, PdfFontMetadata> _fontMetadataCache = new();
             public TextOperationDescriptor? CurrentTarget { get; set; }
             private List<(int Index, byte[] Bytes)> _textOperands = new();
             private int _nextTextOperand;
@@ -1208,9 +1210,10 @@ namespace PDF_simple_edit.Helpers
                 float fontSize = ResolveFontSize(textInfo, bounds.height);
                 var baseline = textInfo.GetBaseline().GetStartPoint();
                 double baselineOffset = (_pageHeight - baseline.Get(1)) - bounds.y;
-                string rawFontName = GetRawFontName(textInfo);
+                PdfFontMetadata fontMetadata = GetFontMetadata(textInfo, _fontMetadataCache);
+                string rawFontName = fontMetadata.RawName;
                 string fontFamily = NormalizeFontFamily(rawFontName);
-                var (isBold, isItalic) = InferFontStyle(rawFontName);
+                var (isBold, isItalic) = InferFontStyle(rawFontName, fontMetadata.Weight);
                 string color = ColorToHex(textInfo.GetFillColor());
                 int originalFontObjectNumber = textInfo.GetFont()?.GetPdfObject()
                     ?.GetIndirectReference()?.GetObjNumber() ?? -1;
@@ -1233,6 +1236,7 @@ namespace PDF_simple_edit.Helpers
                     FontSize = fontSize,
                     FontFamily = fontFamily,
                     Color = color,
+                    FontWeight = fontMetadata.Weight,
                     IsBold = isBold,
                     IsItalic = isItalic,
                     ContentStreamIndex = target?.StreamIndex ?? -1,
@@ -1256,6 +1260,7 @@ namespace PDF_simple_edit.Helpers
                     FontSize = fontSize,
                     FontFamily = fontFamily,
                     Color = color,
+                    FontWeight = fontMetadata.Weight,
                     IsBold = isBold,
                     IsItalic = isItalic,
                     OriginalPdfX = bounds.originalPdfX,

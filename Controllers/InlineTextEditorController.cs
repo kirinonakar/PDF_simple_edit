@@ -94,6 +94,7 @@ public sealed class InlineTextEditorController
         string color = existingAnnotation?.Color ?? settings.Color;
         bool isBold = existingAnnotation?.IsBold ?? settings.IsBold;
         bool isItalic = existingAnnotation?.IsItalic ?? settings.IsItalic;
+        int fontWeight = existingAnnotation?.FontWeight ?? (isBold ? 700 : 400);
         string initialText = existingAnnotation != null
             ? buildEditableText(existingAnnotation)
             : string.Empty;
@@ -130,7 +131,7 @@ public sealed class InlineTextEditorController
             FontSize = displayFontSize * PdfToPixels,
             FontFamily = new FontFamily(fontFamily),
             Foreground = new SolidColorBrush(EditorColorService.Parse(color)),
-            FontWeight = isBold ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal,
+            FontWeight = AnnotationTextLayoutService.ResolveFontWeight(fontWeight, isBold),
             FontStyle = isItalic ? Windows.UI.Text.FontStyle.Italic : Windows.UI.Text.FontStyle.Normal,
             Tag = existingAnnotation != null
                 ? new InlineTextEditSession
@@ -380,7 +381,8 @@ public sealed class InlineTextEditorController
                             existingAnnotation.FontFamily,
                             existingAnnotation.FontSize,
                             existingAnnotation.IsBold,
-                            existingAnnotation.IsItalic);
+                            existingAnnotation.IsItalic,
+                            existingAnnotation.FontWeight);
                         existingAnnotation.Width = size.width;
                         existingAnnotation.Height = size.height;
                     }
@@ -410,6 +412,7 @@ public sealed class InlineTextEditorController
                     FontFamily = _settings.FontFamily,
                     FontSize = _settings.FontSize,
                     Color = _settings.Color,
+                    FontWeight = _settings.IsBold ? 700 : 400,
                     IsBold = _settings.IsBold,
                     IsItalic = _settings.IsItalic,
                     Width = size.width,
