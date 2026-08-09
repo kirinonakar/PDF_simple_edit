@@ -1570,7 +1570,18 @@ namespace PDF_simple_edit.Helpers
         {
             if (annotations == null || annotations.Count == 0)
                 return true;
-            if (annotations.Any(annotation => annotation.TextFragments.Count > 0
+
+            // An annotation can outlive an earlier content-stream rewrite. In that
+            // case its operation indexes still look valid, but point at an older TJ
+            // layout. Resolve the glyph fragments against the current PDF before
+            // deleting so sequential edits do not fail with stale metadata.
+            List<PdfAnnotation>? currentAnnotations = await ResolveCurrentTextAnnotationsAsync(
+                pageIndex,
+                annotations);
+            if (currentAnnotations == null)
+                return false;
+
+            if (currentAnnotations.Any(annotation => annotation.TextFragments.Count > 0
                 ? annotation.TextFragments.Any(fragment => fragment.OperationIndex < 0 ||
                     (fragment.ContentStreamObjectNumber <= 0 && fragment.ContentStreamIndex < 0) ||
                     fragment.TextOperandIndex < 0 ||
@@ -1585,7 +1596,7 @@ namespace PDF_simple_edit.Helpers
                 bool success = false;
                 ApplyEdit(doc =>
                 {
-                    var preciseTargets = annotations
+                    var preciseTargets = currentAnnotations
                         .SelectMany(a => a.TextFragments.Count > 0
                             ? a.TextFragments.Select(fragment => new TextOperationTarget
                             {
@@ -1624,6 +1635,106 @@ namespace PDF_simple_edit.Helpers
                 return success;
             });
         }
+
+        private async Task<List<PdfAnnotation>?> ResolveCurrentTextAnnotationsAsync(
+            int pageIndex,
+            IReadOnlyCollection<PdfAnnotation> annotations)
+        {
+            List<PdfPageContent> pageContents = await ExtractPageContentsAsync(pageIndex);
+            List<PdfTextFragment> availableFragments = pageContents
+                .Where(content => content.Type == PageContentType.Text)
+                .SelectMany(content => content.TextFragments)
+                .ToList();
+            var usedFragments = new HashSet<PdfTextFragment>();
+            var resolvedAnnotations = new List<PdfAnnotation>();
+
+            foreach (PdfAnnotation annotation in annotations)
+            {
+                PdfAnnotation resolved = annotation.Clone();
+                IReadOnlyList<PdfTextFragment> sourceFragments = annotation.TextFragments.Count > 0
+                    ? annotation.TextFragments
+                    : (IReadOnlyList<PdfTextFragment>?)FindMatchingTextRegion(pageContents, annotation)?.TextFragments
+                        ?? Array.Empty<PdfTextFragment>();
+                if (sourceFragments.Count == 0)
+                    return null;
+
+                var matchedFragments = new List<PdfTextFragment>();
+                foreach (PdfTextFragment source in sourceFragments)
+                {
+                    PdfTextFragment? match = availableFragments
+                        .Where(candidate => !usedFragments.Contains(candidate) &&
+                            string.Equals(candidate.Text, source.Text, StringComparison.Ordinal) &&
+                            IsSameTextPosition(source, candidate))
+                        .OrderBy(candidate =>
+                            Math.Abs(candidate.X - source.X) +
+                            Math.Abs(candidate.Y - source.Y))
+                        .FirstOrDefault();
+                    if (match == null)
+                        return null;
+
+                    usedFragments.Add(match);
+                    matchedFragments.Add(match.Clone());
+                }
+
+                resolved.TextFragments = matchedFragments;
+                PdfTextFragment first = matchedFragments[0];
+                resolved.ContentStreamIndex = first.ContentStreamIndex;
+                resolved.ContentStreamObjectNumber = first.ContentStreamObjectNumber;
+                resolved.OperationIndex = first.OperationIndex;
+                resolved.TextRenderMode = first.TextRenderMode;
+                resolvedAnnotations.Add(resolved);
+            }
+
+            return resolvedAnnotations;
+        }
+
+        private static PdfPageContent? FindMatchingTextRegion(
+            IEnumerable<PdfPageContent> pageContents,
+            PdfAnnotation annotation)
+        {
+            string expectedText = NormalizeComparableText(
+                string.IsNullOrEmpty(annotation.OriginalText)
+                    ? annotation.Content
+                    : annotation.OriginalText);
+            return pageContents
+                .Where(content => content.Type == PageContentType.Text &&
+                    string.Equals(
+                        NormalizeComparableText(content.Text),
+                        expectedText,
+                        StringComparison.Ordinal) &&
+                    IsSameTextPosition(annotation.X, annotation.Y, annotation.Width, annotation.Height,
+                        content.X, content.Y, content.Width, content.Height))
+                .OrderBy(content =>
+                    Math.Abs(content.X - annotation.X) +
+                    Math.Abs(content.Y - annotation.Y))
+                .FirstOrDefault();
+        }
+
+        private static bool IsSameTextPosition(PdfTextFragment first, PdfTextFragment second) =>
+            IsSameTextPosition(
+                first.X, first.Y, first.Width, first.Height,
+                second.X, second.Y, second.Width, second.Height);
+
+        private static bool IsSameTextPosition(
+            double firstX,
+            double firstY,
+            double firstWidth,
+            double firstHeight,
+            double secondX,
+            double secondY,
+            double secondWidth,
+            double secondHeight)
+        {
+            double horizontalTolerance = Math.Max(2, Math.Max(firstWidth, secondWidth) * 0.75);
+            double verticalTolerance = Math.Max(2, Math.Max(firstHeight, secondHeight) * 0.5);
+            return Math.Abs(firstX - secondX) <= horizontalTolerance &&
+                Math.Abs(firstY - secondY) <= verticalTolerance;
+        }
+
+        private static string NormalizeComparableText(string? text) =>
+            (text ?? string.Empty)
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace('\r', '\n');
 
         public async Task<bool> RemoveMultipleTextsAsync(int pageIndex, List<(double x, double y, double w, double h)> targets)
         {
