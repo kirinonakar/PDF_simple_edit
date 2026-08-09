@@ -34,8 +34,12 @@ public sealed class AnnotationOverlayController
         int insertIndex = 0;
         foreach (PdfAnnotation annotation in annotations.Where(item => item.PageIndex == pageIndex))
         {
-            if (annotation == editingAnnotation ||
-                annotation.IsOriginalTextReplacement && !selectedAnnotations.Contains(annotation))
+            if (annotation == editingAnnotation)
+            {
+                AddSelectionBorder(canvas, annotation, ref insertIndex);
+                continue;
+            }
+            if (annotation.IsOriginalTextReplacement && !selectedAnnotations.Contains(annotation))
                 continue;
 
             FrameworkElement? element = CreateElement(annotation, parseColor);
@@ -54,17 +58,7 @@ public sealed class AnnotationOverlayController
             // Wrapping it in a bordered parent changes its layout origin and makes
             // text appear to jump when selection is toggled.
             canvas.Children.Insert(insertIndex++, element);
-            var border = new Border
-            {
-                BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
-                BorderThickness = new Thickness(1),
-                Width = Math.Max(annotation.Width * PdfToPixels, 1) + 4,
-                Height = Math.Max(annotation.Height * PdfToPixels, 1) + 4,
-                IsHitTestVisible = false
-            };
-            Canvas.SetLeft(border, annotation.X * PdfToPixels - 2);
-            Canvas.SetTop(border, annotation.Y * PdfToPixels - 2);
-            canvas.Children.Insert(insertIndex++, border);
+            AddSelectionBorder(canvas, annotation, ref insertIndex);
 
             if (annotation == primarySelection &&
                 annotation.Type is AnnotationType.Image or AnnotationType.Highlight)
@@ -77,6 +71,24 @@ public sealed class AnnotationOverlayController
                     cursorChanged);
             }
         }
+    }
+
+    private static void AddSelectionBorder(
+        Canvas canvas,
+        PdfAnnotation annotation,
+        ref int insertIndex)
+    {
+        var border = new Border
+        {
+            BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
+            BorderThickness = new Thickness(1),
+            Width = Math.Max(annotation.Width * PdfToPixels, 1) + 4,
+            Height = Math.Max(annotation.Height * PdfToPixels, 1) + 4,
+            IsHitTestVisible = false
+        };
+        Canvas.SetLeft(border, annotation.X * PdfToPixels - 2);
+        Canvas.SetTop(border, annotation.Y * PdfToPixels - 2);
+        canvas.Children.Insert(insertIndex++, border);
     }
 
     private static FrameworkElement? CreateElement(
@@ -171,8 +183,8 @@ public sealed class AnnotationOverlayController
                 }
                 : new TranslateTransform
                 {
-                    // Match the one-pixel text inset of the inline TextBox so the
-                    // edit preview, committed overlay and saved PDF stay aligned.
+                    // The inline editor has no layout-affecting border, so both
+                    // display modes use the same text origin.
                     Y = AnnotationTextLayoutService.InlineEditorTopInset
                 },
             Padding = new Thickness(0),

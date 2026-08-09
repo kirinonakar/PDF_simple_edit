@@ -9,7 +9,7 @@ namespace PDF_simple_edit.Services;
 public static class AnnotationTextLayoutService
 {
     private const double PdfToPixels = 96.0 / 72.0;
-    public const double InlineEditorTopInset = 1.0;
+    public const double InlineEditorTopInset = 0.0;
 
     public static bool ContainsLineBreak(string? text) =>
         !string.IsNullOrEmpty(text) && (text.Contains('\r') || text.Contains('\n'));

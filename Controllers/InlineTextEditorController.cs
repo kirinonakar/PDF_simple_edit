@@ -121,9 +121,12 @@ public sealed class InlineTextEditorController
             Height = existingAnnotation != null ? height : double.NaN,
             Padding = new Thickness(0),
             Margin = new Thickness(0),
-            BorderThickness = new Thickness(1),
+            // The editing border is rendered as a separate overlay. Keeping the
+            // TextBox borderless prevents its content presenter from shifting the
+            // text by one pixel when edit mode starts.
+            BorderThickness = new Thickness(0),
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
+            BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
             FontSize = displayFontSize * PdfToPixels,
             FontFamily = new FontFamily(fontFamily),
             Foreground = new SolidColorBrush(EditorColorService.Parse(color)),
@@ -175,6 +178,7 @@ public sealed class InlineTextEditorController
         textBox.LostFocus += async (_, _) => await ApplyAsync(textBox);
         canvas.Children.Add(textBox);
         _activeTextBox = textBox;
+        _renderOverlays?.Invoke();
         return true;
     }
 
