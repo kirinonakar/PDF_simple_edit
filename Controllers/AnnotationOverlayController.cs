@@ -28,10 +28,10 @@ public sealed class AnnotationOverlayController
         Action<string, Point> resizeStarted,
         Action<InputSystemCursorShape> cursorChanged)
     {
-        foreach (UIElement child in canvas.Children.Where(child => child is not TextBox).ToList())
+        foreach (UIElement child in canvas.Children.Where(child => child is not RichEditBox).ToList())
             canvas.Children.Remove(child);
 
-        TextBox? activeEditor = canvas.Children.OfType<TextBox>().FirstOrDefault();
+        RichEditBox? activeEditor = canvas.Children.OfType<RichEditBox>().FirstOrDefault();
         int insertIndex = 0;
         foreach (PdfAnnotation annotation in annotations.Where(item => item.PageIndex == pageIndex))
         {
@@ -78,7 +78,7 @@ public sealed class AnnotationOverlayController
         Canvas canvas,
         PdfAnnotation annotation,
         ref int insertIndex,
-        TextBox? activeEditor = null)
+        RichEditBox? activeEditor = null)
     {
         double editorWidth = activeEditor == null
             ? annotation.Width * PdfToPixels
@@ -209,6 +209,12 @@ public sealed class AnnotationOverlayController
                     : double.NaN,
             FontFamily = new FontFamily(annotation.FontFamily),
             FontSize = displayFontSize * PdfToPixels,
+            LineHeight = hasOriginalLineLayout && annotation.LineHeight > 0.1
+                ? annotation.LineHeight * PdfToPixels
+                : 0,
+            LineStackingStrategy = hasOriginalLineLayout && annotation.LineHeight > 0.1
+                ? LineStackingStrategy.BaselineToBaseline
+                : LineStackingStrategy.MaxHeight,
             CharacterSpacing = hasOriginalLineLayout
                 ? AnnotationTextLayoutService.GetDisplayCharacterSpacing(annotation, annotation.Content)
                 : 0,

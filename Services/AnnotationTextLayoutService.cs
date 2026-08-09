@@ -118,6 +118,9 @@ public static class AnnotationTextLayoutService
 
     public static double GetDisplayLineHeight(PdfAnnotation annotation, string? text)
     {
+        if (annotation.TextFragments.Count > 1 && annotation.LineHeight > 0.1)
+            return annotation.LineHeight;
+
         string[] lines = SplitLines(text);
         try
         {
@@ -218,7 +221,8 @@ public static class AnnotationTextLayoutService
         double fontSize,
         bool isBold,
         bool isItalic,
-        int fontWeight = 0)
+        int fontWeight = 0,
+        double lineHeight = 0)
     {
         try
         {
@@ -230,6 +234,11 @@ public static class AnnotationTextLayoutService
                 isBold,
                 isItalic,
                 fontWeight);
+            if (lineHeight > 0.1)
+            {
+                sample.LineHeight = lineHeight * PdfToPixels;
+                sample.LineStackingStrategy = LineStackingStrategy.BaselineToBaseline;
+            }
             sample.Measure(new Windows.Foundation.Size(
                 double.PositiveInfinity,
                 double.PositiveInfinity));

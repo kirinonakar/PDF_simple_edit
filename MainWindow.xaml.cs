@@ -1424,7 +1424,7 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
         private void RenderAnnotationOverlays()
         {
-            var activeBox = OverlayCanvas.Children.OfType<TextBox>().FirstOrDefault();
+            var activeBox = OverlayCanvas.Children.OfType<RichEditBox>().FirstOrDefault();
             var editingAnn = activeBox?.Tag switch
             {
                 InlineTextEditSession session => session.Annotation,
@@ -1588,18 +1588,18 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 return;
             }
 
-            // TextBox의 KeyDown에서 Ctrl 상태를 놓치는 경우에도 창 레벨에서
+            // 편집기의 KeyDown에서 Ctrl 상태를 놓치는 경우에도 창 레벨에서
             // Enter를 먼저 소비하여 줄바꿈 대신 편집을 확정합니다.
             if (_inlineTextEditorController.IsEditing &&
                 e.Key == Windows.System.VirtualKey.Enter &&
                 (_controlKeyIsDown || KeyboardStateService.IsControlDown()))
             {
-                var activeTextBox = OverlayCanvas.Children.OfType<TextBox>().FirstOrDefault();
-                if (activeTextBox == null ||
-                    activeTextBox.Tag is not InlineTextEditSession { IsFinishing: true })
+                var activeEditor = OverlayCanvas.Children.OfType<RichEditBox>().FirstOrDefault();
+                if (activeEditor == null ||
+                    activeEditor.Tag is not InlineTextEditSession { IsFinishing: true })
                 {
                     e.Handled = true;
-                    if (activeTextBox != null)
+                    if (activeEditor != null)
                         await _inlineTextEditorController.FinishActiveEditAsync();
                 }
                 return;

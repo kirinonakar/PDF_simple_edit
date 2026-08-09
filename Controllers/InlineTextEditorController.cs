@@ -1,3 +1,4 @@
+using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -21,6 +22,7 @@ public sealed class InlineTextEditSession
     public bool SuppressTextChanged { get; set; }
     public bool IsFinishing { get; set; }
     public long TextChangeVersion { get; set; }
+    public string LastEditorText { get; set; } = string.Empty;
     public bool OriginalRemovalCommitted { get; set; }
     public Task<bool>? RemovalTask { get; set; }
 }
@@ -30,7 +32,7 @@ public sealed class InlineTextEditorController
     private const double PdfToPixels = 96.0 / 72.0;
 
     private Canvas? _canvas;
-    private TextBox? _activeTextBox;
+    private RichEditBox? _activeEditor;
     private PdfDocumentManager? _manager;
     private List<PdfAnnotation>? _annotations;
     private List<PdfAnnotation>? _selectedAnnotations;
@@ -70,9 +72,9 @@ public sealed class InlineTextEditorController
         Action<PdfAnnotation> annotationRemoved,
         Action<bool> restoreFocus)
     {
-        if (canvas.Children.OfType<TextBox>().Any())
+        if (canvas.Children.OfType<RichEditBox>().Any())
         {
-            IsEditing = _activeTextBox != null;
+            IsEditing = _activeEditor != null;
             return false;
         }
 
@@ -110,16 +112,16 @@ public sealed class InlineTextEditorController
             displayFontSize,
             isBold,
             isItalic,
-            fontWeight);
+            fontWeight,
+            existingAnnotation?.LineHeight ?? 0);
         double topOffset = existingAnnotation != null
             ? AnnotationTextLayoutService.GetTopOffset(existingAnnotation, displayFontSize)
             : 0;
 
-        var textBox = new TextBox
+        var editor = new RichEditBox
         {
             AcceptsReturn = existingAnnotation != null,
             TextWrapping = TextWrapping.NoWrap,
-            Text = initialText,
             MinWidth = existingAnnotation != null ? 0 : 60,
             MinHeight = 0,
             Width = width,
@@ -127,7 +129,7 @@ public sealed class InlineTextEditorController
             Padding = new Thickness(0),
             Margin = new Thickness(0),
             // The editing border is rendered as a separate overlay. Keeping the
-            // TextBox borderless prevents its content presenter from shifting the
+            // editor borderless prevents its content presenter from shifting the
             // text by one pixel when edit mode starts.
             BorderThickness = new Thickness(0),
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
@@ -144,108 +146,134 @@ public sealed class InlineTextEditorController
                 ? new InlineTextEditSession
                 {
                     Annotation = existingAnnotation,
-                    OriginalContent = initialText
+                    OriginalContent = initialText,
+                    LastEditorText = initialText
                 }
                 : new Point(pdfX, pdfY),
             VerticalAlignment = VerticalAlignment.Top,
             VerticalContentAlignment = VerticalAlignment.Top,
             MaxWidth = 4000,
-            UseLayoutRounding = false
+            UseLayoutRounding = false,
+            IsSpellCheckEnabled = false
         };
-        Canvas.SetLeft(textBox, pdfX * PdfToPixels);
-        Canvas.SetTop(textBox, pdfY * PdfToPixels + topOffset);
+        SetEditorText(editor, initialText);
+        ApplyEditorLineSpacing(editor, existingAnnotation?.LineHeight ?? 0);
+        Canvas.SetLeft(editor, pdfX * PdfToPixels);
+        Canvas.SetTop(editor, pdfY * PdfToPixels + topOffset);
 
-        textBox.Loaded += (_, _) =>
+        editor.Loaded += (_, _) =>
         {
-            textBox.Focus(FocusState.Programmatic);
+            editor.Focus(FocusState.Programmatic);
         };
-        textBox.PointerPressed += (_, args) => args.Handled = true;
-        textBox.PointerReleased += (_, args) => args.Handled = true;
-        textBox.DoubleTapped += (_, args) => args.Handled = true;
+        editor.PointerPressed += (_, args) => args.Handled = true;
+        editor.PointerReleased += (_, args) => args.Handled = true;
+        editor.DoubleTapped += (_, args) => args.Handled = true;
         if (existingAnnotation != null)
-            textBox.TextChanged += InlineTextBox_TextChanged;
-        textBox.KeyDown += async (_, args) =>
+            editor.TextChanged += InlineEditor_TextChanged;
+        editor.KeyDown += async (_, args) =>
         {
             if (args.Key == Windows.System.VirtualKey.Enter &&
-                (!textBox.AcceptsReturn || KeyboardStateService.IsControlDown()))
+                (!editor.AcceptsReturn || KeyboardStateService.IsControlDown()))
             {
                 args.Handled = true;
-                await ApplyAsync(textBox);
+                await ApplyAsync(editor);
             }
             else if (args.Key == Windows.System.VirtualKey.Escape)
             {
                 args.Handled = true;
-                await CancelAsync(textBox);
+                await CancelAsync(editor);
             }
         };
-        textBox.LostFocus += async (_, _) => await ApplyAsync(textBox);
-        canvas.Children.Add(textBox);
-        _activeTextBox = textBox;
+        editor.LostFocus += async (_, _) => await ApplyAsync(editor);
+        canvas.Children.Add(editor);
+        _activeEditor = editor;
         _renderOverlays?.Invoke();
         return true;
     }
 
     public async Task FinishActiveEditAsync()
     {
-        if (_activeTextBox != null)
-            await ApplyAsync(_activeTextBox);
+        if (_activeEditor != null)
+            await ApplyAsync(_activeEditor);
     }
 
-    private async void InlineTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    private async void InlineEditor_TextChanged(object sender, RoutedEventArgs e)
     {
-        if (sender is not TextBox textBox ||
-            textBox.Tag is not InlineTextEditSession session ||
+        if (sender is not RichEditBox editor ||
+            editor.Tag is not InlineTextEditSession session ||
             session.SuppressTextChanged ||
             session.IsFinishing)
             return;
 
-        string changedText = textBox.Text;
+        string changedText = GetEditorText(editor);
+        // RichEditBox raises TextChanged for document-format updates as well as
+        // character edits. Ignore formatting-only notifications so entering edit
+        // mode cannot recursively reapply paragraph formatting or remove the
+        // original PDF text before the user changes anything.
+        if (string.Equals(changedText, session.LastEditorText, StringComparison.Ordinal))
+            return;
+
+        session.LastEditorText = changedText;
         long changeVersion = ++session.TextChangeVersion;
         session.HasLiveChanges = true;
 
         double displayFontSize = session.Annotation.TextFragments.Count > 1
             ? AnnotationTextLayoutService.GetDisplayFontSize(session.Annotation, changedText)
             : session.Annotation.FontSize;
-        if (session.Annotation.TextFragments.Count > 1)
+        bool wasSuppressed = session.SuppressTextChanged;
+        session.SuppressTextChanged = true;
+        try
         {
-            textBox.FontSize = displayFontSize * PdfToPixels;
-            textBox.CharacterSpacing = AnnotationTextLayoutService.GetDisplayCharacterSpacing(
-                session.Annotation,
-                changedText);
-            Canvas.SetTop(
-                textBox,
-                session.Annotation.Y * PdfToPixels +
-                AnnotationTextLayoutService.GetTopOffset(session.Annotation, displayFontSize));
+            if (session.Annotation.TextFragments.Count > 1)
+            {
+                editor.FontSize = displayFontSize * PdfToPixels;
+                editor.CharacterSpacing = AnnotationTextLayoutService.GetDisplayCharacterSpacing(
+                    session.Annotation,
+                    changedText);
+                Canvas.SetTop(
+                    editor,
+                    session.Annotation.Y * PdfToPixels +
+                    AnnotationTextLayoutService.GetTopOffset(session.Annotation, displayFontSize));
+            }
+            editor.Height = AnnotationTextLayoutService.GetInlineEditorHeight(
+                changedText,
+                session.Annotation.FontFamily,
+                displayFontSize,
+                session.Annotation.IsBold,
+                session.Annotation.IsItalic,
+                session.Annotation.FontWeight,
+                session.Annotation.LineHeight);
+            ApplyEditorLineSpacing(editor, session.Annotation.LineHeight);
         }
-        textBox.Height = AnnotationTextLayoutService.GetInlineEditorHeight(
-            changedText,
-            session.Annotation.FontFamily,
-            displayFontSize,
-            session.Annotation.IsBold,
-            session.Annotation.IsItalic,
-            session.Annotation.FontWeight);
+        finally
+        {
+            session.SuppressTextChanged = wasSuppressed;
+        }
         _renderOverlays?.Invoke();
 
         if (session.Annotation.IsOriginalTextReplacement && session.RemovalTask == null)
         {
             session.RemovalTask = RemoveOriginalTextForLiveEditAsync(session);
             bool removed = await session.RemovalTask;
-            if (!removed && _canvas?.Children.Contains(textBox) == true)
+            if (!removed && _canvas?.Children.Contains(editor) == true)
             {
                 session.SuppressTextChanged = true;
                 session.Annotation.Content = session.OriginalContent;
-                textBox.Text = session.OriginalContent;
-                textBox.CharacterSpacing = AnnotationTextLayoutService.GetDisplayCharacterSpacing(
+                session.LastEditorText = session.OriginalContent;
+                SetEditorText(editor, session.OriginalContent);
+                editor.CharacterSpacing = AnnotationTextLayoutService.GetDisplayCharacterSpacing(
                     session.Annotation,
                     session.OriginalContent);
-                textBox.Height = AnnotationTextLayoutService.GetInlineEditorHeight(
+                editor.Height = AnnotationTextLayoutService.GetInlineEditorHeight(
                     session.OriginalContent,
                     session.Annotation.FontFamily,
                     session.Annotation.FontSize,
                     session.Annotation.IsBold,
                     session.Annotation.IsItalic,
-                    session.Annotation.FontWeight);
-                textBox.SelectionStart = textBox.Text.Length;
+                    session.Annotation.FontWeight,
+                    session.Annotation.LineHeight);
+                ApplyEditorLineSpacing(editor, session.Annotation.LineHeight);
+                MoveCaretToEnd(editor);
                 session.SuppressTextChanged = false;
                 session.HasLiveChanges = false;
                 _setStatus?.Invoke("배경을 보존하면서 수정할 수 없는 PDF 텍스트입니다.");
@@ -257,7 +285,7 @@ public sealed class InlineTextEditorController
             return;
 
         if (session.IsFinishing || changeVersion != session.TextChangeVersion ||
-            _canvas?.Children.Contains(textBox) != true)
+            _canvas?.Children.Contains(editor) != true)
             return;
 
         session.Annotation.Content = changedText;
@@ -285,22 +313,60 @@ public sealed class InlineTextEditorController
         return true;
     }
 
-    private async Task CancelAsync(TextBox textBox)
+    private static void SetEditorText(RichEditBox editor, string text)
     {
-        if (!IsEditing || _canvas?.Children.Contains(textBox) != true)
+        editor.Document.SetText(TextSetOptions.None, text ?? string.Empty);
+    }
+
+    private static string GetEditorText(RichEditBox editor)
+    {
+        editor.Document.GetText(TextGetOptions.None, out string text);
+        if (text.EndsWith('\r'))
+            text = text[..^1];
+
+        return text
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Replace("\n", "\r\n", StringComparison.Ordinal);
+    }
+
+    private static void ApplyEditorLineSpacing(RichEditBox editor, double lineHeightPoints)
+    {
+        if (!double.IsFinite(lineHeightPoints) || lineHeightPoints <= 0.1)
             return;
 
-        if (textBox.Tag is InlineTextEditSession sessionToCancel)
+        editor.Document.GetText(TextGetOptions.None, out string text);
+        var range = editor.Document.GetRange(0, Math.Max(text.Length - 1, 0));
+        // RichEdit's text object model uses points for exact line spacing. This is
+        // the same unit stored on the PDF annotation and passed to the PDF writer.
+        range.ParagraphFormat.SpaceBefore = 0;
+        range.ParagraphFormat.SpaceAfter = 0;
+        range.ParagraphFormat.SetLineSpacing(LineSpacingRule.Exactly, (float)lineHeightPoints);
+    }
+
+    private static void MoveCaretToEnd(RichEditBox editor)
+    {
+        editor.Document.GetText(TextGetOptions.None, out string text);
+        int end = Math.Max(text.Length - 1, 0);
+        editor.Document.Selection.SetRange(end, end);
+    }
+
+    private async Task CancelAsync(RichEditBox editor)
+    {
+        if (!IsEditing || _canvas?.Children.Contains(editor) != true)
+            return;
+
+        if (editor.Tag is InlineTextEditSession sessionToCancel)
         {
             sessionToCancel.IsFinishing = true;
             sessionToCancel.TextChangeVersion++;
         }
 
         IsEditing = false;
-        _activeTextBox = null;
-        _canvas.Children.Remove(textBox);
+        _activeEditor = null;
+        _canvas.Children.Remove(editor);
 
-        if (textBox.Tag is InlineTextEditSession session)
+        if (editor.Tag is InlineTextEditSession session)
         {
             if (session.RemovalTask != null)
                 await session.RemovalTask;
@@ -320,16 +386,16 @@ public sealed class InlineTextEditorController
         _restoreFocus?.Invoke(true);
     }
 
-    private async Task ApplyAsync(TextBox textBox)
+    private async Task ApplyAsync(RichEditBox editor)
     {
-        if (!IsEditing || _canvas?.Children.Contains(textBox) != true ||
+        if (!IsEditing || _canvas?.Children.Contains(editor) != true ||
             _manager == null || _annotations == null || _selectedAnnotations == null || _settings == null)
             return;
-        if (textBox.Tag is InlineTextEditSession { IsFinishing: true })
+        if (editor.Tag is InlineTextEditSession { IsFinishing: true })
             return;
 
-        string text = textBox.Text;
-        object tag = textBox.Tag;
+        string text = GetEditorText(editor);
+        object tag = editor.Tag;
         bool textWasRemoved = false;
         var editSession = tag as InlineTextEditSession;
 
@@ -340,12 +406,12 @@ public sealed class InlineTextEditorController
             editSession.SuppressTextChanged = true;
         }
 
-        textBox.Text = string.Empty;
-        _canvas.Children.Remove(textBox);
+        SetEditorText(editor, string.Empty);
+        _canvas.Children.Remove(editor);
         if (editSession != null)
             editSession.SuppressTextChanged = false;
         IsEditing = false;
-        _activeTextBox = null;
+        _activeEditor = null;
 
         try
         {
