@@ -117,6 +117,10 @@ namespace PDF_simple_edit.Models
         public int ContentStreamIndex { get; set; } = -1;
         public int ContentStreamObjectNumber { get; set; } = -1;
         public int OperationIndex { get; set; } = -1;
+        // Identifies the PdfString element inside a Tj/TJ text-showing operation.
+        // The adjustment preserves the original text advance when that element is removed.
+        public int TextOperandIndex { get; set; } = -1;
+        public double? TextAdvanceAdjustment { get; set; }
         public int TextRenderMode { get; set; }
         public double BaselineOffset { get; set; }
         public int OriginalFontObjectNumber { get; set; } = -1;

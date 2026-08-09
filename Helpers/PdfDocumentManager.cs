@@ -1113,15 +1113,15 @@ namespace PDF_simple_edit.Helpers
                 PdfLiteral operatorLiteral,
                 IList<PdfObject> operands)
             {
-                var previousTarget = _listener.CurrentTarget;
-                _listener.CurrentTarget = _tracker.Next();
+                ContentExtractionListener.TextOperationState previousState = _listener.CaptureTextOperationState();
+                _listener.BeginTextOperation(_tracker.Next(), operands);
                 try
                 {
                     InnerOperator?.Invoke(processor, operatorLiteral, operands);
                 }
                 finally
                 {
-                    _listener.CurrentTarget = previousTarget;
+                    _listener.RestoreTextOperationState(previousState);
                 }
             }
         }
@@ -1131,10 +1131,68 @@ namespace PDF_simple_edit.Helpers
             public List<PdfPageContent> Contents { get; } = new();
             private readonly float _pageHeight;
             public TextOperationDescriptor? CurrentTarget { get; set; }
+            private List<(int Index, byte[] Bytes)> _textOperands = new();
+            private int _nextTextOperand;
+
+            public sealed record TextOperationState(
+                TextOperationDescriptor? Target,
+                List<(int Index, byte[] Bytes)> TextOperands,
+                int NextTextOperand);
 
             public ContentExtractionListener(float pageHeight)
             {
                 _pageHeight = pageHeight;
+            }
+
+            public TextOperationState CaptureTextOperationState() => new(
+                CurrentTarget, _textOperands, _nextTextOperand);
+
+            public void RestoreTextOperationState(TextOperationState state)
+            {
+                CurrentTarget = state.Target;
+                _textOperands = state.TextOperands;
+                _nextTextOperand = state.NextTextOperand;
+            }
+
+            public void BeginTextOperation(
+                TextOperationDescriptor? target,
+                IList<PdfObject> operands)
+            {
+                CurrentTarget = target;
+                _textOperands = new List<(int Index, byte[] Bytes)>();
+                _nextTextOperand = 0;
+
+                int stringIndex = 0;
+                foreach (PdfObject operand in operands)
+                {
+                    if (operand is PdfString text)
+                    {
+                        _textOperands.Add((stringIndex++, text.GetValueBytes()));
+                    }
+                    else if (operand is PdfArray array)
+                    {
+                        foreach (PdfObject element in array)
+                        {
+                            if (element is PdfString arrayText)
+                                _textOperands.Add((stringIndex++, arrayText.GetValueBytes()));
+                        }
+                    }
+                }
+            }
+
+            private int ResolveTextOperandIndex(PdfString renderedText)
+            {
+                byte[] renderedBytes = renderedText.GetValueBytes();
+                for (int i = _nextTextOperand; i < _textOperands.Count; i++)
+                {
+                    if (!_textOperands[i].Bytes.SequenceEqual(renderedBytes))
+                        continue;
+
+                    _nextTextOperand = i + 1;
+                    return _textOperands[i].Index;
+                }
+
+                return -1;
             }
 
             public void EventOccurred(IEventData data, EventType type)
@@ -1158,6 +1216,10 @@ namespace PDF_simple_edit.Helpers
                     ?.GetIndirectReference()?.GetObjNumber() ?? -1;
 
                 TextOperationDescriptor? target = CurrentTarget;
+                int textOperandIndex = ResolveTextOperandIndex(textInfo.GetPdfString());
+                double? textAdvanceAdjustment = Math.Abs(textInfo.GetFontSize()) > 0.0001f
+                    ? -1000.0 * textInfo.GetUnscaledWidth() / textInfo.GetFontSize()
+                    : null;
 
                 var fragment = new PdfTextFragment
                 {
@@ -1176,6 +1238,8 @@ namespace PDF_simple_edit.Helpers
                     ContentStreamIndex = target?.StreamIndex ?? -1,
                     ContentStreamObjectNumber = target?.StreamObjectNumber ?? -1,
                     OperationIndex = target?.OperationIndex ?? -1,
+                    TextOperandIndex = textOperandIndex,
+                    TextAdvanceAdjustment = textAdvanceAdjustment,
                     TextRenderMode = target?.TextRenderMode ?? 0,
                     BaselineOffset = baselineOffset,
                     OriginalFontObjectNumber = originalFontObjectNumber
@@ -1217,6 +1281,9 @@ namespace PDF_simple_edit.Helpers
             public int StreamIndex { get; init; }
             public int StreamObjectNumber { get; init; }
             public int OperationIndex { get; init; }
+            public int TextOperandIndex { get; init; } = -1;
+            public double? TextAdvanceAdjustment { get; init; }
+            public bool RemoveWholeOperation { get; init; }
             public int TextRenderMode { get; init; }
         }
 
@@ -1237,12 +1304,97 @@ namespace PDF_simple_edit.Helpers
             output.WriteNewLine();
         }
 
-        private static byte[]? RewriteContentStreamWithoutText(byte[] contentBytes, IReadOnlyCollection<int> targetOperationIndexes)
+        private static void WriteTextAdvance(PdfOutputStream output, double adjustment)
         {
-            if (targetOperationIndexes.Count == 0)
-                return null;
+            var advances = new PdfArray();
+            advances.Add(new PdfNumber(adjustment));
+            WriteOperation(output, new PdfObject[] { advances, new PdfLiteral("TJ") });
+        }
 
-            var targets = targetOperationIndexes.ToHashSet();
+        private static bool TryWritePartiallyRemovedTextOperation(
+            PdfOutputStream output,
+            IList<PdfObject> operation,
+            string operatorName,
+            IReadOnlyCollection<TextOperationTarget> targets)
+        {
+            if (targets.Any(target => target.TextOperandIndex < 0 ||
+                !target.TextAdvanceAdjustment.HasValue ||
+                !double.IsFinite(target.TextAdvanceAdjustment.Value)))
+                return false;
+
+            var replacements = targets
+                .GroupBy(target => target.TextOperandIndex)
+                .ToDictionary(group => group.Key, group => group.First().TextAdvanceAdjustment!.Value);
+
+            if (operatorName == "TJ" && operation.Count > 1 && operation[0] is PdfArray sourceArray)
+            {
+                var rewrittenArray = new PdfArray();
+                var replacedIndexes = new HashSet<int>();
+                int stringIndex = 0;
+                foreach (PdfObject element in sourceArray)
+                {
+                    if (element is PdfString && replacements.TryGetValue(stringIndex, out double adjustment))
+                    {
+                        rewrittenArray.Add(new PdfNumber(adjustment));
+                        replacedIndexes.Add(stringIndex);
+                    }
+                    else
+                    {
+                        rewrittenArray.Add(element);
+                    }
+
+                    if (element is PdfString)
+                        stringIndex++;
+                }
+
+                if (replacedIndexes.Count != replacements.Count)
+                    return false;
+
+                WriteOperation(output, new PdfObject[] { rewrittenArray, new PdfLiteral("TJ") });
+                return true;
+            }
+
+            if (!replacements.TryGetValue(0, out double singleAdjustment) || replacements.Count != 1)
+                return false;
+
+            if (operatorName == "Tj")
+            {
+                WriteTextAdvance(output, singleAdjustment);
+                return true;
+            }
+
+            if (operatorName == "'")
+            {
+                WriteOperation(output, new PdfObject[] { new PdfLiteral("T*") });
+                WriteTextAdvance(output, singleAdjustment);
+                return true;
+            }
+
+            if (operatorName == "\"" && operation.Count >= 4)
+            {
+                WriteOperation(output, new PdfObject[] { operation[0], new PdfLiteral("Tw") });
+                WriteOperation(output, new PdfObject[] { operation[1], new PdfLiteral("Tc") });
+                WriteOperation(output, new PdfObject[] { new PdfLiteral("T*") });
+                WriteTextAdvance(output, singleAdjustment);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryRewriteContentStreamWithoutText(
+            byte[] contentBytes,
+            IReadOnlyCollection<TextOperationTarget> targets,
+            out byte[]? rewrittenBytes)
+        {
+            rewrittenBytes = null;
+            if (targets.Count == 0)
+                return false;
+
+            var targetsByOperation = targets
+                .GroupBy(target => target.OperationIndex)
+                .ToDictionary(group => group.Key, group => (IReadOnlyCollection<TextOperationTarget>)group.ToList());
+            var handledOperations = new HashSet<int>();
             var sourceFactory = new RandomAccessSourceFactory();
             var randomSource = sourceFactory.CreateSource(contentBytes);
             var tokenizer = new PdfTokenizer(new RandomAccessFileOrArray(randomSource));
@@ -1262,24 +1414,33 @@ namespace PDF_simple_edit.Helpers
                 if (parsedOperation[^1] is PdfLiteral literal && IsTextShowingOperator(literal.ToString()))
                 {
                     textOperationIndex++;
-                    if (targets.Contains(textOperationIndex))
+                    if (targetsByOperation.TryGetValue(textOperationIndex, out IReadOnlyCollection<TextOperationTarget>? operationTargets))
                     {
                         string operatorName = literal.ToString();
-                        if (operatorName == "'")
+                        bool removeWholeOperation = operationTargets.Any(target => target.RemoveWholeOperation);
+                        if (!removeWholeOperation)
                         {
-                            // ' is equivalent to T* followed by Tj. Preserve only the line move.
-                            WriteOperation(output, new PdfObject[] { new PdfLiteral("T*") });
+                            if (!TryWritePartiallyRemovedTextOperation(
+                                output, parsedOperation, operatorName, operationTargets))
+                                return false;
                         }
-                        else if (operatorName == "\"" && parsedOperation.Count >= 4)
+                        else
                         {
-                            // " sets word/character spacing, moves to the next line, then shows text.
-                            // Preserve the state and line movement, but discard the string operand.
-                            WriteOperation(output, new PdfObject[] { parsedOperation[0], new PdfLiteral("Tw") });
-                            WriteOperation(output, new PdfObject[] { parsedOperation[1], new PdfLiteral("Tc") });
-                            WriteOperation(output, new PdfObject[] { new PdfLiteral("T*") });
+                            if (operatorName == "'")
+                            {
+                                // ' is equivalent to T* followed by Tj. Preserve only the line move.
+                                WriteOperation(output, new PdfObject[] { new PdfLiteral("T*") });
+                            }
+                            else if (operatorName == "\"" && parsedOperation.Count >= 4)
+                            {
+                                // " sets word/character spacing, moves to the next line, then shows text.
+                                WriteOperation(output, new PdfObject[] { parsedOperation[0], new PdfLiteral("Tw") });
+                                WriteOperation(output, new PdfObject[] { parsedOperation[1], new PdfLiteral("Tc") });
+                                WriteOperation(output, new PdfObject[] { new PdfLiteral("T*") });
+                            }
                         }
-                        // Tj/TJ are intentionally omitted in full. Their string operands are therefore
-                        // removed from the content stream while every non-text drawing operation remains.
+
+                        handledOperations.Add(textOperationIndex);
                         modified = true;
                         continue;
                     }
@@ -1288,7 +1449,11 @@ namespace PDF_simple_edit.Helpers
                 WriteOperation(output, parsedOperation);
             }
 
-            return modified ? stream.ToArray() : null;
+            if (!modified || handledOperations.Count != targetsByOperation.Count)
+                return false;
+
+            rewrittenBytes = stream.ToArray();
+            return true;
         }
 
         private static bool TryRemoveTextOperations(PdfDocument doc, int pageIndex, IEnumerable<TextOperationTarget> targets)
@@ -1302,26 +1467,21 @@ namespace PDF_simple_edit.Helpers
                 return false;
 
             var page = doc.GetPage(pageIndex + 1);
-            bool modified = false;
+            var rewrites = new List<(PdfStream Stream, byte[] Bytes)>();
 
             foreach (var group in validTargets
                 .Where(target => target.StreamObjectNumber > 0)
                 .GroupBy(target => target.StreamObjectNumber))
             {
                 if (doc.GetPdfObject(group.Key) is not PdfStream contentStream)
-                    continue;
+                    return false;
 
-                var operationIndexes = group
-                    .Select(target => target.OperationIndex)
-                    .Distinct()
-                    .ToList();
+                if (!TryRewriteContentStreamWithoutText(
+                    contentStream.GetBytes(), group.ToList(), out byte[]? rewrittenBytes) ||
+                    rewrittenBytes == null)
+                    return false;
 
-                byte[]? rewrittenBytes = RewriteContentStreamWithoutText(contentStream.GetBytes(), operationIndexes);
-                if (rewrittenBytes == null)
-                    continue;
-
-                contentStream.SetData(rewrittenBytes);
-                modified = true;
+                rewrites.Add((contentStream, rewrittenBytes));
             }
 
             foreach (var group in validTargets
@@ -1329,26 +1489,24 @@ namespace PDF_simple_edit.Helpers
                 .GroupBy(target => target.StreamIndex))
             {
                 if (group.Key >= page.GetContentStreamCount())
-                    continue;
+                    return false;
 
                 var contentStream = page.GetContentStream(group.Key);
                 if (contentStream == null)
-                    continue;
+                    return false;
 
-                var operationIndexes = group
-                    .Select(target => target.OperationIndex)
-                    .Distinct()
-                    .ToList();
-                byte[]? rewrittenBytes = RewriteContentStreamWithoutText(
-                    contentStream.GetBytes(), operationIndexes);
-                if (rewrittenBytes == null)
-                    continue;
+                if (!TryRewriteContentStreamWithoutText(
+                    contentStream.GetBytes(), group.ToList(), out byte[]? rewrittenBytes) ||
+                    rewrittenBytes == null)
+                    return false;
 
-                contentStream.SetData(rewrittenBytes);
-                modified = true;
+                rewrites.Add((contentStream, rewrittenBytes));
             }
 
-            return modified;
+            foreach ((PdfStream stream, byte[] bytes) in rewrites)
+                stream.SetData(bytes);
+
+            return rewrites.Count > 0;
         }
 
         private static bool RemoveTextByCleanup(PdfDocument doc, int pageIndex, List<(double x, double y, double w, double h)> targets)
@@ -1393,6 +1551,7 @@ namespace PDF_simple_edit.Helpers
                         {
                             StreamIndex = contentStreamIndex,
                             OperationIndex = operationIndex,
+                            RemoveWholeOperation = true,
                             TextRenderMode = textRenderMode
                         }
                     });
@@ -1408,7 +1567,10 @@ namespace PDF_simple_edit.Helpers
                 return true;
             if (annotations.Any(annotation => annotation.TextFragments.Count > 0
                 ? annotation.TextFragments.Any(fragment => fragment.OperationIndex < 0 ||
-                    (fragment.ContentStreamObjectNumber <= 0 && fragment.ContentStreamIndex < 0))
+                    (fragment.ContentStreamObjectNumber <= 0 && fragment.ContentStreamIndex < 0) ||
+                    fragment.TextOperandIndex < 0 ||
+                    !fragment.TextAdvanceAdjustment.HasValue ||
+                    !double.IsFinite(fragment.TextAdvanceAdjustment.Value))
                 : annotation.OperationIndex < 0 ||
                     (annotation.ContentStreamObjectNumber <= 0 && annotation.ContentStreamIndex < 0)))
                 return false;
@@ -1425,6 +1587,8 @@ namespace PDF_simple_edit.Helpers
                                 StreamIndex = fragment.ContentStreamIndex,
                                 StreamObjectNumber = fragment.ContentStreamObjectNumber,
                                 OperationIndex = fragment.OperationIndex,
+                                TextOperandIndex = fragment.TextOperandIndex,
+                                TextAdvanceAdjustment = fragment.TextAdvanceAdjustment,
                                 TextRenderMode = fragment.TextRenderMode
                             })
                             : new[]
@@ -1434,14 +1598,18 @@ namespace PDF_simple_edit.Helpers
                                     StreamIndex = a.ContentStreamIndex,
                                     StreamObjectNumber = a.ContentStreamObjectNumber,
                                     OperationIndex = a.OperationIndex,
+                                    RemoveWholeOperation = true,
                                     TextRenderMode = a.TextRenderMode
                                 }
                             })
-                        .Where(target => target.StreamIndex >= 0 && target.OperationIndex >= 0)
+                        .Where(target => target.OperationIndex >= 0 &&
+                            (target.StreamObjectNumber > 0 || target.StreamIndex >= 0))
                         .GroupBy(target => (
                             target.StreamObjectNumber,
                             target.StreamIndex,
-                            target.OperationIndex))
+                            target.OperationIndex,
+                            target.TextOperandIndex,
+                            target.RemoveWholeOperation))
                         .Select(group => group.First())
                         .ToList();
 
