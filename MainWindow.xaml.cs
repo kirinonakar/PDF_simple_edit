@@ -71,6 +71,8 @@ namespace PDF_simple_edit
         private bool _isInitializing = true;
         private bool _isRestoringSettings;
         private bool _controlKeyIsDown;
+        private uint? _pendingSelectPointerId;
+        private long _selectPointerPressSequence;
         private System.Threading.CancellationTokenSource? _thumbnailCts;
 
         private readonly PrintHelper _printHelper = new();
@@ -1195,11 +1197,19 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
     var ptrPt = e.GetCurrentPoint(OverlayCanvas);
     var pos = ptrPt.Position;
     bool isLeft = ptrPt.Properties.IsLeftButtonPressed;
+    long selectPressSequence = _selectPointerPressSequence;
 
     double pdfX = pos.X / PdfToPixels;
     double pdfY = pos.Y / PdfToPixels;
 
     if (!isLeft && _currentTool == EditToolMode.Select) return;
+    if (isLeft && _currentTool == EditToolMode.Select)
+    {
+        if (_annotationInteractionController.CancelMove())
+            OverlayCanvas.ReleasePointerCapture(e.Pointer);
+        _pendingSelectPointerId = e.Pointer.PointerId;
+        selectPressSequence = ++_selectPointerPressSequence;
+    }
 
     switch (_currentTool)
     {
@@ -1238,20 +1248,30 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 RenderAnnotationOverlays();
             }
 
-            if (_selectedAnnotation != null)
+            var currentPointerPoint = e.GetCurrentPoint(OverlayCanvas);
+            PdfAnnotation? moveTarget = _selectedAnnotation;
+            bool canStartMove = moveTarget != null &&
+                _currentTool == EditToolMode.Select &&
+                _pendingSelectPointerId == e.Pointer.PointerId &&
+                selectPressSequence == _selectPointerPressSequence &&
+                currentPointerPoint.Properties.IsLeftButtonPressed;
+            if (canStartMove && moveTarget != null)
             {
                 _annotationInteractionController.BeginMove(_selectedAnnotations, pos);
                 OverlayCanvas.CapturePointer(e.Pointer);
-                if (!_selectedAnnotation.IsOriginalTextReplacement &&
-                    !(_selectedAnnotation.IsOriginalImageReplacement &&
-                      _selectedAnnotation.OriginalImageName != null))
+                if (!moveTarget.IsOriginalTextReplacement &&
+                    !(moveTarget.IsOriginalImageReplacement &&
+                      moveTarget.OriginalImageName != null))
                 {
                     TxtStatus.Text = _selectedAnnotations.Count > 1 ? $"{_selectedAnnotations.Count}개 객체 선택됨" : "객체 선택됨 (드래그하여 이동)";
                 }
             }
             else
             {
-                TxtStatus.Text = "준비";
+                if (_pendingSelectPointerId == e.Pointer.PointerId)
+                    _pendingSelectPointerId = null;
+                if (_selectedAnnotation == null)
+                    TxtStatus.Text = "준비";
             }
             break;
 
@@ -1292,7 +1312,22 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
         private void OverlayCanvas_PointerMoved(object sender, PointerRoutedEventArgs e)
         {
-            var pos = e.GetCurrentPoint(OverlayCanvas).Position;
+            var pointerPoint = e.GetCurrentPoint(OverlayCanvas);
+            if (_annotationInteractionController.IsMoving &&
+                !pointerPoint.Properties.IsLeftButtonPressed)
+            {
+                _pendingSelectPointerId = null;
+                _selectPointerPressSequence++;
+                if (_annotationInteractionController.CancelMove())
+                {
+                    OverlayCanvas.ReleasePointerCapture(e.Pointer);
+                    TxtStatus.Text = "객체 선택됨 (드래그하여 이동)";
+                    RenderAnnotationOverlays();
+                }
+                return;
+            }
+
+            var pos = pointerPoint.Position;
             if (_annotationInteractionController.UpdatePointer(
                 OverlayCanvas,
                 pos,
@@ -1303,6 +1338,12 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
         private async void OverlayCanvas_PointerReleased(object sender, PointerRoutedEventArgs e)
         {
+            if (_pendingSelectPointerId == e.Pointer.PointerId)
+            {
+                _pendingSelectPointerId = null;
+                _selectPointerPressSequence++;
+            }
+
             if (_annotationInteractionController.CompleteResize())
             {
                 OverlayCanvas.ReleasePointerCapture(e.Pointer);

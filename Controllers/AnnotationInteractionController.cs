@@ -50,6 +50,23 @@ public sealed class AnnotationInteractionController
         _lastPointerPosition = position;
     }
 
+    public bool CancelMove()
+    {
+        if (!IsMoving)
+            return false;
+
+        foreach ((PdfAnnotation annotation, Point position) in _moveStartPositions)
+        {
+            annotation.X = position.X;
+            annotation.Y = position.Y;
+        }
+
+        IsMoving = false;
+        _hasMoved = false;
+        _moveStartPositions.Clear();
+        return true;
+    }
+
     public void BeginHighlight(
         Canvas canvas,
         Point position,
