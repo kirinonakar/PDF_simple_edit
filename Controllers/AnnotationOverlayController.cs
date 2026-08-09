@@ -31,12 +31,13 @@ public sealed class AnnotationOverlayController
         foreach (UIElement child in canvas.Children.Where(child => child is not TextBox).ToList())
             canvas.Children.Remove(child);
 
+        TextBox? activeEditor = canvas.Children.OfType<TextBox>().FirstOrDefault();
         int insertIndex = 0;
         foreach (PdfAnnotation annotation in annotations.Where(item => item.PageIndex == pageIndex))
         {
             if (annotation == editingAnnotation)
             {
-                AddSelectionBorder(canvas, annotation, ref insertIndex);
+                AddSelectionBorder(canvas, annotation, ref insertIndex, activeEditor);
                 continue;
             }
             if (annotation.IsOriginalTextReplacement && !selectedAnnotations.Contains(annotation))
@@ -76,20 +77,59 @@ public sealed class AnnotationOverlayController
     private static void AddSelectionBorder(
         Canvas canvas,
         PdfAnnotation annotation,
-        ref int insertIndex)
+        ref int insertIndex,
+        TextBox? activeEditor = null)
     {
+        double editorWidth = activeEditor == null
+            ? annotation.Width * PdfToPixels
+            : ResolveEditorLength(
+                activeEditor.Width,
+                activeEditor.ActualWidth,
+                activeEditor.DesiredSize.Width,
+                annotation.Width * PdfToPixels);
+        double editorHeight = activeEditor == null
+            ? annotation.Height * PdfToPixels
+            : ResolveEditorLength(
+                activeEditor.Height,
+                activeEditor.ActualHeight,
+                activeEditor.DesiredSize.Height,
+                annotation.Height * PdfToPixels);
+        double editorLeft = activeEditor == null
+            ? annotation.X * PdfToPixels
+            : ResolveCanvasPosition(Canvas.GetLeft(activeEditor), annotation.X * PdfToPixels);
+        double editorTop = activeEditor == null
+            ? annotation.Y * PdfToPixels
+            : ResolveCanvasPosition(Canvas.GetTop(activeEditor), annotation.Y * PdfToPixels);
         var border = new Border
         {
             BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
             BorderThickness = new Thickness(1),
-            Width = Math.Max(annotation.Width * PdfToPixels, 1) + 4,
-            Height = Math.Max(annotation.Height * PdfToPixels, 1) + 4,
+            Width = Math.Max(editorWidth, 1) + 4,
+            Height = Math.Max(editorHeight, 1) + 4,
             IsHitTestVisible = false
         };
-        Canvas.SetLeft(border, annotation.X * PdfToPixels - 2);
-        Canvas.SetTop(border, annotation.Y * PdfToPixels - 2);
+        Canvas.SetLeft(border, editorLeft - 2);
+        Canvas.SetTop(border, editorTop - 2);
         canvas.Children.Insert(insertIndex++, border);
     }
+
+    private static double ResolveEditorLength(
+        double requested,
+        double actual,
+        double desired,
+        double fallback)
+    {
+        if (double.IsFinite(requested) && requested > 0)
+            return requested;
+        if (double.IsFinite(actual) && actual > 0)
+            return actual;
+        if (double.IsFinite(desired) && desired > 0)
+            return desired;
+        return fallback;
+    }
+
+    private static double ResolveCanvasPosition(double position, double fallback) =>
+        double.IsFinite(position) ? position : fallback;
 
     private static FrameworkElement? CreateElement(
         PdfAnnotation annotation,

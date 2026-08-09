@@ -212,6 +212,37 @@ public static class AnnotationTextLayoutService
         return Math.Max(annotation.Height * PdfToPixels, requiredHeight);
     }
 
+    public static double GetInlineEditorHeight(
+        string? text,
+        string fontFamily,
+        double fontSize,
+        bool isBold,
+        bool isItalic,
+        int fontWeight = 0)
+    {
+        try
+        {
+            string measuredText = string.IsNullOrEmpty(text) ? "가Ag" : text;
+            TextBlock sample = CreateTextBlock(
+                measuredText,
+                fontFamily,
+                fontSize,
+                isBold,
+                isItalic,
+                fontWeight);
+            sample.Measure(new Windows.Foundation.Size(
+                double.PositiveInfinity,
+                double.PositiveInfinity));
+            // One pixel above and below keeps the caret and descenders visible
+            // without retaining the much taller original annotation bounds.
+            return Math.Max(Math.Ceiling(sample.DesiredSize.Height + 2.0), 1);
+        }
+        catch
+        {
+            return Math.Max(Math.Ceiling(fontSize * PdfToPixels + 2.0), 1);
+        }
+    }
+
     public static (double width, double height) MeasureBounds(
         string text,
         string fontFamily,

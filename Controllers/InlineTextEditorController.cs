@@ -101,12 +101,16 @@ public sealed class InlineTextEditorController
         double width = existingAnnotation != null
             ? Math.Max(existingAnnotation.Width * PdfToPixels, 1)
             : double.NaN;
-        double height = existingAnnotation != null
-            ? Math.Max(existingAnnotation.Height * PdfToPixels, 1)
-            : 24;
         double displayFontSize = existingAnnotation != null
             ? AnnotationTextLayoutService.GetDisplayFontSize(existingAnnotation, initialText)
             : fontSize;
+        double editorHeight = AnnotationTextLayoutService.GetInlineEditorHeight(
+            initialText,
+            fontFamily,
+            displayFontSize,
+            isBold,
+            isItalic,
+            fontWeight);
         double topOffset = existingAnnotation != null
             ? AnnotationTextLayoutService.GetTopOffset(existingAnnotation, displayFontSize)
             : 0;
@@ -117,9 +121,9 @@ public sealed class InlineTextEditorController
             TextWrapping = TextWrapping.NoWrap,
             Text = initialText,
             MinWidth = existingAnnotation != null ? 0 : 60,
-            MinHeight = existingAnnotation != null ? 0 : 24,
+            MinHeight = 0,
             Width = width,
-            Height = existingAnnotation != null ? height : double.NaN,
+            Height = editorHeight,
             Padding = new Thickness(0),
             Margin = new Thickness(0),
             // The editing border is rendered as a separate overlay. Keeping the
@@ -153,11 +157,6 @@ public sealed class InlineTextEditorController
 
         textBox.Loaded += (_, _) =>
         {
-            if (existingAnnotation != null)
-            {
-                textBox.UpdateLayout();
-                textBox.Height = height;
-            }
             textBox.Focus(FocusState.Programmatic);
         };
         textBox.PointerPressed += (_, args) => args.Handled = true;
@@ -204,9 +203,11 @@ public sealed class InlineTextEditorController
         long changeVersion = ++session.TextChangeVersion;
         session.HasLiveChanges = true;
 
+        double displayFontSize = session.Annotation.TextFragments.Count > 1
+            ? AnnotationTextLayoutService.GetDisplayFontSize(session.Annotation, changedText)
+            : session.Annotation.FontSize;
         if (session.Annotation.TextFragments.Count > 1)
         {
-            double displayFontSize = AnnotationTextLayoutService.GetDisplayFontSize(session.Annotation, changedText);
             textBox.FontSize = displayFontSize * PdfToPixels;
             textBox.CharacterSpacing = AnnotationTextLayoutService.GetDisplayCharacterSpacing(
                 session.Annotation,
@@ -216,6 +217,14 @@ public sealed class InlineTextEditorController
                 session.Annotation.Y * PdfToPixels +
                 AnnotationTextLayoutService.GetTopOffset(session.Annotation, displayFontSize));
         }
+        textBox.Height = AnnotationTextLayoutService.GetInlineEditorHeight(
+            changedText,
+            session.Annotation.FontFamily,
+            displayFontSize,
+            session.Annotation.IsBold,
+            session.Annotation.IsItalic,
+            session.Annotation.FontWeight);
+        _renderOverlays?.Invoke();
 
         if (session.Annotation.IsOriginalTextReplacement && session.RemovalTask == null)
         {
@@ -229,6 +238,13 @@ public sealed class InlineTextEditorController
                 textBox.CharacterSpacing = AnnotationTextLayoutService.GetDisplayCharacterSpacing(
                     session.Annotation,
                     session.OriginalContent);
+                textBox.Height = AnnotationTextLayoutService.GetInlineEditorHeight(
+                    session.OriginalContent,
+                    session.Annotation.FontFamily,
+                    session.Annotation.FontSize,
+                    session.Annotation.IsBold,
+                    session.Annotation.IsItalic,
+                    session.Annotation.FontWeight);
                 textBox.SelectionStart = textBox.Text.Length;
                 session.SuppressTextChanged = false;
                 session.HasLiveChanges = false;
