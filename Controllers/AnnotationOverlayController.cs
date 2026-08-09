@@ -50,16 +50,20 @@ public sealed class AnnotationOverlayController
                 continue;
             }
 
+            // Keep the rendered annotation at its exact canvas coordinates.
+            // Wrapping it in a bordered parent changes its layout origin and makes
+            // text appear to jump when selection is toggled.
+            canvas.Children.Insert(insertIndex++, element);
             var border = new Border
             {
                 BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
                 BorderThickness = new Thickness(1),
-                Margin = new Thickness(-2),
-                Child = element,
+                Width = Math.Max(annotation.Width * PdfToPixels, 1) + 4,
+                Height = Math.Max(annotation.Height * PdfToPixels, 1) + 4,
                 IsHitTestVisible = false
             };
-            Canvas.SetLeft(border, annotation.X * PdfToPixels);
-            Canvas.SetTop(border, annotation.Y * PdfToPixels);
+            Canvas.SetLeft(border, annotation.X * PdfToPixels - 2);
+            Canvas.SetTop(border, annotation.Y * PdfToPixels - 2);
             canvas.Children.Insert(insertIndex++, border);
 
             if (annotation == primarySelection &&
