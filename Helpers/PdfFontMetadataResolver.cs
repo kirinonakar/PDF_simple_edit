@@ -62,7 +62,8 @@ internal static class PdfFontMetadataResolver
 
         if (normalized.Contains("hairline") || normalized.Contains("thin")) return 100;
         if (normalized.Contains("extralight") || normalized.Contains("ultralight")) return 200;
-        if (normalized.Contains("semilight") || normalized.Contains("demilight") || normalized.Contains("light")) return 300;
+        if (normalized.Contains("semilight") || normalized.Contains("demilight")) return 350;
+        if (normalized.Contains("light")) return 300;
         if (normalized.Contains("medium")) return 500;
         if (normalized.Contains("semibold") || normalized.Contains("demibold")) return 600;
         if (normalized.Contains("extrabold") || normalized.Contains("ultrabold")) return 800;

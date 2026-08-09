@@ -147,6 +147,7 @@ namespace PDF_simple_edit
                 _fontSettings.Color = "#000000";
 
                 InitializeComponent();
+                AddInstalledNotoFonts();
                 WireChildControlEvents();
                 DocTabView.TabItemsSource = _tabs;
                 // TextBox 내부 처리로 이미 Handled 된 키도 편집 확정 로직에서
@@ -366,6 +367,21 @@ namespace PDF_simple_edit
             BtnPrevPage.Click += PrevPage_Click;
             BtnNextPage.Click += NextPage_Click;
             TxtGoToPage.KeyDown += GoToPage_KeyDown;
+        }
+
+        private void AddInstalledNotoFonts()
+        {
+            var existingFamilies = CmbFontFamily.Items
+                .OfType<ComboBoxItem>()
+                .Select(item => item.Content?.ToString())
+                .Where(family => !string.IsNullOrWhiteSpace(family))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string family in InstalledFontService.GetInstalledNotoFamilies())
+            {
+                if (existingFamilies.Add(family))
+                    CmbFontFamily.Items.Add(new ComboBoxItem { Content = family });
+            }
         }
 
         private void ApplyFontSettingsToControls()
@@ -1631,9 +1647,17 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                         return;
                     _selectedAnnotation.FontFamily = font;
                     _selectedAnnotation.OriginalFontObjectNumber = -1;
-                    var size = AnnotationTextLayoutService.MeasureBounds(_selectedAnnotation.Content, font, _selectedAnnotation.FontSize, _selectedAnnotation.IsBold, _selectedAnnotation.IsItalic);
-                    _selectedAnnotation.Width = size.width;
-                    _selectedAnnotation.Height = size.height;
+                    foreach (PdfTextFragment fragment in _selectedAnnotation.TextFragments)
+                    {
+                        fragment.FontFamily = font;
+                        fragment.OriginalFontObjectNumber = -1;
+                    }
+                    if (_selectedAnnotation.TextFragments.Count < 2)
+                    {
+                        var size = AnnotationTextLayoutService.MeasureBounds(_selectedAnnotation.Content, font, _selectedAnnotation.FontSize, _selectedAnnotation.IsBold, _selectedAnnotation.IsItalic);
+                        _selectedAnnotation.Width = size.width;
+                        _selectedAnnotation.Height = size.height;
+                    }
                     _pdfManager.MarkModified();
                     RenderAnnotationOverlays();
                 }

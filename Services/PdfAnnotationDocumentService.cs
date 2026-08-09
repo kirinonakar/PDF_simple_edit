@@ -69,7 +69,8 @@ public sealed class PdfAnnotationDocumentService
                     annotation.OriginalFontObjectNumber,
                     fontObjectNumbers,
                     xOffsets,
-                    baselineOffsets);
+                    baselineOffsets,
+                    annotation.TextFragments.Count > 1 ? annotation.Width : 0);
                 break;
             case AnnotationType.Highlight:
                 manager.AddHighlightInternal(

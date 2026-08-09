@@ -169,6 +169,9 @@ public sealed class AnnotationOverlayController
                     : double.NaN,
             FontFamily = new FontFamily(annotation.FontFamily),
             FontSize = displayFontSize * PdfToPixels,
+            CharacterSpacing = hasOriginalLineLayout
+                ? AnnotationTextLayoutService.GetDisplayCharacterSpacing(annotation, annotation.Content)
+                : 0,
             Foreground = new SolidColorBrush(parseColor(annotation.Color)),
             FontWeight = AnnotationTextLayoutService.ResolveFontWeight(
                 annotation.FontWeight,

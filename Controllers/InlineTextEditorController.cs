@@ -129,6 +129,9 @@ public sealed class InlineTextEditorController
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
             BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
             FontSize = displayFontSize * PdfToPixels,
+            CharacterSpacing = existingAnnotation != null
+                ? AnnotationTextLayoutService.GetDisplayCharacterSpacing(existingAnnotation, initialText)
+                : 0,
             FontFamily = new FontFamily(fontFamily),
             Foreground = new SolidColorBrush(EditorColorService.Parse(color)),
             FontWeight = AnnotationTextLayoutService.ResolveFontWeight(fontWeight, isBold),
@@ -205,6 +208,9 @@ public sealed class InlineTextEditorController
         {
             double displayFontSize = AnnotationTextLayoutService.GetDisplayFontSize(session.Annotation, changedText);
             textBox.FontSize = displayFontSize * PdfToPixels;
+            textBox.CharacterSpacing = AnnotationTextLayoutService.GetDisplayCharacterSpacing(
+                session.Annotation,
+                changedText);
             Canvas.SetTop(
                 textBox,
                 session.Annotation.Y * PdfToPixels +
@@ -220,6 +226,9 @@ public sealed class InlineTextEditorController
                 session.SuppressTextChanged = true;
                 session.Annotation.Content = session.OriginalContent;
                 textBox.Text = session.OriginalContent;
+                textBox.CharacterSpacing = AnnotationTextLayoutService.GetDisplayCharacterSpacing(
+                    session.Annotation,
+                    session.OriginalContent);
                 textBox.SelectionStart = textBox.Text.Length;
                 session.SuppressTextChanged = false;
                 session.HasLiveChanges = false;

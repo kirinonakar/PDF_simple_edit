@@ -259,7 +259,8 @@ namespace PDF_simple_edit.Helpers
             double baselineOffset = 0, int originalFontObjectNumber = -1,
             IReadOnlyList<int>? originalFontObjectNumbersByLine = null,
             IReadOnlyList<double>? lineXOffsets = null,
-            IReadOnlyList<double>? lineBaselineOffsets = null)
+            IReadOnlyList<double>? lineBaselineOffsets = null,
+            double maximumLineWidth = 0)
         {
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages()) return;
 
@@ -415,6 +416,23 @@ namespace PDF_simple_edit.Helpers
                 canvas.SetFontAndSize(
                     resolvedLineFonts[i].Font,
                     (float)Math.Max(fontSize, 1));
+                float characterSpacing = 0;
+                if (maximumLineWidth > 0.1 && lines[i].Length > 1)
+                {
+                    float measuredLineWidth = resolvedLineFonts[i].Font.GetWidth(
+                        lines[i],
+                        (float)Math.Max(fontSize, 1));
+                    if (measuredLineWidth > maximumLineWidth)
+                    {
+                        characterSpacing = (float)(
+                            (maximumLineWidth - measuredLineWidth) /
+                            Math.Max(lines[i].Length - 1, 1));
+                        characterSpacing = Math.Max(
+                            characterSpacing,
+                            (float)(-Math.Max(fontSize, 1) * 0.25));
+                    }
+                }
+                canvas.SetCharacterSpacing(characterSpacing);
                 canvas.ShowText(lines[i]);
             }
 
@@ -428,6 +446,11 @@ namespace PDF_simple_edit.Helpers
             if (string.IsNullOrWhiteSpace(nameOrFile)) return null;
 
             string fontDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts");
+            string userFontDir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Microsoft",
+                "Windows",
+                "Fonts");
 
             // 핵심: 굴림/돋움은 gulim.ttc에, 바탕/궁서는 batang.ttc에 묶여 있습니다. 인덱스를 지정해야 합니다.
             var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -443,8 +466,12 @@ namespace PDF_simple_edit.Helpers
                 { "궁서", "batang.ttc,2" },
                 { "궁서체", "batang.ttc,3" },
                 { "나눔고딕", "NanumGothic.ttf" },
-                { "Noto Sans KR", "NotoSansKR-VF.ttf" },
-                { "Noto Serif KR", "NotoSerifKR-VF.ttf" },
+                { "Noto Sans KR", "NotoSansKR-VF.ttf|NotoSansKR-Regular.ttf" },
+                { "Noto Serif KR", "NotoSerifKR-VF.ttf|NotoSerifKR-Regular.ttf" },
+                { "Noto Sans", isBold ? "NotoSans-Bold.ttf" : "NotoSans-Regular.ttf" },
+                { "Noto Serif", isBold ? "NotoSerif-Bold.ttf" : "NotoSerif-Regular.ttf" },
+                { "Noto Sans JP", "NotoSansJP-VF.ttf" },
+                { "Noto Serif JP", "NotoSerifJP-VF.ttf" },
                 { "Arial", isBold ? "arialbd.ttf" : "arial.ttf" },
                 { "Times New Roman", isBold ? "timesbd.ttf" : "times.ttf" },
                 { "Tahoma", isBold ? "tahomabd.ttf" : "tahoma.ttf" },
@@ -455,13 +482,18 @@ namespace PDF_simple_edit.Helpers
 
             if (map.TryGetValue(nameOrFile, out string? mappedValue))
             {
-                string[] parts = mappedValue.Split(',');
-                string path = System.IO.Path.Combine(fontDir, parts[0]); // 실제 파일 경로
-                
-                if (File.Exists(path))
+                foreach (string mappedCandidate in mappedValue.Split('|'))
                 {
-                    // 파일이 존재하면 경로 뒤에 인덱스(,0 ,1 ,2 등)를 붙여서 반환
-                    return parts.Length > 1 ? $"{path},{parts[1]}" : path;
+                    string[] parts = mappedCandidate.Split(',');
+                    foreach (string directory in new[] { fontDir, userFontDir })
+                    {
+                        string path = System.IO.Path.Combine(directory, parts[0]);
+                        if (File.Exists(path))
+                        {
+                            // 파일이 존재하면 경로 뒤에 인덱스(,0 ,1 ,2 등)를 붙여서 반환
+                            return parts.Length > 1 ? $"{path},{parts[1]}" : path;
+                        }
+                    }
                 }
             }
 
@@ -471,6 +503,8 @@ namespace PDF_simple_edit.Helpers
             {
                 string path = System.IO.Path.Combine(fontDir, nameOrFile);
                 if (File.Exists(path)) return path;
+                string userPath = System.IO.Path.Combine(userFontDir, nameOrFile);
+                if (File.Exists(userPath)) return userPath;
             }
 
             // 3. 매핑에 없으면 폰트 이름의 공백을 제거하고 유추 시도

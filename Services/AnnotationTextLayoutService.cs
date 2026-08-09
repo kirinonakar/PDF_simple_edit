@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using PDF_simple_edit.Models;
 using System;
+using System.Linq;
 
 namespace PDF_simple_edit.Services;
 
@@ -14,28 +15,64 @@ public static class AnnotationTextLayoutService
     public static bool ContainsLineBreak(string? text) =>
         !string.IsNullOrEmpty(text) && (text.Contains('\r') || text.Contains('\n'));
 
-    public static double GetDisplayFontSize(PdfAnnotation annotation, string text)
+    public static double GetDisplayFontSize(PdfAnnotation annotation, string _)
     {
-        if (annotation.FontSize <= 0 || annotation.Width <= 0 || annotation.TextFragments.Count < 2)
-            return annotation.FontSize;
+        // Original PDF text must keep its point size. Scaling it down to fit the
+        // WinUI fallback font's measured width makes the edit preview smaller than
+        // the source even though the PDF font size itself has not changed.
+        return annotation.FontSize;
+    }
+
+    public static int GetDisplayCharacterSpacing(PdfAnnotation annotation, string? text)
+    {
+        if (annotation.TextFragments.Count < 2 ||
+            annotation.Width <= 0.1 ||
+            annotation.FontSize <= 0.1 ||
+            string.IsNullOrEmpty(text))
+        {
+            return 0;
+        }
 
         try
         {
-            double measured = MeasureText(
-                text,
-                annotation.FontFamily,
-                annotation.FontSize,
-                annotation.IsBold,
-                annotation.IsItalic,
-                annotation.FontWeight);
-            double availableWidth = Math.Max(annotation.Width - (2.0 / PdfToPixels), 1);
-            return measured <= availableWidth
-                ? annotation.FontSize
-                : Math.Max(annotation.FontSize * availableWidth / measured, 1);
+            double availableWidth = Math.Max(annotation.Width * PdfToPixels - 2.0, 1.0);
+            double fontSizePixels = annotation.FontSize * PdfToPixels;
+            int requiredSpacing = 0;
+            string[] lines = text
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace('\r', '\n')
+                .Split('\n');
+
+            foreach (string line in lines.Where(line => line.Length > 1))
+            {
+                TextBlock sample = CreateTextBlock(
+                    line,
+                    annotation.FontFamily,
+                    annotation.FontSize,
+                    annotation.IsBold,
+                    annotation.IsItalic,
+                    annotation.FontWeight);
+                sample.Measure(new Windows.Foundation.Size(
+                    double.PositiveInfinity,
+                    double.PositiveInfinity));
+
+                double overflow = sample.DesiredSize.Width - availableWidth;
+                if (overflow <= 0)
+                    continue;
+
+                int lineSpacing = (int)Math.Floor(
+                    -overflow * 1000.0 /
+                    (fontSizePixels * Math.Max(line.Length - 1, 1)));
+                requiredSpacing = Math.Min(requiredSpacing, lineSpacing);
+            }
+
+            // Keep glyph shapes and point size intact. The lower bound prevents
+            // unusually long replacement text from becoming unreadably compressed.
+            return Math.Clamp(requiredSpacing, -250, 0);
         }
         catch
         {
-            return annotation.FontSize;
+            return 0;
         }
     }
 
@@ -118,19 +155,6 @@ public static class AnnotationTextLayoutService
         return text.Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n')
             .Split('\n').Length;
-    }
-
-    private static double MeasureText(
-        string text,
-        string fontFamily,
-        double fontSize,
-        bool isBold,
-        bool isItalic,
-        int fontWeight)
-    {
-        TextBlock textBlock = CreateTextBlock(text, fontFamily, fontSize, isBold, isItalic, fontWeight);
-        textBlock.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
-        return Math.Max((textBlock.DesiredSize.Width - 2.0) / PdfToPixels, 1);
     }
 
     private static TextBlock CreateTextBlock(

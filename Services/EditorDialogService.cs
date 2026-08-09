@@ -36,12 +36,16 @@ public sealed class EditorDialogService
         renderQuality.SelectedIndex = renderScale switch { 1.0 => 0, 1.5 => 1, 3.0 => 3, _ => 2 };
 
         var fontFamily = new ComboBox { Header = "기본 폰트", Width = 200 };
-        foreach (string family in FontFamilies)
+        foreach (string family in FontFamilies
+            .Concat(InstalledFontService.GetInstalledNotoFamilies())
+            .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
             fontFamily.Items.Add(new ComboBoxItem { Content = family });
+        }
         fontFamily.SelectedItem = fontFamily.Items
             .OfType<ComboBoxItem>()
             .FirstOrDefault(item => string.Equals(
-                item.Content?.ToString(), fontSettings.FontFamily, StringComparison.Ordinal));
+                item.Content?.ToString(), fontSettings.FontFamily, StringComparison.OrdinalIgnoreCase));
 
         var fontSize = new ComboBox { Header = "기본 글자 크기", Width = 150 };
         foreach (string size in FontSizes)
