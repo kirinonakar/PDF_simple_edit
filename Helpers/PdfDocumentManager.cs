@@ -1495,6 +1495,110 @@ namespace PDF_simple_edit.Helpers
             return true;
         }
 
+        private static int CountTextShowingOperations(byte[] contentBytes)
+        {
+            var sourceFactory = new RandomAccessSourceFactory();
+            var randomSource = sourceFactory.CreateSource(contentBytes);
+            var tokenizer = new PdfTokenizer(new RandomAccessFileOrArray(randomSource));
+            var parser = new iText.Kernel.Pdf.Canvas.Parser.Util.PdfCanvasParser(tokenizer);
+            int count = 0;
+
+            while (true)
+            {
+                var operation = parser.Parse(new List<PdfObject>());
+                if (operation == null || operation.Count == 0)
+                    break;
+                if (operation[^1] is PdfLiteral literal &&
+                    IsTextShowingOperator(literal.ToString()))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static bool TryRewriteCombinedPageContentStreams(
+            PdfPage page,
+            IReadOnlyCollection<TextOperationTarget> targets,
+            out List<(PdfStream Stream, byte[] Bytes)> rewrites)
+        {
+            rewrites = new List<(PdfStream Stream, byte[] Bytes)>();
+            var pageStreams = new List<PdfStream>();
+            var operationOffsetsByObject = new Dictionary<int, int>();
+            var operationOffsetsByIndex = new Dictionary<int, int>();
+            using var combined = new MemoryStream();
+            int operationOffset = 0;
+
+            for (int streamIndex = 0; streamIndex < page.GetContentStreamCount(); streamIndex++)
+            {
+                PdfStream? contentStream = page.GetContentStream(streamIndex);
+                if (contentStream == null)
+                    return false;
+
+                byte[] bytes = contentStream.GetBytes();
+                pageStreams.Add(contentStream);
+                operationOffsetsByIndex[streamIndex] = operationOffset;
+                int objectNumber = contentStream.GetIndirectReference()?.GetObjNumber() ?? -1;
+                if (objectNumber > 0)
+                    operationOffsetsByObject[objectNumber] = operationOffset;
+
+                operationOffset += CountTextShowingOperations(bytes);
+                combined.Write(bytes, 0, bytes.Length);
+                combined.WriteByte((byte)'\n');
+            }
+
+            var combinedTargets = new List<TextOperationTarget>(targets.Count);
+            foreach (TextOperationTarget target in targets)
+            {
+                int streamOperationOffset;
+                if (target.StreamObjectNumber > 0)
+                {
+                    if (!operationOffsetsByObject.TryGetValue(
+                        target.StreamObjectNumber,
+                        out streamOperationOffset))
+                    {
+                        return false;
+                    }
+                }
+                else if (!operationOffsetsByIndex.TryGetValue(
+                    target.StreamIndex,
+                    out streamOperationOffset))
+                {
+                    return false;
+                }
+
+                combinedTargets.Add(new TextOperationTarget
+                {
+                    StreamIndex = 0,
+                    StreamObjectNumber = pageStreams[0].GetIndirectReference()?.GetObjNumber() ?? -1,
+                    OperationIndex = streamOperationOffset + target.OperationIndex,
+                    TextOperandIndex = target.TextOperandIndex,
+                    TextAdvanceAdjustment = target.TextAdvanceAdjustment,
+                    RemoveWholeOperation = target.RemoveWholeOperation,
+                    TextRenderMode = target.TextRenderMode
+                });
+            }
+
+            if (!TryRewriteContentStreamWithoutText(
+                combined.ToArray(),
+                combinedTargets,
+                out byte[]? rewrittenBytes) ||
+                rewrittenBytes == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < pageStreams.Count; i++)
+            {
+                rewrites.Add((
+                    pageStreams[i],
+                    i == 0 ? rewrittenBytes : Array.Empty<byte>()));
+            }
+
+            return true;
+        }
+
         private static bool TryRemoveTextOperations(PdfDocument doc, int pageIndex, IEnumerable<TextOperationTarget> targets)
         {
             var validTargets = targets
@@ -1507,6 +1611,30 @@ namespace PDF_simple_edit.Helpers
 
             var page = doc.GetPage(pageIndex + 1);
             var rewrites = new List<(PdfStream Stream, byte[] Bytes)>();
+
+            // Page content streams are one logical content sequence. Some PDFs
+            // split a TJ array and its TJ operator across adjacent stream objects.
+            // Rewriting those objects independently loses the operand array and
+            // makes a valid partial deletion fail. Join the page streams for
+            // parsing, translate local operation indexes to the joined sequence,
+            // then keep the rewritten sequence in the first page stream.
+            var pageStreamObjectNumbers = Enumerable.Range(0, page.GetContentStreamCount())
+                .Select(index => page.GetContentStream(index)?.GetIndirectReference()?.GetObjNumber() ?? -1)
+                .Where(number => number > 0)
+                .ToHashSet();
+            bool allTargetsArePageStreams = validTargets.All(target =>
+                target.StreamObjectNumber > 0
+                    ? pageStreamObjectNumbers.Contains(target.StreamObjectNumber)
+                    : target.StreamIndex >= 0 && target.StreamIndex < page.GetContentStreamCount());
+            if (allTargetsArePageStreams)
+            {
+                if (!TryRewriteCombinedPageContentStreams(page, validTargets, out rewrites))
+                    return false;
+
+                foreach ((PdfStream stream, byte[] bytes) in rewrites)
+                    stream.SetData(bytes);
+                return rewrites.Count > 0;
+            }
 
             foreach (var group in validTargets
                 .Where(target => target.StreamObjectNumber > 0)
