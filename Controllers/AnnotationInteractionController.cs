@@ -180,15 +180,13 @@ public sealed class AnnotationInteractionController
         switch (_resizeHandle)
         {
             case "NW":
-                if (annotation.Width - dx > minimumSize) { annotation.X += dx; annotation.Width -= dx; }
-                if (annotation.Height - dy > minimumSize) { annotation.Y += dy; annotation.Height -= dy; }
+                ResizeCorner(annotation, dx, dy, moveLeft: true, moveTop: true, minimumSize: minimumSize);
                 break;
             case "N":
                 if (annotation.Height - dy > minimumSize) { annotation.Y += dy; annotation.Height -= dy; }
                 break;
             case "NE":
-                if (annotation.Width + dx > minimumSize) annotation.Width += dx;
-                if (annotation.Height - dy > minimumSize) { annotation.Y += dy; annotation.Height -= dy; }
+                ResizeCorner(annotation, dx, dy, moveLeft: false, moveTop: true, minimumSize: minimumSize);
                 break;
             case "W":
                 if (annotation.Width - dx > minimumSize) { annotation.X += dx; annotation.Width -= dx; }
@@ -197,19 +195,73 @@ public sealed class AnnotationInteractionController
                 if (annotation.Width + dx > minimumSize) annotation.Width += dx;
                 break;
             case "SW":
-                if (annotation.Width - dx > minimumSize) { annotation.X += dx; annotation.Width -= dx; }
-                if (annotation.Height + dy > minimumSize) annotation.Height += dy;
+                ResizeCorner(annotation, dx, dy, moveLeft: true, moveTop: false, minimumSize: minimumSize);
                 break;
             case "S":
                 if (annotation.Height + dy > minimumSize) annotation.Height += dy;
                 break;
             case "SE":
-                if (annotation.Width + dx > minimumSize) annotation.Width += dx;
-                if (annotation.Height + dy > minimumSize) annotation.Height += dy;
+                ResizeCorner(annotation, dx, dy, moveLeft: false, moveTop: false, minimumSize: minimumSize);
                 break;
         }
         annotation.IsApplied = false;
         _lastPointerPosition = position;
+    }
+
+    private static void ResizeCorner(
+        PdfAnnotation annotation,
+        double dx,
+        double dy,
+        bool moveLeft,
+        bool moveTop,
+        double minimumSize)
+    {
+        if (annotation.Type != AnnotationType.Image)
+        {
+            double resizedWidth = annotation.Width + (moveLeft ? -dx : dx);
+            if (resizedWidth > minimumSize)
+            {
+                if (moveLeft)
+                    annotation.X += dx;
+                annotation.Width = resizedWidth;
+            }
+
+            double resizedHeight = annotation.Height + (moveTop ? -dy : dy);
+            if (resizedHeight > minimumSize)
+            {
+                if (moveTop)
+                    annotation.Y += dy;
+                annotation.Height = resizedHeight;
+            }
+            return;
+        }
+
+        if (annotation.Width <= 0 || annotation.Height <= 0)
+            return;
+
+        double widthDelta = moveLeft ? -dx : dx;
+        double heightDelta = moveTop ? -dy : dy;
+        double widthScale = (annotation.Width + widthDelta) / annotation.Width;
+        double heightScale = (annotation.Height + heightDelta) / annotation.Height;
+        double scale = Math.Abs(widthScale - 1) >= Math.Abs(heightScale - 1)
+            ? widthScale
+            : heightScale;
+        double minimumScale = Math.Max(
+            minimumSize / annotation.Width,
+            minimumSize / annotation.Height);
+        scale = Math.Max(scale, minimumScale);
+
+        double right = annotation.X + annotation.Width;
+        double bottom = annotation.Y + annotation.Height;
+        double newWidth = annotation.Width * scale;
+        double newHeight = annotation.Height * scale;
+
+        if (moveLeft)
+            annotation.X = right - newWidth;
+        if (moveTop)
+            annotation.Y = bottom - newHeight;
+        annotation.Width = newWidth;
+        annotation.Height = newHeight;
     }
 
     private bool Move(IReadOnlyList<PdfAnnotation> annotations, Point position)

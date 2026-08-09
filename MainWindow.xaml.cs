@@ -1106,9 +1106,14 @@ private void FitToPage()
             if (file != null)
             {
                 var pageSize = _pdfManager.GetPageSize(_currentPageIndex);
-                double x = (pageSize.width - 150) / 2;
-                double y = (pageSize.height - 150) / 2;
-                double w = 150, h = 150;
+                var imageProperties = await file.Properties.GetImagePropertiesAsync();
+                (double w, double h) = CalculateInitialImageSize(
+                    imageProperties.Width,
+                    imageProperties.Height,
+                    pageSize.width,
+                    pageSize.height);
+                double x = (pageSize.width - w) / 2;
+                double y = (pageSize.height - h) / 2;
 
                 var imageAnnotation = new PdfAnnotation
                 {
@@ -1133,6 +1138,24 @@ private void FitToPage()
                 TxtStatus.Text = "이미지가 추가되었습니다 (저장 시 반영)";
                 RenderAnnotationOverlays();
             }
+        }
+
+        private static (double width, double height) CalculateInitialImageSize(
+            uint pixelWidth,
+            uint pixelHeight,
+            double pageWidth,
+            double pageHeight)
+        {
+            const double preferredMaximumSize = 150;
+            if (pixelWidth == 0 || pixelHeight == 0)
+                return (preferredMaximumSize, preferredMaximumSize);
+
+            double maximumWidth = Math.Min(preferredMaximumSize, Math.Max(pageWidth * 0.8, 1));
+            double maximumHeight = Math.Min(preferredMaximumSize, Math.Max(pageHeight * 0.8, 1));
+            double scale = Math.Min(maximumWidth / pixelWidth, maximumHeight / pixelHeight);
+            return (
+                Math.Max(pixelWidth * scale, 1),
+                Math.Max(pixelHeight * scale, 1));
         }
 
         #endregion
