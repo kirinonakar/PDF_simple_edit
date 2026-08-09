@@ -26,33 +26,16 @@ public sealed class PdfAnnotationDocumentService
                         .Select(fragment => fragment.OriginalFontObjectNumber)
                         .FirstOrDefault(number => number > 0, annotation.OriginalFontObjectNumber))
                     .ToList();
-                // TextFragments retain the coordinates of the original PDF text so
-                // that removal can still identify it after the annotation is moved.
-                // Use that immutable source origin for per-line offsets. Computing
-                // offsets from annotation.X/Y would cancel the user's move on save.
-                double sourceX = annotation.TextFragments.Count > 0
-                    ? annotation.TextFragments.Min(fragment => fragment.X)
-                    : annotation.X;
-                double sourceY = annotation.TextFragments.Count > 0
-                    ? annotation.TextFragments.Min(fragment => fragment.Y)
-                    : annotation.Y;
-                var xOffsets = lineGroups
-                    .Select(group => group.Min(fragment => fragment.X) - sourceX)
-                    .ToList();
-                var baselineOffsets = lineGroups
-                    .Select(group =>
-                    {
-                        PdfTextFragment first = group.OrderBy(fragment => fragment.X).First();
-                        return first.Y + first.BaselineOffset - sourceY;
-                    })
-                    .ToList();
-                double baselineOffset = lineGroups.Count > 0
-                    ? annotation.BaselineOffset
-                    : AnnotationTextLayoutService.GetDisplayBaselineOffset(
-                        annotation.FontFamily,
-                        annotation.FontSize,
-                        annotation.IsBold,
-                        annotation.IsItalic);
+                // The overlay is the editing source of truth. Measure its visual
+                // line metrics and pass those same values to the PDF writer instead
+                // of restoring the original PDF operators' per-line positions.
+                double lineHeight = AnnotationTextLayoutService.GetDisplayLineHeight(
+                    annotation,
+                    annotation.Content);
+                double baselineOffset = AnnotationTextLayoutService.GetVisualBaselineOffset(annotation);
+                var displayLineWidths = AnnotationTextLayoutService.GetDisplayLineWidths(
+                    annotation,
+                    annotation.Content);
                 manager.AddTextInternal(
                     document,
                     annotation.PageIndex,
@@ -64,13 +47,13 @@ public sealed class PdfAnnotationDocumentService
                     color,
                     annotation.IsBold,
                     annotation.IsItalic,
-                    annotation.LineHeight,
+                    lineHeight,
                     baselineOffset,
                     annotation.OriginalFontObjectNumber,
                     fontObjectNumbers,
-                    xOffsets,
-                    baselineOffsets,
-                    annotation.TextFragments.Count > 1 ? annotation.Width : 0);
+                    null,
+                    null,
+                    displayLineWidths);
                 break;
             case AnnotationType.Highlight:
                 manager.AddHighlightInternal(

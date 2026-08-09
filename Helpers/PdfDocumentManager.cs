@@ -260,7 +260,7 @@ namespace PDF_simple_edit.Helpers
             IReadOnlyList<int>? originalFontObjectNumbersByLine = null,
             IReadOnlyList<double>? lineXOffsets = null,
             IReadOnlyList<double>? lineBaselineOffsets = null,
-            double maximumLineWidth = 0)
+            IReadOnlyList<double>? displayLineWidths = null)
         {
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages()) return;
 
@@ -407,8 +407,11 @@ namespace PDF_simple_edit.Helpers
                     float currentBaselineOffset = lineBaselineOffsets != null && i < lineBaselineOffsets.Count
                         ? (float)lineBaselineOffsets[i]
                         : previousBaselineOffset + resolvedLineHeight;
-                    previousBaselineOffset += fallbackBaselineAdjustments[i - 1];
-                    currentBaselineOffset += fallbackBaselineAdjustments[i];
+                    if (hasOriginalLineBaselines)
+                    {
+                        previousBaselineOffset += fallbackBaselineAdjustments[i - 1];
+                        currentBaselineOffset += fallbackBaselineAdjustments[i];
+                    }
                     canvas.MoveText(
                         currentXOffset - previousXOffset,
                         -(currentBaselineOffset - previousBaselineOffset));
@@ -417,20 +420,17 @@ namespace PDF_simple_edit.Helpers
                     resolvedLineFonts[i].Font,
                     (float)Math.Max(fontSize, 1));
                 float characterSpacing = 0;
-                if (maximumLineWidth > 0.1 && lines[i].Length > 1)
+                if (displayLineWidths != null &&
+                    i < displayLineWidths.Count &&
+                    displayLineWidths[i] > 0.1 &&
+                    lines[i].Length > 0)
                 {
                     float measuredLineWidth = resolvedLineFonts[i].Font.GetWidth(
                         lines[i],
                         (float)Math.Max(fontSize, 1));
-                    if (measuredLineWidth > maximumLineWidth)
-                    {
-                        characterSpacing = (float)(
-                            (maximumLineWidth - measuredLineWidth) /
-                            Math.Max(lines[i].Length - 1, 1));
-                        characterSpacing = Math.Max(
-                            characterSpacing,
-                            (float)(-Math.Max(fontSize, 1) * 0.25));
-                    }
+                    characterSpacing = (float)(
+                        (displayLineWidths[i] - measuredLineWidth) /
+                        Math.Max(lines[i].Length, 1));
                 }
                 canvas.SetCharacterSpacing(characterSpacing);
                 canvas.ShowText(lines[i]);

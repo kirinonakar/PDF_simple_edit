@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using PDF_simple_edit.Models;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace PDF_simple_edit.Services;
@@ -74,6 +75,84 @@ public static class AnnotationTextLayoutService
         {
             return 0;
         }
+    }
+
+    public static IReadOnlyList<double> GetDisplayLineWidths(
+        PdfAnnotation annotation,
+        string? text)
+    {
+        string[] lines = SplitLines(text);
+        int characterSpacing = GetDisplayCharacterSpacing(annotation, text);
+        var widths = new List<double>(lines.Length);
+
+        foreach (string line in lines)
+        {
+            try
+            {
+                TextBlock sample = CreateTextBlock(
+                    line,
+                    annotation.FontFamily,
+                    annotation.FontSize,
+                    annotation.IsBold,
+                    annotation.IsItalic,
+                    annotation.FontWeight);
+                sample.CharacterSpacing = characterSpacing;
+                sample.Measure(new Windows.Foundation.Size(
+                    double.PositiveInfinity,
+                    double.PositiveInfinity));
+                double measuredWidth = sample.DesiredSize.Width / PdfToPixels;
+                if (annotation.TextFragments.Count > 1 && annotation.Width > 0.1)
+                    measuredWidth = Math.Min(measuredWidth, annotation.Width);
+                widths.Add(Math.Max(measuredWidth, 0));
+            }
+            catch
+            {
+                // A missing UI text-measurement context must not stretch a short
+                // line to the full annotation width during PDF serialization.
+                widths.Add(0);
+            }
+        }
+
+        return widths;
+    }
+
+    public static double GetDisplayLineHeight(PdfAnnotation annotation, string? text)
+    {
+        string[] lines = SplitLines(text);
+        try
+        {
+            TextBlock sample = CreateTextBlock(
+                string.Join("\n", lines),
+                annotation.FontFamily,
+                annotation.FontSize,
+                annotation.IsBold,
+                annotation.IsItalic,
+                annotation.FontWeight);
+            sample.CharacterSpacing = GetDisplayCharacterSpacing(annotation, text);
+            sample.Measure(new Windows.Foundation.Size(
+                double.PositiveInfinity,
+                double.PositiveInfinity));
+            return Math.Max(sample.DesiredSize.Height / lines.Length / PdfToPixels, 1);
+        }
+        catch
+        {
+            return annotation.LineHeight > 0.1
+                ? annotation.LineHeight
+                : Math.Max(annotation.FontSize * 1.2, 1);
+        }
+    }
+
+    public static double GetVisualBaselineOffset(PdfAnnotation annotation)
+    {
+        if (annotation.BaselineOffset > 0.1)
+            return annotation.BaselineOffset;
+
+        return GetDisplayBaselineOffset(
+            annotation.FontFamily,
+            annotation.FontSize,
+            annotation.IsBold,
+            annotation.IsItalic,
+            annotation.FontWeight);
     }
 
     public static double GetTopOffset(PdfAnnotation annotation, double displayFontSize)
@@ -156,6 +235,11 @@ public static class AnnotationTextLayoutService
             .Replace('\r', '\n')
             .Split('\n').Length;
     }
+
+    private static string[] SplitLines(string? text) => (text ?? string.Empty)
+        .Replace("\r\n", "\n", StringComparison.Ordinal)
+        .Replace('\r', '\n')
+        .Split('\n');
 
     private static TextBlock CreateTextBlock(
         string text,
