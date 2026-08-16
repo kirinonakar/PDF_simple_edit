@@ -24,12 +24,18 @@ using System.Linq;
 using System.Threading.Tasks;
 using PDF_simple_edit.Models;
 using System.Globalization;
+using System.Text;
 using iText.Kernel.Pdf.Canvas.Parser.Util;
 
 namespace PDF_simple_edit.Helpers
 {
     public class PdfDocumentManager
     {
+        private readonly record struct TextFontSegment(
+            string Text,
+            PdfFont Font,
+            bool IsFallback);
+
         private byte[]? _pdfBytes;
         private string? _filePath;
         private bool _isModified;
@@ -260,7 +266,9 @@ namespace PDF_simple_edit.Helpers
             IReadOnlyList<int>? originalFontObjectNumbersByLine = null,
             IReadOnlyList<double>? lineXOffsets = null,
             IReadOnlyList<double>? lineBaselineOffsets = null,
-            IReadOnlyList<double>? displayLineWidths = null)
+            IReadOnlyList<double>? displayLineWidths = null,
+            int fontWeight = 400,
+            IReadOnlyList<string>? originalLines = null)
         {
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages()) return;
 
@@ -277,9 +285,10 @@ namespace PDF_simple_edit.Helpers
                 .Split('\n');
 
             var originalFontCache = new Dictionary<int, PdfFont>();
-            PdfFont? fallbackFont = null;
+            var fallbackFonts = new Dictionary<bool, PdfFont>();
+            int resolvedFontWeight = ResolveFontWeight(fontWeight, isBold);
 
-            (PdfFont Font, bool IsFallback) ResolveFontForLine(string line, int lineIndex)
+            List<PdfFont> ResolveOriginalFonts(int lineIndex)
             {
                 var candidateObjectNumbers = new List<int>();
                 if (originalFontObjectNumbersByLine != null &&
@@ -291,6 +300,7 @@ namespace PDF_simple_edit.Helpers
                 if (originalFontObjectNumbersByLine != null)
                     candidateObjectNumbers.AddRange(originalFontObjectNumbersByLine);
 
+                var fonts = new List<PdfFont>();
                 foreach (int objectNumber in candidateObjectNumbers.Where(number => number > 0).Distinct())
                 {
                     try
@@ -302,40 +312,33 @@ namespace PDF_simple_edit.Helpers
                             candidate = PdfFontFactory.CreateFont(originalFontDictionary);
                             originalFontCache[objectNumber] = candidate;
                         }
-
-                        bool containsAllGlyphs = line
-                            .Where(character => !char.IsControl(character) && !char.IsWhiteSpace(character))
-                            .All(character => candidate.ContainsGlyph(character));
-                        if (containsAllGlyphs)
-                            return (candidate, false);
+                        fonts.Add(candidate);
                     }
                     catch (Exception ex)
                     {
                         System.Diagnostics.Debug.WriteLine($"Original PDF font reuse error: {ex.Message}");
                     }
                 }
+                return fonts;
+            }
 
-                if (fallbackFont != null)
-                    return (fallbackFont, true);
+            PdfFont ResolveFallbackFont(string sampleText)
+            {
+                bool containsNonLatin = sampleText.Any(character => character > 0x02FF);
+                if (fallbackFonts.TryGetValue(containsNonLatin, out PdfFont? cachedFont))
+                    return cachedFont;
 
+                PdfFont? resolvedFallback = null;
                 try
                 {
-                    string? resolvedPath = GetSystemFontPath(fontFamily, isBold);
+                    string? resolvedPath = GetSystemFontPath(
+                        fontFamily,
+                        resolvedFontWeight,
+                        sampleText);
                     if (!string.IsNullOrEmpty(resolvedPath))
                     {
-                        fallbackFont = PdfFontFactory.CreateFont(
+                        resolvedFallback = PdfFontFactory.CreateFont(
                             resolvedPath,
-                            PdfEncodings.IDENTITY_H,
-                            PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
-                    }
-                    else
-                    {
-                        string fallbackPath = System.IO.Path.Combine(
-                            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-                            "Fonts",
-                            isBold ? "malgunbd.ttf" : "malgun.ttf");
-                        fallbackFont = PdfFontFactory.CreateFont(
-                            fallbackPath,
                             PdfEncodings.IDENTITY_H,
                             PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
                     }
@@ -343,18 +346,187 @@ namespace PDF_simple_edit.Helpers
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"Font load error: {ex.Message}");
-                    fallbackFont = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
                 }
 
-                return (fallbackFont, true);
+                if (resolvedFallback == null)
+                {
+                    try
+                    {
+                        string fallbackPath = System.IO.Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                            "Fonts",
+                            resolvedFontWeight <= 350
+                                ? "malgunsl.ttf"
+                                : resolvedFontWeight >= 600
+                                    ? "malgunbd.ttf"
+                                    : "malgun.ttf");
+                        resolvedFallback = PdfFontFactory.CreateFont(
+                            fallbackPath,
+                            PdfEncodings.IDENTITY_H,
+                            PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Fallback font load error: {ex.Message}");
+                    }
+                }
+
+                resolvedFallback ??= PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
+                fallbackFonts[containsNonLatin] = resolvedFallback;
+                return resolvedFallback;
             }
 
-            var resolvedLineFonts = lines
-                .Select((line, index) => ResolveFontForLine(line, index))
+            HashSet<int>? ResolveMatchedTargetCharacters(string? originalLine, string targetLine)
+            {
+                if (originalLine == null)
+                    return null;
+                if (originalLine.Length == 0 || targetLine.Length == 0)
+                    return new HashSet<int>();
+
+                var lengths = new int[originalLine.Length + 1, targetLine.Length + 1];
+                for (int originalIndex = 1; originalIndex <= originalLine.Length; originalIndex++)
+                {
+                    for (int targetIndex = 1; targetIndex <= targetLine.Length; targetIndex++)
+                    {
+                        lengths[originalIndex, targetIndex] = originalLine[originalIndex - 1] == targetLine[targetIndex - 1]
+                            ? lengths[originalIndex - 1, targetIndex - 1] + 1
+                            : Math.Max(
+                                lengths[originalIndex - 1, targetIndex],
+                                lengths[originalIndex, targetIndex - 1]);
+                    }
+                }
+
+                var matchedTargetIndexes = new HashSet<int>();
+                int currentOriginalIndex = originalLine.Length;
+                int currentTargetIndex = targetLine.Length;
+                while (currentOriginalIndex > 0 && currentTargetIndex > 0)
+                {
+                    if (originalLine[currentOriginalIndex - 1] == targetLine[currentTargetIndex - 1])
+                    {
+                        matchedTargetIndexes.Add(currentTargetIndex - 1);
+                        currentOriginalIndex--;
+                        currentTargetIndex--;
+                    }
+                    else if (lengths[currentOriginalIndex - 1, currentTargetIndex] >=
+                        lengths[currentOriginalIndex, currentTargetIndex - 1])
+                    {
+                        currentOriginalIndex--;
+                    }
+                    else
+                    {
+                        currentTargetIndex--;
+                    }
+                }
+
+                return matchedTargetIndexes;
+            }
+
+            List<TextFontSegment> ResolveLineSegments(string line, int lineIndex)
+            {
+                List<PdfFont> originalFonts = ResolveOriginalFonts(lineIndex);
+                PdfFont? preferredOriginalFont = originalFonts.FirstOrDefault();
+                string? originalLine = originalLines != null && lineIndex < originalLines.Count
+                    ? originalLines[lineIndex]
+                    : null;
+                HashSet<int>? matchedTargetCharacters =
+                    ResolveMatchedTargetCharacters(originalLine, line);
+                if (line.Length == 0)
+                {
+                    PdfFont emptyLineFont = preferredOriginalFont ?? ResolveFallbackFont(line);
+                    return new List<TextFontSegment>
+                    {
+                        new(string.Empty, emptyLineFont, preferredOriginalFont == null)
+                    };
+                }
+
+                var segments = new List<TextFontSegment>();
+                var segmentText = new StringBuilder();
+                PdfFont? segmentFont = null;
+                bool segmentIsFallback = false;
+
+                void FlushSegment()
+                {
+                    if (segmentFont == null || segmentText.Length == 0)
+                        return;
+                    segments.Add(new TextFontSegment(
+                        segmentText.ToString(),
+                        segmentFont,
+                        segmentIsFallback));
+                    segmentText.Clear();
+                }
+
+                for (int characterIndex = 0; characterIndex < line.Length; characterIndex++)
+                {
+                    char character = line[characterIndex];
+                    PdfFont? selectedFont = null;
+                    bool isFallback = false;
+                    if (char.IsControl(character) || char.IsWhiteSpace(character))
+                    {
+                        selectedFont = segmentFont ?? preferredOriginalFont;
+                        isFallback = segmentIsFallback;
+                    }
+                    else
+                    {
+                        if (matchedTargetCharacters?.Contains(characterIndex) == true)
+                        {
+                            // Keep characters that survived the edit on the exact
+                            // embedded font used by the original PDF. This is more
+                            // reliable than ContainsGlyph for subset Type0 fonts,
+                            // whose Unicode cmap can report false for valid glyphs.
+                            selectedFont = preferredOriginalFont;
+                        }
+                        else if (matchedTargetCharacters == null)
+                        {
+                            foreach (PdfFont originalFont in originalFonts)
+                            {
+                                try
+                                {
+                                    if (originalFont.ContainsGlyph(character))
+                                    {
+                                        selectedFont = originalFont;
+                                        break;
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine(
+                                        $"Original PDF glyph lookup error: {ex.Message}");
+                                }
+                            }
+                        }
+
+                        if (selectedFont == null)
+                        {
+                            selectedFont = ResolveFallbackFont(character.ToString());
+                            isFallback = true;
+                        }
+                    }
+
+                    selectedFont ??= ResolveFallbackFont(character.ToString());
+                    if (segmentFont != null &&
+                        (!ReferenceEquals(segmentFont, selectedFont) ||
+                         segmentIsFallback != isFallback))
+                    {
+                        FlushSegment();
+                    }
+
+                    segmentFont = selectedFont;
+                    segmentIsFallback = isFallback;
+                    segmentText.Append(character);
+                }
+
+                FlushSegment();
+                return segments;
+            }
+
+            var resolvedLineSegments = lines
+                .Select((line, index) => ResolveLineSegments(line, index))
                 .ToList();
-            var fallbackBaselineAdjustments = resolvedLineFonts
-                .Select((resolved, index) => resolved.IsFallback
-                    ? Math.Max(resolved.Font.GetAscent(lines[index], (float)Math.Max(fontSize, 1)), 0)
+            var fallbackBaselineAdjustments = resolvedLineSegments
+                .Select((segments, index) => segments.Count == 1 && segments[0].IsFallback
+                    ? Math.Max(segments[0].Font.GetAscent(
+                        lines[index],
+                        (float)Math.Max(fontSize, 1)), 0)
                     : 0)
                 .ToList();
 
@@ -365,7 +537,7 @@ namespace PDF_simple_edit.Helpers
                 : baselineOffset > 0.1
                     ? (float)baselineOffset
                     : Math.Max(
-                        resolvedLineFonts[0].Font.GetAscent(
+                        resolvedLineSegments[0][0].Font.GetAscent(
                             lines[0],
                             (float)Math.Max(fontSize, 1)),
                         0);
@@ -416,24 +588,28 @@ namespace PDF_simple_edit.Helpers
                         currentXOffset - previousXOffset,
                         -(currentBaselineOffset - previousBaselineOffset));
                 }
-                canvas.SetFontAndSize(
-                    resolvedLineFonts[i].Font,
-                    (float)Math.Max(fontSize, 1));
                 float characterSpacing = 0;
                 if (displayLineWidths != null &&
                     i < displayLineWidths.Count &&
                     displayLineWidths[i] > 0.1 &&
                     lines[i].Length > 0)
                 {
-                    float measuredLineWidth = resolvedLineFonts[i].Font.GetWidth(
-                        lines[i],
-                        (float)Math.Max(fontSize, 1));
+                    float measuredLineWidth = resolvedLineSegments[i]
+                        .Sum(segment => segment.Font.GetWidth(
+                            segment.Text,
+                            (float)Math.Max(fontSize, 1)));
                     characterSpacing = (float)(
                         (displayLineWidths[i] - measuredLineWidth) /
                         Math.Max(lines[i].Length, 1));
                 }
                 canvas.SetCharacterSpacing(characterSpacing);
-                canvas.ShowText(lines[i]);
+                foreach (TextFontSegment segment in resolvedLineSegments[i])
+                {
+                    canvas.SetFontAndSize(
+                        segment.Font,
+                        (float)Math.Max(fontSize, 1));
+                    canvas.ShowText(segment.Text);
+                }
             }
 
             canvas.EndText();
@@ -441,7 +617,10 @@ namespace PDF_simple_edit.Helpers
             canvas.Release();
         }
 
-        private string? GetSystemFontPath(string nameOrFile, bool isBold = false)
+        private string? GetSystemFontPath(
+            string nameOrFile,
+            int fontWeight = 400,
+            string? sampleText = null)
         {
             if (string.IsNullOrWhiteSpace(nameOrFile)) return null;
 
@@ -452,11 +631,46 @@ namespace PDF_simple_edit.Helpers
                 "Windows",
                 "Fonts");
 
+            string SelectFace(
+                string regular,
+                string bold,
+                string? light = null,
+                string? extraBold = null)
+            {
+                if (fontWeight >= 800 && !string.IsNullOrEmpty(extraBold))
+                    return extraBold;
+                if (fontWeight >= 600)
+                    return bold;
+                if (fontWeight <= 350 && !string.IsNullOrEmpty(light))
+                    return light;
+                return regular;
+            }
+
+            bool containsNonLatin = sampleText?.Any(character => character > 0x02FF) == true;
+            string notoSansKrRegular = containsNonLatin
+                ? "NotoSansKR-Regular.ttf|NotoSans-Regular.ttf"
+                : "NotoSans-Regular.ttf|NotoSansKR-Regular.ttf";
+            string notoSansKrBold = containsNonLatin
+                ? "NotoSansKR-Bold.ttf|NanumGothicBold.ttf|NotoSans-Bold.ttf|NotoSansKR-Regular.ttf"
+                : "NotoSansKR-Bold.ttf|NotoSans-Bold.ttf|NanumGothicBold.ttf|NotoSansKR-Regular.ttf";
+            string notoSansKrExtraBold = containsNonLatin
+                ? "NotoSansKR-ExtraBold.ttf|NanumGothicExtraBold.ttf|NanumGothicBold.ttf|NotoSans-Bold.ttf|NotoSansKR-Regular.ttf"
+                : "NotoSansKR-ExtraBold.ttf|NotoSans-Bold.ttf|NanumGothicExtraBold.ttf|NanumGothicBold.ttf|NotoSansKR-Regular.ttf";
+            string notoSerifKrRegular = containsNonLatin
+                ? "NotoSerifKR-Regular.ttf|NotoSerif-Regular.ttf"
+                : "NotoSerif-Regular.ttf|NotoSerifKR-Regular.ttf";
+            string notoSerifKrBold = containsNonLatin
+                ? "NotoSerifKR-Bold.ttf|NanumMyeongjoBold.ttf|NotoSerif-Bold.ttf|NotoSerifKR-Regular.ttf"
+                : "NotoSerifKR-Bold.ttf|NotoSerif-Bold.ttf|NanumMyeongjoBold.ttf|NotoSerifKR-Regular.ttf";
+            string notoSerifKrExtraBold = containsNonLatin
+                ? "NotoSerifKR-ExtraBold.ttf|NanumMyeongjoExtraBold.ttf|NanumMyeongjoBold.ttf|NotoSerif-Bold.ttf|NotoSerifKR-Regular.ttf"
+                : "NotoSerifKR-ExtraBold.ttf|NotoSerif-Bold.ttf|NanumMyeongjoExtraBold.ttf|NanumMyeongjoBold.ttf|NotoSerifKR-Regular.ttf";
+
             // 핵심: 굴림/돋움은 gulim.ttc에, 바탕/궁서는 batang.ttc에 묶여 있습니다. 인덱스를 지정해야 합니다.
             var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                { "맑은 고딕", isBold ? "malgunbd.ttf" : "malgun.ttf" },
-                { "Malgun Gothic", isBold ? "malgunbd.ttf" : "malgun.ttf" },
+                { "맑은 고딕", SelectFace("malgun.ttf", "malgunbd.ttf", "malgunsl.ttf") },
+                { "Malgun Gothic", SelectFace("malgun.ttf", "malgunbd.ttf", "malgunsl.ttf") },
                 { "굴림", "gulim.ttc,0" },
                 { "굴림체", "gulim.ttc,1" },
                 { "돋움", "gulim.ttc,2" },
@@ -465,19 +679,27 @@ namespace PDF_simple_edit.Helpers
                 { "바탕체", "batang.ttc,1" },
                 { "궁서", "batang.ttc,2" },
                 { "궁서체", "batang.ttc,3" },
-                { "나눔고딕", "NanumGothic.ttf" },
-                { "Noto Sans KR", "NotoSansKR-VF.ttf|NotoSansKR-Regular.ttf" },
-                { "Noto Serif KR", "NotoSerifKR-VF.ttf|NotoSerifKR-Regular.ttf" },
-                { "Noto Sans", isBold ? "NotoSans-Bold.ttf" : "NotoSans-Regular.ttf" },
-                { "Noto Serif", isBold ? "NotoSerif-Bold.ttf" : "NotoSerif-Regular.ttf" },
+                { "나눔고딕", SelectFace("NanumGothic.ttf", "NanumGothicBold.ttf", extraBold: "NanumGothicExtraBold.ttf") },
+                { "Noto Sans KR", fontWeight >= 800
+                    ? notoSansKrExtraBold
+                    : fontWeight >= 600
+                        ? notoSansKrBold
+                        : notoSansKrRegular },
+                { "Noto Serif KR", fontWeight >= 800
+                    ? notoSerifKrExtraBold
+                    : fontWeight >= 600
+                        ? notoSerifKrBold
+                        : notoSerifKrRegular },
+                { "Noto Sans", SelectFace("NotoSans-Regular.ttf", "NotoSans-Bold.ttf") },
+                { "Noto Serif", SelectFace("NotoSerif-Regular.ttf", "NotoSerif-Bold.ttf") },
                 { "Noto Sans JP", "NotoSansJP-VF.ttf" },
                 { "Noto Serif JP", "NotoSerifJP-VF.ttf" },
-                { "Arial", isBold ? "arialbd.ttf" : "arial.ttf" },
-                { "Times New Roman", isBold ? "timesbd.ttf" : "times.ttf" },
-                { "Tahoma", isBold ? "tahomabd.ttf" : "tahoma.ttf" },
-                { "Verdana", isBold ? "verdanab.ttf" : "verdana.ttf" },
-                { "Consolas", isBold ? "consolab.ttf" : "consola.ttf" },
-                { "Courier New", isBold ? "courbd.ttf" : "cour.ttf" }
+                { "Arial", SelectFace("arial.ttf", "arialbd.ttf") },
+                { "Times New Roman", SelectFace("times.ttf", "timesbd.ttf") },
+                { "Tahoma", SelectFace("tahoma.ttf", "tahomabd.ttf") },
+                { "Verdana", SelectFace("verdana.ttf", "verdanab.ttf") },
+                { "Consolas", SelectFace("consola.ttf", "consolab.ttf") },
+                { "Courier New", SelectFace("cour.ttf", "courbd.ttf") }
             };
 
             if (map.TryGetValue(nameOrFile, out string? mappedValue))
@@ -508,11 +730,19 @@ namespace PDF_simple_edit.Helpers
             }
 
             // 3. 매핑에 없으면 폰트 이름의 공백을 제거하고 유추 시도
-            string guessName = nameOrFile.Replace(" ", "") + (isBold ? "bd.ttf" : ".ttf");
+            string guessName = nameOrFile.Replace(" ", "") + (fontWeight >= 600 ? "bd.ttf" : ".ttf");
             string guessPath = System.IO.Path.Combine(fontDir, guessName);
             if (File.Exists(guessPath)) return guessPath;
 
             return null; // 그래도 없으면 null 반환
+        }
+
+        private static int ResolveFontWeight(int fontWeight, bool isBold)
+        {
+            int resolvedWeight = fontWeight is >= 1 and <= 999 ? fontWeight : 400;
+            if (isBold && resolvedWeight < 600)
+                resolvedWeight = 700;
+            return resolvedWeight;
         }
 
         public void AddHighlight(int pageIndex, double x, double y, double width, double height, 

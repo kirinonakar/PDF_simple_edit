@@ -26,6 +26,9 @@ public sealed class PdfAnnotationDocumentService
                         .Select(fragment => fragment.OriginalFontObjectNumber)
                         .FirstOrDefault(number => number > 0, annotation.OriginalFontObjectNumber))
                     .ToList();
+                var originalLines = lineGroups
+                    .Select(group => string.Concat(group.Select(fragment => fragment.Text)))
+                    .ToList();
                 // The overlay is the editing source of truth. Measure its visual
                 // line metrics and pass those same values to the PDF writer instead
                 // of restoring the original PDF operators' per-line positions.
@@ -53,7 +56,9 @@ public sealed class PdfAnnotationDocumentService
                     fontObjectNumbers,
                     null,
                     null,
-                    displayLineWidths);
+                    displayLineWidths,
+                    annotation.FontWeight,
+                    originalLines);
                 break;
             case AnnotationType.Highlight:
                 manager.AddHighlightInternal(
