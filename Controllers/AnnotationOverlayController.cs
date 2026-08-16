@@ -62,7 +62,8 @@ public sealed class AnnotationOverlayController
             AddSelectionBorder(canvas, annotation, ref insertIndex);
 
             if (annotation == primarySelection &&
-                annotation.Type is AnnotationType.Image or AnnotationType.Highlight)
+                annotation.Type is AnnotationType.Text or AnnotationType.FreeText or
+                AnnotationType.Image or AnnotationType.Highlight)
             {
                 AddResizeHandles(
                     canvas,
