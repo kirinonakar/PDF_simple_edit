@@ -287,7 +287,9 @@ namespace PDF_simple_edit.Helpers
                 .Split('\n');
 
             var originalFontCache = new Dictionary<int, PdfFont>();
-            var fallbackFonts = new Dictionary<bool, PdfFont>();
+            // Cache by writing system. Korean and Japanese are both non-Latin,
+            // but they must not share the same fallback font.
+            var fallbackFonts = new Dictionary<string, PdfFont>(StringComparer.Ordinal);
             int resolvedFontWeight = ResolveFontWeight(fontWeight, isBold);
 
             List<PdfFont> ResolveOriginalFonts(int lineIndex)
@@ -326,8 +328,8 @@ namespace PDF_simple_edit.Helpers
 
             PdfFont ResolveFallbackFont(string sampleText)
             {
-                bool containsNonLatin = sampleText.Any(character => character > 0x02FF);
-                if (fallbackFonts.TryGetValue(containsNonLatin, out PdfFont? cachedFont))
+                string fallbackKey = GetFallbackScript(sampleText);
+                if (fallbackFonts.TryGetValue(fallbackKey, out PdfFont? cachedFont))
                     return cachedFont;
 
                 PdfFont? resolvedFallback = null;
@@ -339,10 +341,17 @@ namespace PDF_simple_edit.Helpers
                         sampleText);
                     if (!string.IsNullOrEmpty(resolvedPath))
                     {
-                        resolvedFallback = PdfFontFactory.CreateFont(
+                        PdfFont candidate = PdfFontFactory.CreateFont(
                             resolvedPath,
                             PdfEncodings.IDENTITY_H,
                             PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
+
+                        // WinUI renders a missing glyph with a script-specific
+                        // fallback font. iText does not do this automatically, so
+                        // never keep the selected font when it cannot encode the
+                        // character being written.
+                        if (FontSupportsText(candidate, sampleText))
+                            resolvedFallback = candidate;
                     }
                 }
                 catch (Exception ex)
@@ -352,30 +361,92 @@ namespace PDF_simple_edit.Helpers
 
                 if (resolvedFallback == null)
                 {
-                    try
+                    string[] fallbackFamilies = fallbackKey switch
                     {
-                        string fallbackPath = System.IO.Path.Combine(
-                            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-                            "Fonts",
-                            resolvedFontWeight <= 350
-                                ? "malgunsl.ttf"
-                                : resolvedFontWeight >= 600
-                                    ? "malgunbd.ttf"
-                                    : "malgun.ttf");
-                        resolvedFallback = PdfFontFactory.CreateFont(
-                            fallbackPath,
-                            PdfEncodings.IDENTITY_H,
-                            PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
-                    }
-                    catch (Exception ex)
+                        "Korean" => new[] { "맑은 고딕", "Noto Sans KR" },
+                        "Japanese" => new[] { "Yu Gothic UI", "Meiryo", "Noto Sans JP" },
+                        _ => new[] { "맑은 고딕" }
+                    };
+
+                    foreach (string fallbackFamily in fallbackFamilies)
                     {
-                        System.Diagnostics.Debug.WriteLine($"Fallback font load error: {ex.Message}");
+                        try
+                        {
+                            string? fallbackPath = GetSystemFontPath(
+                                fallbackFamily,
+                                resolvedFontWeight,
+                                sampleText);
+                            if (string.IsNullOrEmpty(fallbackPath))
+                                continue;
+
+                            PdfFont fallbackCandidate = PdfFontFactory.CreateFont(
+                                fallbackPath,
+                                PdfEncodings.IDENTITY_H,
+                                PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
+                            if (FontSupportsText(fallbackCandidate, sampleText))
+                            {
+                                resolvedFallback = fallbackCandidate;
+                                break;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine(
+                                $"{fallbackFamily} fallback font load error: {ex.Message}");
+                        }
                     }
                 }
 
                 resolvedFallback ??= PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
-                fallbackFonts[containsNonLatin] = resolvedFallback;
+                fallbackFonts[fallbackKey] = resolvedFallback;
                 return resolvedFallback;
+            }
+
+            static string GetFallbackScript(string? value)
+            {
+                if (!string.IsNullOrEmpty(value) && value.Any(IsKoreanCharacter))
+                    return "Korean";
+                if (!string.IsNullOrEmpty(value) && value.Any(IsJapaneseCharacter))
+                    return "Japanese";
+                return "Other";
+            }
+
+            static bool IsKoreanCharacter(char character) =>
+                character is >= '\u1100' and <= '\u11FF' ||
+                character is >= '\u3130' and <= '\u318F' ||
+                character is >= '\uA960' and <= '\uA97F' ||
+                character is >= '\uAC00' and <= '\uD7FF' ||
+                character is >= '\uD7B0' and <= '\uD7FF';
+
+            static bool IsJapaneseCharacter(char character) =>
+                character is >= '\u3000' and <= '\u30FF' ||
+                character is >= '\u31F0' and <= '\u31FF' ||
+                character is >= '\u3400' and <= '\u4DBF' ||
+                character is >= '\u4E00' and <= '\u9FFF' ||
+                character is >= '\uF900' and <= '\uFAFF' ||
+                character is >= '\uFF65' and <= '\uFF9F';
+
+            static bool FontSupportsText(PdfFont font, string? value)
+            {
+                if (string.IsNullOrEmpty(value))
+                    return true;
+
+                foreach (char character in value)
+                {
+                    if (char.IsControl(character) || char.IsWhiteSpace(character))
+                        continue;
+                    try
+                    {
+                        if (!font.ContainsGlyph(character))
+                            return false;
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
             }
 
             HashSet<int>? ResolveMatchedTargetCharacters(string? originalLine, string targetLine)
@@ -696,8 +767,13 @@ namespace PDF_simple_edit.Helpers
                 { "Noto Serif", SelectFace("NotoSerif-Regular.ttf", "NotoSerif-Bold.ttf") },
                 { "Noto Sans JP", "NotoSansJP-VF.ttf" },
                 { "Noto Serif JP", "NotoSerifJP-VF.ttf" },
+                { "Yu Gothic UI", SelectFace("YuGothR.ttc,0", "YuGothB.ttc,0", "YuGothL.ttc,0") },
+                { "Yu Gothic", SelectFace("YuGothR.ttc,0", "YuGothB.ttc,0", "YuGothL.ttc,0") },
+                { "Meiryo", SelectFace("meiryo.ttc,0", "meiryob.ttc,0") },
+                { "Meiryo UI", SelectFace("meiryo.ttc,0", "meiryob.ttc,0") },
                 { "Arial", SelectFace("arial.ttf", "arialbd.ttf") },
                 { "Times New Roman", SelectFace("times.ttf", "timesbd.ttf") },
+                { "Segoe UI", SelectFace("segoeui.ttf", "segoeuib.ttf", "segoeuil.ttf") },
                 { "Tahoma", SelectFace("tahoma.ttf", "tahomabd.ttf") },
                 { "Verdana", SelectFace("verdana.ttf", "verdanab.ttf") },
                 { "Consolas", SelectFace("consola.ttf", "consolab.ttf") },
