@@ -2,6 +2,8 @@
 
 A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET 10**. Powered by the **iText 9** engine, it provides a seamless experience for editing text, managing pages, and organizing PDF documents.
 
+![screenshot](screenshot.png)
+
 ## 🚀 Features
 
 ### 📝 Precision Editing
