@@ -71,6 +71,10 @@ public sealed class PdfAnnotationDocumentService
                     color,
                     (float)annotation.Opacity);
                 break;
+            case AnnotationType.Image when annotation.IsOriginalImageReplacement:
+                // Merely selecting an existing PDF image must not duplicate it on save.
+                // Move/resize removes the original Do operation and clears this flag first.
+                break;
             case AnnotationType.Image when annotation.ImagePath != null:
                 manager.AddImageInternal(
                     document,

@@ -26,6 +26,8 @@ using PDF_simple_edit.Models;
 using System.Globalization;
 using System.Text;
 using iText.Kernel.Pdf.Canvas.Parser.Util;
+using iText.Kernel.Pdf.Xobject;
+using System.Security.Cryptography;
 
 namespace PDF_simple_edit.Helpers
 {
@@ -934,7 +936,8 @@ namespace PDF_simple_edit.Helpers
                     var pageSize = page.GetPageSize();
                     
                     var operationTargets = ExtractTextOperationDescriptors(page);
-                    var listener = new ContentExtractionListener(pageSize.GetHeight());
+                    var imageTargets = ExtractImageOperationDescriptors(page);
+                    var listener = new ContentExtractionListener(pageSize.GetHeight(), imageTargets);
                     PdfCanvasProcessor processor = new PdfCanvasProcessor(listener);
                     var tracker = new TextOperationTracker(operationTargets);
                     foreach (string operatorName in new[] { "Tj", "TJ", "'", "\"" })
@@ -945,7 +948,9 @@ namespace PDF_simple_edit.Helpers
                     }
                     processor.ProcessPageContent(page);
                     
-                    contents = GroupTextIntoEditRegions(listener.Contents);
+                    contents = GroupTextIntoEditRegions(
+                        listener.Contents.Where(content => content.Type == PageContentType.Text));
+                    contents.AddRange(listener.Contents.Where(content => content.Type == PageContentType.Image));
                 }
                 catch (Exception ex)
                 {
@@ -1134,6 +1139,93 @@ namespace PDF_simple_edit.Helpers
             public int StreamObjectNumber { get; init; }
             public int OperationIndex { get; init; }
             public int TextRenderMode { get; init; }
+        }
+
+        private sealed class ImageOperationDescriptor
+        {
+            public int StreamIndex { get; init; }
+            public int StreamObjectNumber { get; init; }
+            public int OperationIndex { get; init; }
+            public string ResourceName { get; init; } = string.Empty;
+        }
+
+        private static List<ImageOperationDescriptor> ExtractImageOperationDescriptors(PdfPage page)
+        {
+            var result = new List<ImageOperationDescriptor>();
+            for (int streamIndex = 0; streamIndex < page.GetContentStreamCount(); streamIndex++)
+            {
+                PdfStream? contentStream = page.GetContentStream(streamIndex);
+                if (contentStream == null)
+                    continue;
+
+                AppendImageOperationDescriptors(
+                    contentStream, page.GetResources(), streamIndex, result, new HashSet<int>());
+            }
+
+            return result;
+        }
+
+        private static void AppendImageOperationDescriptors(
+            PdfStream contentStream,
+            PdfResources resources,
+            int pageStreamIndex,
+            List<ImageOperationDescriptor> result,
+            HashSet<int> recursionStack)
+        {
+            int streamObjectNumber = contentStream.GetIndirectReference()?.GetObjNumber() ?? -1;
+            if (streamObjectNumber > 0 && !recursionStack.Add(streamObjectNumber))
+                return;
+
+            try
+            {
+                var sourceFactory = new RandomAccessSourceFactory();
+                var randomSource = sourceFactory.CreateSource(contentStream.GetBytes());
+                var tokenizer = new PdfTokenizer(new RandomAccessFileOrArray(randomSource));
+                var parser = new PdfCanvasParser(tokenizer);
+                int doOperationIndex = -1;
+
+                while (true)
+                {
+                    var operation = parser.Parse(new List<PdfObject>());
+                    if (operation == null || operation.Count == 0)
+                        break;
+                    if (operation[^1] is not PdfLiteral literal ||
+                        literal.ToString() != "Do" ||
+                        operation.Count <= 1 ||
+                        operation[0] is not PdfName resourceName)
+                    {
+                        continue;
+                    }
+
+                    doOperationIndex++;
+                    PdfStream? xObject = resources.GetResource(PdfName.XObject)?.GetAsStream(resourceName);
+                    PdfName? subtype = xObject?.GetAsName(PdfName.Subtype);
+                    if (PdfName.Image.Equals(subtype))
+                    {
+                        result.Add(new ImageOperationDescriptor
+                        {
+                            StreamIndex = pageStreamIndex,
+                            StreamObjectNumber = streamObjectNumber,
+                            OperationIndex = doOperationIndex,
+                            ResourceName = resourceName.GetValue()
+                        });
+                    }
+                    else if (xObject != null && PdfName.Form.Equals(subtype))
+                    {
+                        PdfDictionary? formResourceDictionary = xObject.GetAsDictionary(PdfName.Resources);
+                        PdfResources formResources = formResourceDictionary != null
+                            ? new PdfResources(formResourceDictionary)
+                            : resources;
+                        AppendImageOperationDescriptors(
+                            xObject, formResources, -1, result, recursionStack);
+                    }
+                }
+            }
+            finally
+            {
+                if (streamObjectNumber > 0)
+                    recursionStack.Remove(streamObjectNumber);
+            }
         }
 
         private static List<TextOperationDescriptor> ExtractTextOperationDescriptors(PdfPage page)
@@ -1396,6 +1488,9 @@ namespace PDF_simple_edit.Helpers
             public List<PdfPageContent> Contents { get; } = new();
             private readonly float _pageHeight;
             private readonly Dictionary<int, PdfFontMetadata> _fontMetadataCache = new();
+            private readonly IReadOnlyList<ImageOperationDescriptor> _imageTargets;
+            private readonly HashSet<(int StreamObjectNumber, int StreamIndex, int OperationIndex)> _ambiguousImageTargets;
+            private int _imageTargetIndex;
             public TextOperationDescriptor? CurrentTarget { get; set; }
             private List<(int Index, byte[] Bytes)> _textOperands = new();
             private int _nextTextOperand;
@@ -1405,9 +1500,20 @@ namespace PDF_simple_edit.Helpers
                 List<(int Index, byte[] Bytes)> TextOperands,
                 int NextTextOperand);
 
-            public ContentExtractionListener(float pageHeight)
+            public ContentExtractionListener(
+                float pageHeight,
+                IReadOnlyList<ImageOperationDescriptor> imageTargets)
             {
                 _pageHeight = pageHeight;
+                _imageTargets = imageTargets;
+                _ambiguousImageTargets = imageTargets
+                    .GroupBy(target => (
+                        target.StreamObjectNumber,
+                        target.StreamIndex,
+                        target.OperationIndex))
+                    .Where(group => group.Count() > 1)
+                    .Select(group => group.Key)
+                    .ToHashSet();
             }
 
             public TextOperationState CaptureTextOperationState() => new(
@@ -1463,6 +1569,11 @@ namespace PDF_simple_edit.Helpers
 
             public void EventOccurred(IEventData data, EventType type)
             {
+                if (type == EventType.RENDER_IMAGE && data is ImageRenderInfo imageInfo)
+                {
+                    AddImageContent(imageInfo);
+                    return;
+                }
                 if (type != EventType.RENDER_TEXT || data is not TextRenderInfo textInfo)
                     return;
 
@@ -1539,9 +1650,94 @@ namespace PDF_simple_edit.Helpers
                 });
             }
 
+            private void AddImageContent(ImageRenderInfo imageInfo)
+            {
+                // Inline images do not have a removable Do operation. Keep them in
+                // the rendered page, but do not expose a control that cannot be saved safely.
+                if (imageInfo.IsInline() || _imageTargetIndex >= _imageTargets.Count)
+                    return;
+
+                ImageOperationDescriptor target = _imageTargets[_imageTargetIndex++];
+                if (_ambiguousImageTargets.Contains((
+                    target.StreamObjectNumber,
+                    target.StreamIndex,
+                    target.OperationIndex)))
+                {
+                    // A shared form XObject can place the same image operation more
+                    // than once. Removing that shared operation would delete every
+                    // placement, so those instances are intentionally not editable.
+                    return;
+                }
+                try
+                {
+                    Matrix matrix = imageInfo.GetImageCtm();
+                    float a = matrix.Get(Matrix.I11);
+                    float b = matrix.Get(Matrix.I12);
+                    float c = matrix.Get(Matrix.I21);
+                    float d = matrix.Get(Matrix.I22);
+                    float e = matrix.Get(Matrix.I31);
+                    float f = matrix.Get(Matrix.I32);
+                    float[] xs = { e, a + e, c + e, a + c + e };
+                    float[] ys = { f, b + f, d + f, b + d + f };
+                    float left = xs.Min();
+                    float right = xs.Max();
+                    float bottom = ys.Min();
+                    float top = ys.Max();
+                    if (right - left <= 0.1f || top - bottom <= 0.1f)
+                        return;
+
+                    PdfImageXObject image = imageInfo.GetImage();
+                    byte[] imageBytes = image.GetImageBytes(true);
+                    string extension = NormalizeImageExtension(image.IdentifyImageFileExtension());
+                    string imagePath = SaveExtractedImage(imageBytes, extension);
+
+                    Contents.Add(new PdfPageContent
+                    {
+                        Type = PageContentType.Image,
+                        X = left,
+                        Y = _pageHeight - top,
+                        Width = right - left,
+                        Height = top - bottom,
+                        OriginalPdfX = left,
+                        OriginalPdfY = bottom,
+                        Text = imagePath,
+                        ImageId = target.ResourceName,
+                        ContentStreamIndex = target.StreamIndex,
+                        ContentStreamObjectNumber = target.StreamObjectNumber,
+                        OperationIndex = target.OperationIndex
+                    });
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error extracting PDF image: {ex.Message}");
+                }
+            }
+
+            private static string NormalizeImageExtension(string? extension) =>
+                extension?.ToLowerInvariant() switch
+                {
+                    "jpg" or "jpeg" => "jpg",
+                    "jp2" => "jp2",
+                    "tif" or "tiff" => "tif",
+                    "jbig2" => "jbig2",
+                    _ => "png"
+                };
+
+            private static string SaveExtractedImage(byte[] bytes, string extension)
+            {
+                string directory = System.IO.Path.Combine(
+                    System.IO.Path.GetTempPath(), "PDF_simple_edit", "images");
+                Directory.CreateDirectory(directory);
+                string hash = Convert.ToHexString(SHA256.HashData(bytes));
+                string path = System.IO.Path.Combine(directory, $"{hash}.{extension}");
+                if (!File.Exists(path))
+                    File.WriteAllBytes(path, bytes);
+                return path;
+            }
+
             public ICollection<EventType> GetSupportedEvents()
             {
-                return new[] { EventType.RENDER_TEXT };
+                return new[] { EventType.RENDER_TEXT, EventType.RENDER_IMAGE };
             }
         }
 
@@ -1904,6 +2100,188 @@ namespace PDF_simple_edit.Helpers
                 stream.SetData(bytes);
 
             return rewrites.Count > 0;
+        }
+
+        private static bool TryRewriteContentStreamWithoutImages(
+            byte[] contentBytes,
+            IReadOnlyCollection<int> targetOperationIndexes,
+            out byte[]? rewrittenBytes)
+        {
+            rewrittenBytes = null;
+            if (targetOperationIndexes.Count == 0)
+                return false;
+
+            var targets = targetOperationIndexes.ToHashSet();
+            var handled = new HashSet<int>();
+            var sourceFactory = new RandomAccessSourceFactory();
+            var randomSource = sourceFactory.CreateSource(contentBytes);
+            var tokenizer = new PdfTokenizer(new RandomAccessFileOrArray(randomSource));
+            var parser = new PdfCanvasParser(tokenizer);
+            using var stream = new MemoryStream();
+            var output = new PdfOutputStream(stream);
+            int doOperationIndex = -1;
+
+            while (true)
+            {
+                var operation = parser.Parse(new List<PdfObject>());
+                if (operation == null || operation.Count == 0)
+                    break;
+
+                if (operation[^1] is PdfLiteral literal && literal.ToString() == "Do")
+                {
+                    doOperationIndex++;
+                    if (targets.Contains(doOperationIndex))
+                    {
+                        handled.Add(doOperationIndex);
+                        continue;
+                    }
+                }
+
+                WriteOperation(output, operation);
+            }
+
+            if (handled.Count != targets.Count)
+                return false;
+
+            rewrittenBytes = stream.ToArray();
+            return true;
+        }
+
+        public async Task<bool> RemoveOriginalImageAnnotationsAsync(
+            int pageIndex,
+            IReadOnlyCollection<PdfAnnotation> annotations)
+        {
+            if (annotations == null || annotations.Count == 0)
+                return true;
+
+            List<PdfAnnotation>? targets = await ResolveCurrentImageAnnotationsAsync(
+                pageIndex, annotations);
+            if (targets == null || targets.Count != annotations.Count)
+                return false;
+
+            return await Task.Run(() =>
+            {
+                bool success = false;
+                ApplyEdit(doc =>
+                {
+                    if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages())
+                        return;
+
+                    PdfPage page = doc.GetPage(pageIndex + 1);
+                    var rewrites = new List<(PdfStream Stream, byte[] Bytes)>();
+                    foreach (var group in targets
+                        .Where(annotation => annotation.ContentStreamObjectNumber > 0)
+                        .GroupBy(annotation => annotation.ContentStreamObjectNumber))
+                    {
+                        if (doc.GetPdfObject(group.Key) is not PdfStream contentStream ||
+                            !TryRewriteContentStreamWithoutImages(
+                                contentStream.GetBytes(),
+                                group.Select(annotation => annotation.OperationIndex).Distinct().ToList(),
+                                out byte[]? rewrittenBytes) ||
+                            rewrittenBytes == null)
+                        {
+                            return;
+                        }
+
+                        rewrites.Add((contentStream, rewrittenBytes));
+                    }
+
+                    foreach (var group in targets
+                        .Where(annotation => annotation.ContentStreamObjectNumber <= 0)
+                        .GroupBy(annotation => annotation.ContentStreamIndex))
+                    {
+                        if (group.Key < 0 || group.Key >= page.GetContentStreamCount())
+                            return;
+                        PdfStream? contentStream = page.GetContentStream(group.Key);
+                        if (contentStream == null ||
+                            !TryRewriteContentStreamWithoutImages(
+                                contentStream.GetBytes(),
+                                group.Select(annotation => annotation.OperationIndex).Distinct().ToList(),
+                                out byte[]? rewrittenBytes) ||
+                            rewrittenBytes == null)
+                        {
+                            return;
+                        }
+
+                        rewrites.Add((contentStream, rewrittenBytes));
+                    }
+
+                    if (rewrites.Count == 0)
+                        return;
+                    foreach ((PdfStream streamToRewrite, byte[] bytes) in rewrites)
+                        streamToRewrite.SetData(bytes);
+                    success = true;
+                });
+                return success;
+            });
+        }
+
+        private async Task<List<PdfAnnotation>?> ResolveCurrentImageAnnotationsAsync(
+            int pageIndex,
+            IReadOnlyCollection<PdfAnnotation> annotations)
+        {
+            if (annotations.Any(annotation => !annotation.IsOriginalImageReplacement))
+                return null;
+
+            List<PdfPageContent> pageContents = await ExtractPageContentsAsync(pageIndex);
+            List<PdfPageContent> availableImages = pageContents
+                .Where(content => content.Type == PageContentType.Image)
+                .ToList();
+            var usedImages = new HashSet<PdfPageContent>();
+            var resolvedAnnotations = new List<PdfAnnotation>();
+
+            foreach (PdfAnnotation annotation in annotations)
+            {
+                PdfPageContent? match = availableImages
+                    .Where(content => !usedImages.Contains(content) &&
+                        IsSameImagePosition(annotation, content))
+                    .OrderByDescending(content => HasSameExtractedImage(annotation, content))
+                    .ThenByDescending(content => string.Equals(
+                        annotation.OriginalImageName,
+                        content.ImageId,
+                        StringComparison.Ordinal))
+                    .ThenBy(content =>
+                        Math.Abs(annotation.OriginalPdfX - content.OriginalPdfX) +
+                        Math.Abs(annotation.OriginalPdfY - content.OriginalPdfY))
+                    .FirstOrDefault();
+                if (match == null || match.OperationIndex < 0 ||
+                    (match.ContentStreamObjectNumber <= 0 && match.ContentStreamIndex < 0))
+                {
+                    return null;
+                }
+
+                usedImages.Add(match);
+                PdfAnnotation resolved = annotation.Clone();
+                resolved.ContentStreamIndex = match.ContentStreamIndex;
+                resolved.ContentStreamObjectNumber = match.ContentStreamObjectNumber;
+                resolved.OperationIndex = match.OperationIndex;
+                resolved.OriginalImageName = match.ImageId;
+                resolvedAnnotations.Add(resolved);
+            }
+
+            return resolvedAnnotations;
+        }
+
+        private static bool IsSameImagePosition(
+            PdfAnnotation annotation,
+            PdfPageContent content)
+        {
+            double horizontalTolerance = Math.Max(2, content.Width * 0.05);
+            double verticalTolerance = Math.Max(2, content.Height * 0.05);
+            return Math.Abs(annotation.OriginalPdfX - content.OriginalPdfX) <= horizontalTolerance &&
+                Math.Abs(annotation.OriginalPdfY - content.OriginalPdfY) <= verticalTolerance;
+        }
+
+        private static bool HasSameExtractedImage(
+            PdfAnnotation annotation,
+            PdfPageContent content)
+        {
+            if (string.IsNullOrEmpty(annotation.ImagePath) || string.IsNullOrEmpty(content.Text))
+                return false;
+            return string.Equals(
+                System.IO.Path.GetFileName(annotation.ImagePath),
+                System.IO.Path.GetFileName(content.Text),
+                StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool RemoveTextByCleanup(PdfDocument doc, int pageIndex, List<(double x, double y, double w, double h)> targets)

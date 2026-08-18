@@ -1217,7 +1217,8 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             // 리사이즈 핸들 클릭 확인
             if (e.OriginalSource is Microsoft.UI.Xaml.Shapes.Rectangle handle && handle.Tag is string dir)
             {
-                _annotationInteractionController.BeginResize(dir, pos);
+                if (_selectedAnnotation != null)
+                    _annotationInteractionController.BeginResize(_selectedAnnotation, dir, pos);
                 OverlayCanvas.CapturePointer(e.Pointer);
                 TxtStatus.Text = "크기 조정 중...";
                 return;
@@ -1240,7 +1241,7 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             {
                 TxtStatus.Text = added.IsOriginalTextReplacement
                     ? "텍스트 편집 구역이 선택되었습니다. 두 번 클릭하여 편집하세요."
-                    : "원본 콘텐츠가 선택되었습니다.";
+                    : "이미지가 선택되었습니다. 드래그하여 이동하거나 핸들로 크기를 조정하세요.";
             }
 
             if (selection.SelectionChanged)
@@ -1259,9 +1260,7 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             {
                 _annotationInteractionController.BeginMove(_selectedAnnotations, pos);
                 OverlayCanvas.CapturePointer(e.Pointer);
-                if (!moveTarget.IsOriginalTextReplacement &&
-                    !(moveTarget.IsOriginalImageReplacement &&
-                      moveTarget.OriginalImageName != null))
+                if (!moveTarget.IsOriginalTextReplacement)
                 {
                     TxtStatus.Text = _selectedAnnotations.Count > 1 ? $"{_selectedAnnotations.Count}개 객체 선택됨" : "객체 선택됨 (드래그하여 이동)";
                 }
@@ -1344,11 +1343,21 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 _selectPointerPressSequence++;
             }
 
-            if (_annotationInteractionController.CompleteResize())
+            AnnotationResizeResult resizeResult = await _annotationInteractionController.CompleteResizeAsync(
+                _pdfManager, _currentPageIndex);
+            if (resizeResult != AnnotationResizeResult.NotActive)
             {
                 OverlayCanvas.ReleasePointerCapture(e.Pointer);
+                if (resizeResult == AnnotationResizeResult.OriginalImageRemovalFailed)
+                {
+                    TxtStatus.Text = "이 PDF의 이미지는 원본을 보존한 상태로 크기를 조정할 수 없습니다.";
+                    RenderAnnotationOverlays();
+                    return;
+                }
                 _pdfManager.MarkModified();
                 TxtStatus.Text = "크기 조정됨 (저장 시 반영)";
+                if (!_inlineTextEditorController.IsEditing)
+                    await RenderCurrentPageAsync();
                 RenderAnnotationOverlays();
             }
             else if (_annotationInteractionController.IsMoving)
@@ -1364,6 +1373,18 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 if (result == AnnotationMoveResult.OriginalTextRemovalFailed)
                 {
                     TxtStatus.Text = "이 PDF의 텍스트는 배경을 보존한 상태로 이동할 수 없습니다.";
+                    RenderAnnotationOverlays();
+                    return;
+                }
+                if (result == AnnotationMoveResult.OriginalImageRemovalFailed)
+                {
+                    TxtStatus.Text = "이 PDF의 이미지는 원본을 보존한 상태로 이동할 수 없습니다.";
+                    RenderAnnotationOverlays();
+                    return;
+                }
+                if (result == AnnotationMoveResult.MixedOriginalContentRemovalFailed)
+                {
+                    TxtStatus.Text = "원본 텍스트와 이미지는 한 번에 함께 이동할 수 없습니다.";
                     RenderAnnotationOverlays();
                     return;
                 }
@@ -1441,7 +1462,9 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 ParseColor,
                 (direction, position) =>
                 {
-                    _annotationInteractionController.BeginResize(direction, position);
+                    if (_selectedAnnotation != null)
+                        _annotationInteractionController.BeginResize(
+                            _selectedAnnotation, direction, position);
                 },
                 shape => SetElementCursor(
                     OverlayCanvas,
@@ -1629,6 +1652,14 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             var originalTextTargets = targets
                 .Where(annotation => annotation.IsOriginalTextReplacement)
                 .ToList();
+            var originalImageTargets = targets
+                .Where(annotation => annotation.IsOriginalImageReplacement)
+                .ToList();
+            if (originalTextTargets.Count > 0 && originalImageTargets.Count > 0)
+            {
+                TxtStatus.Text = "원본 텍스트와 이미지는 한 번에 함께 삭제할 수 없습니다.";
+                return false;
+            }
             if (originalTextTargets.Count > 0)
             {
                 bool removed = await _pdfManager.RemoveOriginalTextAnnotationsAsync(
@@ -1639,6 +1670,16 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                     return false;
                 }
             }
+            if (originalImageTargets.Count > 0)
+            {
+                bool removed = await _pdfManager.RemoveOriginalImageAnnotationsAsync(
+                    _currentPageIndex, originalImageTargets);
+                if (!removed)
+                {
+                    TxtStatus.Text = "이 PDF의 이미지를 안전하게 삭제할 수 없습니다.";
+                    return false;
+                }
+            }
 
             foreach (var annotation in targets)
                 _annotations.Remove(annotation);
@@ -1646,10 +1687,14 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             _selectedAnnotations.Clear();
             _selectedAnnotation = null;
             _pdfManager.MarkModified();
-            if (originalTextTargets.Count > 0)
+            if (originalTextTargets.Count > 0 || originalImageTargets.Count > 0)
                 await RenderCurrentPageAsync();
             RenderAnnotationOverlays();
-            TxtStatus.Text = targets.Count > 1 ? $"{targets.Count}개 객체 삭제됨" : "텍스트가 삭제되었습니다.";
+            TxtStatus.Text = targets.Count > 1
+                ? $"{targets.Count}개 객체 삭제됨"
+                : targets[0].Type == AnnotationType.Image
+                    ? "이미지가 삭제되었습니다."
+                    : "텍스트가 삭제되었습니다.";
             return true;
         }
         #endregion

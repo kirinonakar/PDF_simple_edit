@@ -16,7 +16,16 @@ public enum AnnotationMoveResult
     NotActive,
     NotMoved,
     Completed,
-    OriginalTextRemovalFailed
+    OriginalTextRemovalFailed,
+    OriginalImageRemovalFailed,
+    MixedOriginalContentRemovalFailed
+}
+
+public enum AnnotationResizeResult
+{
+    NotActive,
+    Completed,
+    OriginalImageRemovalFailed
 }
 
 public sealed class AnnotationInteractionController
@@ -25,6 +34,8 @@ public sealed class AnnotationInteractionController
     private readonly Dictionary<PdfAnnotation, Point> _moveStartPositions = new();
     private bool _hasMoved;
     private string? _resizeHandle;
+    private PdfAnnotation? _resizeAnnotation;
+    private (double X, double Y, double Width, double Height)? _resizeStartBounds;
     private Point _lastPointerPosition;
     private Point _highlightStart;
     private Microsoft.UI.Xaml.Shapes.Rectangle? _highlightRectangle;
@@ -33,9 +44,11 @@ public sealed class AnnotationInteractionController
     public bool IsResizing { get; private set; }
     public bool IsDrawingHighlight => _highlightRectangle != null;
 
-    public void BeginResize(string direction, Point position)
+    public void BeginResize(PdfAnnotation annotation, string direction, Point position)
     {
         IsResizing = true;
+        _resizeAnnotation = annotation;
+        _resizeStartBounds = (annotation.X, annotation.Y, annotation.Width, annotation.Height);
         _resizeHandle = direction;
         _lastPointerPosition = position;
     }
@@ -115,13 +128,38 @@ public sealed class AnnotationInteractionController
         return false;
     }
 
-    public bool CompleteResize()
+    public async Task<AnnotationResizeResult> CompleteResizeAsync(
+        PdfDocumentManager manager,
+        int pageIndex)
     {
         if (!IsResizing)
-            return false;
+            return AnnotationResizeResult.NotActive;
         IsResizing = false;
         _resizeHandle = null;
-        return true;
+
+        PdfAnnotation? annotation = _resizeAnnotation;
+        _resizeAnnotation = null;
+        if (annotation?.IsOriginalImageReplacement == true)
+        {
+            bool removed = await manager.RemoveOriginalImageAnnotationsAsync(
+                pageIndex, new[] { annotation });
+            if (!removed)
+            {
+                if (_resizeStartBounds is { } bounds)
+                {
+                    annotation.X = bounds.X;
+                    annotation.Y = bounds.Y;
+                    annotation.Width = bounds.Width;
+                    annotation.Height = bounds.Height;
+                }
+                _resizeStartBounds = null;
+                return AnnotationResizeResult.OriginalImageRemovalFailed;
+            }
+            annotation.IsOriginalImageReplacement = false;
+        }
+
+        _resizeStartBounds = null;
+        return AnnotationResizeResult.Completed;
     }
 
     public async Task<AnnotationMoveResult> CompleteMoveAsync(
@@ -141,22 +179,43 @@ public sealed class AnnotationInteractionController
         var originalText = selectedAnnotations
             .Where(annotation => annotation.IsOriginalTextReplacement)
             .ToList();
+        var originalImages = selectedAnnotations
+            .Where(annotation => annotation.IsOriginalImageReplacement)
+            .ToList();
+        if (originalText.Count > 0 && originalImages.Count > 0)
+        {
+            RestoreMoveStartPositions();
+            return AnnotationMoveResult.MixedOriginalContentRemovalFailed;
+        }
         if (originalText.Count > 0 &&
             !await manager.RemoveOriginalTextAnnotationsAsync(pageIndex, originalText))
         {
-            foreach ((PdfAnnotation annotation, Point position) in _moveStartPositions)
-            {
-                annotation.X = position.X;
-                annotation.Y = position.Y;
-            }
-            _moveStartPositions.Clear();
+            RestoreMoveStartPositions();
             return AnnotationMoveResult.OriginalTextRemovalFailed;
+        }
+        if (originalImages.Count > 0 &&
+            !await manager.RemoveOriginalImageAnnotationsAsync(pageIndex, originalImages))
+        {
+            RestoreMoveStartPositions();
+            return AnnotationMoveResult.OriginalImageRemovalFailed;
         }
 
         foreach (PdfAnnotation annotation in originalText)
             annotation.IsOriginalTextReplacement = false;
+        foreach (PdfAnnotation annotation in originalImages)
+            annotation.IsOriginalImageReplacement = false;
         _moveStartPositions.Clear();
         return AnnotationMoveResult.Completed;
+    }
+
+    private void RestoreMoveStartPositions()
+    {
+        foreach ((PdfAnnotation annotation, Point position) in _moveStartPositions)
+        {
+            annotation.X = position.X;
+            annotation.Y = position.Y;
+        }
+        _moveStartPositions.Clear();
     }
 
     public PdfAnnotation? CompleteHighlight(
