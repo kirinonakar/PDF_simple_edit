@@ -108,7 +108,7 @@ public sealed class EditorDialogService
         });
         panel.Children.Add(new TextBlock
         {
-            Text = "\nLibraries: iText 7 Core & pdfSweep (AGPL v3, © iText Group NV)",
+            Text = "\nLibraries: iText 9 Core & pdfSweep (AGPL v3, © iText Group NV)",
             FontSize = 11,
             Opacity = 0.6
         });

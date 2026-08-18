@@ -46,6 +46,9 @@ namespace PDF_simple_edit.Models
         public double OriginalPdfY { get; set; }
         public string OriginalText { get; set; } = string.Empty;
         public string? OriginalImageName { get; set; }
+        public List<int> GraphicOperationIndexes { get; set; } = new();
+        public List<int> GraphicTextOperationIndexes { get; set; } = new();
+        public List<PdfGraphicOperationTarget> GraphicOperations { get; set; } = new();
         public Guid? OperatorId { get; set; }
         public int ContentStreamIndex { get; set; } = -1;
         public int ContentStreamObjectNumber { get; set; } = -1;
@@ -84,6 +87,9 @@ namespace PDF_simple_edit.Models
                 OriginalPdfY = this.OriginalPdfY,
                 OriginalText = this.OriginalText,
                 OriginalImageName = this.OriginalImageName,
+                GraphicOperationIndexes = new List<int>(this.GraphicOperationIndexes),
+                GraphicTextOperationIndexes = new List<int>(this.GraphicTextOperationIndexes),
+                GraphicOperations = this.GraphicOperations.Select(target => target.Clone()).ToList(),
                 OperatorId = this.OperatorId,
                 ContentStreamIndex = this.ContentStreamIndex,
                 ContentStreamObjectNumber = this.ContentStreamObjectNumber,
@@ -185,6 +191,17 @@ namespace PDF_simple_edit.Models
         Image
     }
 
+    public class PdfGraphicOperationTarget
+    {
+        public int StreamIndex { get; set; } = -1;
+        public int StreamObjectNumber { get; set; } = -1;
+        public int OperationIndex { get; set; } = -1;
+        public bool IsTextOperation { get; set; }
+        public bool IsShadingOperation { get; set; }
+
+        public PdfGraphicOperationTarget Clone() => (PdfGraphicOperationTarget)MemberwiseClone();
+    }
+
     /// <summary>
     /// Represents selectable content from the original PDF (text or image).
     /// </summary>
@@ -219,6 +236,9 @@ namespace PDF_simple_edit.Models
         
         // For image handling (future use)
         public string? ImageId { get; set; }
+        public List<int> GraphicOperationIndexes { get; set; } = new();
+        public List<int> GraphicTextOperationIndexes { get; set; } = new();
+        public List<PdfGraphicOperationTarget> GraphicOperations { get; set; } = new();
     }
 
     /// <summary>

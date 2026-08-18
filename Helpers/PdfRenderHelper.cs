@@ -68,6 +68,44 @@ namespace PDF_simple_edit.Helpers
             }
         }
 
+        public static async Task<MemoryStream?> RenderRegionWithWindowsPdfStreamAsync(
+            Windows.Storage.Streams.IRandomAccessStream inputStream,
+            int pageIndex,
+            Windows.Foundation.Rect sourceRect,
+            double scale = 3.0)
+        {
+            try
+            {
+                var pdfDoc = await Windows.Data.Pdf.PdfDocument.LoadFromStreamAsync(inputStream);
+                if (pageIndex < 0 || pageIndex >= (int)pdfDoc.PageCount ||
+                    sourceRect.Width <= 0 || sourceRect.Height <= 0)
+                {
+                    return null;
+                }
+
+                using var page = pdfDoc.GetPage((uint)pageIndex);
+                var ms = new MemoryStream();
+                var outputStream = ms.AsRandomAccessStream();
+                var options = new Windows.Data.Pdf.PdfPageRenderOptions
+                {
+                    SourceRect = sourceRect,
+                    DestinationWidth = (uint)Math.Max(1, Math.Ceiling(sourceRect.Width * scale)),
+                    DestinationHeight = (uint)Math.Max(1, Math.Ceiling(sourceRect.Height * scale)),
+                    BackgroundColor = Windows.UI.Color.FromArgb(0, 255, 255, 255)
+                };
+
+                await page.RenderToStreamAsync(outputStream, options);
+                await outputStream.FlushAsync();
+                ms.Position = 0;
+                return ms;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Windows PDF region render error: {ex.Message}");
+                return null;
+            }
+        }
+
         public static async Task<(double width, double height)> GetPageSizeAsync(
             string filePath, int pageIndex)
         {

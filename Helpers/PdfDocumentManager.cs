@@ -922,22 +922,29 @@ namespace PDF_simple_edit.Helpers
                     return cached;
             }
 
-            return await Task.Run(() =>
+            byte[] pdfSnapshot;
+            lock (_docLock)
+                pdfSnapshot = (byte[])_pdfBytes.Clone();
+
+            List<PdfPageContent> contents = await Task.Run(() =>
             {
-                var contents = new List<PdfPageContent>();
+                var extractedContents = new List<PdfPageContent>();
                 try
                 {
-                    using var reader = new PdfReader(new MemoryStream(_pdfBytes));
+                    using var reader = new PdfReader(new MemoryStream(pdfSnapshot));
                     using var doc = new PdfDocument(reader);
                     if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages())
-                        return contents;
+                        return extractedContents;
 
                     var page = doc.GetPage(pageIndex + 1);
                     var pageSize = page.GetPageSize();
                     
                     var operationTargets = ExtractTextOperationDescriptors(page);
                     var imageTargets = ExtractImageOperationDescriptors(page);
-                    var listener = new ContentExtractionListener(pageSize.GetHeight(), imageTargets);
+                    var pathTargets = ExtractPathOperationDescriptors(page);
+                    var shadingTargets = ExtractShadingOperationDescriptors(page);
+                    var listener = new ContentExtractionListener(
+                        pageSize.GetHeight(), imageTargets);
                     PdfCanvasProcessor processor = new PdfCanvasProcessor(listener);
                     var tracker = new TextOperationTracker(operationTargets);
                     foreach (string operatorName in new[] { "Tj", "TJ", "'", "\"" })
@@ -946,23 +953,75 @@ namespace PDF_simple_edit.Helpers
                         trackingOperator.InnerOperator = processor.RegisterContentOperator(
                             operatorName, trackingOperator);
                     }
+                    var pathTracker = new PathOperationTracker(pathTargets);
+                    foreach (string operatorName in new[]
+                    {
+                        "S", "s", "f", "F", "f*", "B", "B*", "b", "b*", "n"
+                    })
+                    {
+                        var trackingOperator = new TrackingPathContentOperator(listener, pathTracker);
+                        trackingOperator.InnerOperator = processor.RegisterContentOperator(
+                            operatorName, trackingOperator);
+                    }
+                    var shadingTracker = new ShadingOperationTracker(shadingTargets);
+                    var shadingOperator = new TrackingShadingContentOperator(listener, shadingTracker);
+                    shadingOperator.InnerOperator = processor.RegisterContentOperator("sh", shadingOperator);
                     processor.ProcessPageContent(page);
                     
-                    contents = GroupTextIntoEditRegions(
+                    extractedContents = GroupTextIntoEditRegions(
                         listener.Contents.Where(content => content.Type == PageContentType.Text));
-                    contents.AddRange(listener.Contents.Where(content => content.Type == PageContentType.Image));
+                    extractedContents.AddRange(listener.Contents.Where(content => content.Type == PageContentType.Image));
+                    extractedContents.AddRange(GroupVectorPathsIntoGraphics(
+                        listener.VectorPaths, pageSize.GetHeight()));
                 }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"Error extracting page contents: {ex.Message}");
                 }
 
-                lock (_docLock)
-                {
-                    _contentCache[pageIndex] = contents;
-                }
-                return contents;
+                return extractedContents;
             });
+
+            await PopulateVectorGraphicImagesAsync(pdfSnapshot, pageIndex, contents);
+            lock (_docLock)
+                _contentCache[pageIndex] = contents;
+            return contents;
+        }
+
+        private static async Task PopulateVectorGraphicImagesAsync(
+            byte[] pdfBytes,
+            int pageIndex,
+            IEnumerable<PdfPageContent> contents)
+        {
+            const double pdfToPixels = 96.0 / 72.0;
+            foreach (PdfPageContent content in contents.Where(content =>
+                content.Type == PageContentType.Image &&
+                content.GraphicOperations.Count > 0 &&
+                string.IsNullOrEmpty(content.Text)))
+            {
+                using var input = new MemoryStream(pdfBytes);
+                using MemoryStream? rendered = await PdfRenderHelper.RenderRegionWithWindowsPdfStreamAsync(
+                    input.AsRandomAccessStream(),
+                    pageIndex,
+                    new Windows.Foundation.Rect(
+                        content.X * pdfToPixels,
+                        content.Y * pdfToPixels,
+                        content.Width * pdfToPixels,
+                        content.Height * pdfToPixels),
+                    3.0);
+                if (rendered == null || rendered.Length == 0)
+                    continue;
+
+                byte[] bytes = rendered.ToArray();
+                string directory = System.IO.Path.Combine(
+                    System.IO.Path.GetTempPath(), "PDF_simple_edit", "images");
+                Directory.CreateDirectory(directory);
+                string hash = Convert.ToHexString(SHA256.HashData(bytes));
+                string path = System.IO.Path.Combine(directory, $"{hash}.png");
+                if (!File.Exists(path))
+                    File.WriteAllBytes(path, bytes);
+                content.Text = path;
+            }
         }
 
 
@@ -1147,6 +1206,183 @@ namespace PDF_simple_edit.Helpers
             public int StreamObjectNumber { get; init; }
             public int OperationIndex { get; init; }
             public string ResourceName { get; init; } = string.Empty;
+        }
+
+        private sealed class PathOperationDescriptor
+        {
+            public int StreamIndex { get; init; }
+            public int StreamObjectNumber { get; init; }
+            public int OperationIndex { get; init; }
+        }
+
+        private sealed class ShadingOperationDescriptor
+        {
+            public int StreamIndex { get; init; }
+            public int StreamObjectNumber { get; init; }
+            public int OperationIndex { get; init; }
+        }
+
+        private sealed class VectorPathFragment
+        {
+            public double X { get; init; }
+            public double Y { get; init; }
+            public double Width { get; init; }
+            public double Height { get; init; }
+            public int ShapeCount { get; init; }
+            public PathOperationDescriptor Target { get; init; } = new();
+            public TextOperationDescriptor? TextTarget { get; init; }
+            public ShadingOperationDescriptor? ShadingTarget { get; init; }
+        }
+
+        private static bool IsPathPaintingOperator(string operatorName) =>
+            operatorName is "S" or "s" or "f" or "F" or "f*" or
+                "B" or "B*" or "b" or "b*" or "n";
+
+        private static List<PathOperationDescriptor> ExtractPathOperationDescriptors(PdfPage page)
+        {
+            var result = new List<PathOperationDescriptor>();
+            for (int streamIndex = 0; streamIndex < page.GetContentStreamCount(); streamIndex++)
+            {
+                PdfStream? contentStream = page.GetContentStream(streamIndex);
+                if (contentStream == null)
+                    continue;
+                AppendPathOperationDescriptors(
+                    contentStream, page.GetResources(), streamIndex, result, new HashSet<int>());
+            }
+            return result;
+        }
+
+        private static List<ShadingOperationDescriptor> ExtractShadingOperationDescriptors(PdfPage page)
+        {
+            var result = new List<ShadingOperationDescriptor>();
+            for (int streamIndex = 0; streamIndex < page.GetContentStreamCount(); streamIndex++)
+            {
+                PdfStream? contentStream = page.GetContentStream(streamIndex);
+                if (contentStream == null)
+                    continue;
+                AppendShadingOperationDescriptors(
+                    contentStream, page.GetResources(), streamIndex, result, new HashSet<int>());
+            }
+            return result;
+        }
+
+        private static void AppendShadingOperationDescriptors(
+            PdfStream contentStream,
+            PdfResources resources,
+            int pageStreamIndex,
+            List<ShadingOperationDescriptor> result,
+            HashSet<int> recursionStack)
+        {
+            int streamObjectNumber = contentStream.GetIndirectReference()?.GetObjNumber() ?? -1;
+            if (streamObjectNumber > 0 && !recursionStack.Add(streamObjectNumber))
+                return;
+            try
+            {
+                var sourceFactory = new RandomAccessSourceFactory();
+                var randomSource = sourceFactory.CreateSource(contentStream.GetBytes());
+                var tokenizer = new PdfTokenizer(new RandomAccessFileOrArray(randomSource));
+                var parser = new PdfCanvasParser(tokenizer);
+                int shadingOperationIndex = -1;
+                while (true)
+                {
+                    var operation = parser.Parse(new List<PdfObject>());
+                    if (operation == null || operation.Count == 0)
+                        break;
+                    if (operation[^1] is not PdfLiteral literal)
+                        continue;
+                    string operatorName = literal.ToString();
+                    if (operatorName == "sh")
+                    {
+                        shadingOperationIndex++;
+                        result.Add(new ShadingOperationDescriptor
+                        {
+                            StreamIndex = pageStreamIndex,
+                            StreamObjectNumber = streamObjectNumber,
+                            OperationIndex = shadingOperationIndex
+                        });
+                    }
+                    else if (operatorName == "Do" && operation.Count > 1 &&
+                        operation[0] is PdfName resourceName)
+                    {
+                        PdfStream? xObject = resources.GetResource(PdfName.XObject)?.GetAsStream(resourceName);
+                        if (xObject?.GetAsName(PdfName.Subtype)?.Equals(PdfName.Form) == true)
+                        {
+                            PdfDictionary? formResourceDictionary = xObject.GetAsDictionary(PdfName.Resources);
+                            PdfResources formResources = formResourceDictionary != null
+                                ? new PdfResources(formResourceDictionary)
+                                : resources;
+                            AppendShadingOperationDescriptors(
+                                xObject, formResources, -1, result, recursionStack);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                if (streamObjectNumber > 0)
+                    recursionStack.Remove(streamObjectNumber);
+            }
+        }
+
+        private static void AppendPathOperationDescriptors(
+            PdfStream contentStream,
+            PdfResources resources,
+            int pageStreamIndex,
+            List<PathOperationDescriptor> result,
+            HashSet<int> recursionStack)
+        {
+            int streamObjectNumber = contentStream.GetIndirectReference()?.GetObjNumber() ?? -1;
+            if (streamObjectNumber > 0 && !recursionStack.Add(streamObjectNumber))
+                return;
+
+            try
+            {
+                var sourceFactory = new RandomAccessSourceFactory();
+                var randomSource = sourceFactory.CreateSource(contentStream.GetBytes());
+                var tokenizer = new PdfTokenizer(new RandomAccessFileOrArray(randomSource));
+                var parser = new PdfCanvasParser(tokenizer);
+                int pathOperationIndex = -1;
+
+                while (true)
+                {
+                    var operation = parser.Parse(new List<PdfObject>());
+                    if (operation == null || operation.Count == 0)
+                        break;
+                    if (operation[^1] is not PdfLiteral literal)
+                        continue;
+
+                    string operatorName = literal.ToString();
+                    if (IsPathPaintingOperator(operatorName))
+                    {
+                        pathOperationIndex++;
+                        result.Add(new PathOperationDescriptor
+                        {
+                            StreamIndex = pageStreamIndex,
+                            StreamObjectNumber = streamObjectNumber,
+                            OperationIndex = pathOperationIndex
+                        });
+                    }
+                    else if (operatorName == "Do" && operation.Count > 1 &&
+                        operation[0] is PdfName resourceName)
+                    {
+                        PdfStream? xObject = resources.GetResource(PdfName.XObject)?.GetAsStream(resourceName);
+                        if (xObject?.GetAsName(PdfName.Subtype)?.Equals(PdfName.Form) == true)
+                        {
+                            PdfDictionary? formResourceDictionary = xObject.GetAsDictionary(PdfName.Resources);
+                            PdfResources formResources = formResourceDictionary != null
+                                ? new PdfResources(formResourceDictionary)
+                                : resources;
+                            AppendPathOperationDescriptors(
+                                xObject, formResources, -1, result, recursionStack);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                if (streamObjectNumber > 0)
+                    recursionStack.Remove(streamObjectNumber);
+            }
         }
 
         private static List<ImageOperationDescriptor> ExtractImageOperationDescriptors(PdfPage page)
@@ -1434,6 +1670,129 @@ namespace PDF_simple_edit.Helpers
             return regions;
         }
 
+        private static List<PdfPageContent> GroupVectorPathsIntoGraphics(
+            IReadOnlyCollection<VectorPathFragment> rawPaths,
+            double pageHeight)
+        {
+            var duplicateTargets = rawPaths
+                .GroupBy(GetVectorTargetKey)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .ToHashSet();
+            var graphics = new List<PdfPageContent>();
+
+            List<VectorPathFragment> remaining = rawPaths
+                .Where(path => !duplicateTargets.Contains(GetVectorTargetKey(path)))
+                .ToList();
+            while (remaining.Count > 0)
+            {
+                var component = new List<VectorPathFragment> { remaining[0] };
+                remaining.RemoveAt(0);
+                bool added;
+                do
+                {
+                    added = false;
+                    for (int index = remaining.Count - 1; index >= 0; index--)
+                    {
+                        if (!component.Any(path => AreVectorPathsNear(path, remaining[index])))
+                            continue;
+                        component.Add(remaining[index]);
+                        remaining.RemoveAt(index);
+                        added = true;
+                    }
+                }
+                while (added);
+
+                double left = component.Min(path => path.X);
+                double top = component.Min(path => path.Y);
+                double right = component.Max(path => path.X + path.Width);
+                double bottom = component.Max(path => path.Y + path.Height);
+                double width = right - left;
+                double height = bottom - top;
+                if (component.Sum(path => path.ShapeCount) < 3 || width < 8 || height < 5)
+                    continue;
+
+                const double cropPadding = 1.0;
+                left -= cropPadding;
+                top -= cropPadding;
+                width += cropPadding * 2;
+                height += cropPadding * 2;
+                List<PdfGraphicOperationTarget> operationTargets = component
+                    .Select(GetVectorTargetKey)
+                    .Distinct()
+                    .Select(key => new PdfGraphicOperationTarget
+                    {
+                        StreamObjectNumber = key.StreamObjectNumber,
+                        StreamIndex = key.StreamIndex,
+                        OperationIndex = key.OperationIndex,
+                        IsTextOperation = key.IsText,
+                        IsShadingOperation = key.IsShading
+                    })
+                    .OrderBy(target => target.StreamObjectNumber)
+                    .ThenBy(target => target.StreamIndex)
+                    .ThenBy(target => target.OperationIndex)
+                    .ToList();
+                PdfGraphicOperationTarget firstTarget = operationTargets[0];
+                graphics.Add(new PdfPageContent
+                {
+                    Type = PageContentType.Image,
+                    X = left,
+                    Y = top,
+                    Width = width,
+                    Height = height,
+                    OriginalPdfX = left,
+                    OriginalPdfY = pageHeight - (top + height),
+                    ImageId = "vector:" + string.Join(";", operationTargets.Select(target =>
+                        $"{target.StreamObjectNumber}:{target.OperationIndex}:" +
+                        $"{target.IsTextOperation}:{target.IsShadingOperation}")),
+                    ContentStreamIndex = firstTarget.StreamIndex,
+                    ContentStreamObjectNumber = firstTarget.StreamObjectNumber,
+                    OperationIndex = firstTarget.OperationIndex,
+                    GraphicOperations = operationTargets
+                });
+            }
+
+            return graphics;
+        }
+
+        private static (
+            int StreamObjectNumber,
+            int StreamIndex,
+            int OperationIndex,
+            bool IsText,
+            bool IsShading) GetVectorTargetKey(VectorPathFragment path) =>
+            path.ShadingTarget != null
+                ? (
+                    path.ShadingTarget.StreamObjectNumber,
+                    path.ShadingTarget.StreamIndex,
+                    path.ShadingTarget.OperationIndex,
+                    false,
+                    true)
+                : path.TextTarget != null
+                ? (
+                    path.TextTarget.StreamObjectNumber,
+                    path.TextTarget.StreamIndex,
+                    path.TextTarget.OperationIndex,
+                    true,
+                    false)
+                : (
+                    path.Target.StreamObjectNumber,
+                    path.Target.StreamIndex,
+                    path.Target.OperationIndex,
+                    false,
+                    false);
+
+        private static bool AreVectorPathsNear(
+            VectorPathFragment first,
+            VectorPathFragment second)
+        {
+            const double maximumGap = 10;
+            return first.X <= second.X + second.Width + maximumGap &&
+                first.X + first.Width + maximumGap >= second.X &&
+                first.Y <= second.Y + second.Height + maximumGap &&
+                first.Y + first.Height + maximumGap >= second.Y;
+        }
+
         private sealed class TextOperationTracker
         {
             private readonly IReadOnlyList<TextOperationDescriptor> _targets;
@@ -1448,6 +1807,34 @@ namespace PDF_simple_edit.Helpers
             {
                 return _index < _targets.Count ? _targets[_index++] : null;
             }
+        }
+
+        private sealed class PathOperationTracker
+        {
+            private readonly IReadOnlyList<PathOperationDescriptor> _targets;
+            private int _index;
+
+            public PathOperationTracker(IReadOnlyList<PathOperationDescriptor> targets)
+            {
+                _targets = targets;
+            }
+
+            public PathOperationDescriptor? Next() =>
+                _index < _targets.Count ? _targets[_index++] : null;
+        }
+
+        private sealed class ShadingOperationTracker
+        {
+            private readonly IReadOnlyList<ShadingOperationDescriptor> _targets;
+            private int _index;
+
+            public ShadingOperationTracker(IReadOnlyList<ShadingOperationDescriptor> targets)
+            {
+                _targets = targets;
+            }
+
+            public ShadingOperationDescriptor? Next() =>
+                _index < _targets.Count ? _targets[_index++] : null;
         }
 
         private sealed class TrackingTextContentOperator : IContentOperator
@@ -1483,17 +1870,78 @@ namespace PDF_simple_edit.Helpers
             }
         }
 
+        private sealed class TrackingPathContentOperator : IContentOperator
+        {
+            private readonly ContentExtractionListener _listener;
+            private readonly PathOperationTracker _tracker;
+
+            public IContentOperator? InnerOperator { get; set; }
+
+            public TrackingPathContentOperator(
+                ContentExtractionListener listener,
+                PathOperationTracker tracker)
+            {
+                _listener = listener;
+                _tracker = tracker;
+            }
+
+            public void Invoke(
+                PdfCanvasProcessor processor,
+                PdfLiteral operatorLiteral,
+                IList<PdfObject> operands)
+            {
+                PathOperationDescriptor? previous = _listener.CurrentPathTarget;
+                _listener.CurrentPathTarget = _tracker.Next();
+                try
+                {
+                    InnerOperator?.Invoke(processor, operatorLiteral, operands);
+                }
+                finally
+                {
+                    _listener.CurrentPathTarget = previous;
+                }
+            }
+        }
+
+        private sealed class TrackingShadingContentOperator : IContentOperator
+        {
+            private readonly ContentExtractionListener _listener;
+            private readonly ShadingOperationTracker _tracker;
+
+            public IContentOperator? InnerOperator { get; set; }
+
+            public TrackingShadingContentOperator(
+                ContentExtractionListener listener,
+                ShadingOperationTracker tracker)
+            {
+                _listener = listener;
+                _tracker = tracker;
+            }
+
+            public void Invoke(
+                PdfCanvasProcessor processor,
+                PdfLiteral operatorLiteral,
+                IList<PdfObject> operands)
+            {
+                _listener.AddShading(_tracker.Next());
+                InnerOperator?.Invoke(processor, operatorLiteral, operands);
+            }
+        }
+
         private class ContentExtractionListener : IEventListener
         {
             public List<PdfPageContent> Contents { get; } = new();
+            public List<VectorPathFragment> VectorPaths { get; } = new();
             private readonly float _pageHeight;
             private readonly Dictionary<int, PdfFontMetadata> _fontMetadataCache = new();
             private readonly IReadOnlyList<ImageOperationDescriptor> _imageTargets;
             private readonly HashSet<(int StreamObjectNumber, int StreamIndex, int OperationIndex)> _ambiguousImageTargets;
             private int _imageTargetIndex;
             public TextOperationDescriptor? CurrentTarget { get; set; }
+            public PathOperationDescriptor? CurrentPathTarget { get; set; }
             private List<(int Index, byte[] Bytes)> _textOperands = new();
             private int _nextTextOperand;
+            private (double X, double Y, double Width, double Height)? _pendingClipBounds;
 
             public sealed record TextOperationState(
                 TextOperationDescriptor? Target,
@@ -1569,6 +2017,11 @@ namespace PDF_simple_edit.Helpers
 
             public void EventOccurred(IEventData data, EventType type)
             {
+                if (type == EventType.RENDER_PATH && data is PathRenderInfo pathInfo)
+                {
+                    AddVectorPath(pathInfo);
+                    return;
+                }
                 if (type == EventType.RENDER_IMAGE && data is ImageRenderInfo imageInfo)
                 {
                     AddImageContent(imageInfo);
@@ -1648,6 +2101,81 @@ namespace PDF_simple_edit.Helpers
                     OriginalFontObjectNumber = originalFontObjectNumber,
                     TextFragments = new List<PdfTextFragment> { fragment }
                 });
+            }
+
+            private void AddVectorPath(PathRenderInfo pathInfo)
+            {
+                PathOperationDescriptor? target = CurrentPathTarget;
+                bool isClippingPath = pathInfo.IsPathModifiesClippingPath();
+                if ((target == null && CurrentTarget == null) ||
+                    (pathInfo.GetOperation() == PathRenderInfo.NO_OP && !isClippingPath))
+                {
+                    return;
+                }
+
+                Matrix matrix = pathInfo.GetCtm();
+                float a = matrix.Get(Matrix.I11);
+                float b = matrix.Get(Matrix.I12);
+                float c = matrix.Get(Matrix.I21);
+                float d = matrix.Get(Matrix.I22);
+                float e = matrix.Get(Matrix.I31);
+                float f = matrix.Get(Matrix.I32);
+                var subpaths = pathInfo.GetPath().GetSubpaths();
+                var points = subpaths
+                    .SelectMany(subpath => subpath.GetSegments())
+                    .SelectMany(segment => segment.GetBasePoints())
+                    .Select(point => (
+                        X: (double)(a * point.GetX() + c * point.GetY() + e),
+                        Y: (double)(b * point.GetX() + d * point.GetY() + f)))
+                    .ToList();
+                if (points.Count == 0)
+                    return;
+
+                double padding = Math.Max(pathInfo.GetLineWidth() / 2.0, 0.1);
+                double left = points.Min(point => point.X) - padding;
+                double right = points.Max(point => point.X) + padding;
+                double bottom = points.Min(point => point.Y) - padding;
+                double top = points.Max(point => point.Y) + padding;
+                if (right - left <= 0.1 || top - bottom <= 0.1)
+                    return;
+
+                if (isClippingPath)
+                {
+                    _pendingClipBounds = (
+                        left,
+                        _pageHeight - top,
+                        right - left,
+                        top - bottom);
+                    return;
+                }
+
+                VectorPaths.Add(new VectorPathFragment
+                {
+                    X = left,
+                    Y = _pageHeight - top,
+                    Width = right - left,
+                    Height = top - bottom,
+                    ShapeCount = subpaths.Count,
+                    Target = target ?? new PathOperationDescriptor(),
+                    TextTarget = CurrentTarget
+                });
+            }
+
+            public void AddShading(ShadingOperationDescriptor? target)
+            {
+                if (target == null || _pendingClipBounds is not { } bounds)
+                    return;
+                VectorPaths.Add(new VectorPathFragment
+                {
+                    X = bounds.X,
+                    Y = bounds.Y,
+                    Width = bounds.Width,
+                    Height = bounds.Height,
+                    ShapeCount = 1,
+                    Target = new PathOperationDescriptor(),
+                    ShadingTarget = target
+                });
+                _pendingClipBounds = null;
             }
 
             private void AddImageContent(ImageRenderInfo imageInfo)
@@ -1737,7 +2265,12 @@ namespace PDF_simple_edit.Helpers
 
             public ICollection<EventType> GetSupportedEvents()
             {
-                return new[] { EventType.RENDER_TEXT, EventType.RENDER_IMAGE };
+                return new[]
+                {
+                    EventType.RENDER_TEXT,
+                    EventType.RENDER_IMAGE,
+                    EventType.RENDER_PATH
+                };
             }
         }
 
@@ -2102,17 +2635,29 @@ namespace PDF_simple_edit.Helpers
             return rewrites.Count > 0;
         }
 
-        private static bool TryRewriteContentStreamWithoutImages(
+        private static bool TryRewriteContentStreamWithoutGraphics(
             byte[] contentBytes,
-            IReadOnlyCollection<int> targetOperationIndexes,
+            IReadOnlyCollection<int> imageOperationIndexes,
+            IReadOnlyCollection<int> pathOperationIndexes,
+            IReadOnlyCollection<int> textOperationIndexes,
+            IReadOnlyCollection<int> shadingOperationIndexes,
             out byte[]? rewrittenBytes)
         {
             rewrittenBytes = null;
-            if (targetOperationIndexes.Count == 0)
+            if (imageOperationIndexes.Count == 0 &&
+                pathOperationIndexes.Count == 0 &&
+                textOperationIndexes.Count == 0 &&
+                shadingOperationIndexes.Count == 0)
                 return false;
 
-            var targets = targetOperationIndexes.ToHashSet();
-            var handled = new HashSet<int>();
+            var imageTargets = imageOperationIndexes.ToHashSet();
+            var pathTargets = pathOperationIndexes.ToHashSet();
+            var textTargets = textOperationIndexes.ToHashSet();
+            var shadingTargets = shadingOperationIndexes.ToHashSet();
+            var handledImages = new HashSet<int>();
+            var handledPaths = new HashSet<int>();
+            var handledText = new HashSet<int>();
+            var handledShadings = new HashSet<int>();
             var sourceFactory = new RandomAccessSourceFactory();
             var randomSource = sourceFactory.CreateSource(contentBytes);
             var tokenizer = new PdfTokenizer(new RandomAccessFileOrArray(randomSource));
@@ -2120,6 +2665,9 @@ namespace PDF_simple_edit.Helpers
             using var stream = new MemoryStream();
             var output = new PdfOutputStream(stream);
             int doOperationIndex = -1;
+            int pathOperationIndex = -1;
+            int textOperationIndex = -1;
+            int shadingOperationIndex = -1;
 
             while (true)
             {
@@ -2127,12 +2675,57 @@ namespace PDF_simple_edit.Helpers
                 if (operation == null || operation.Count == 0)
                     break;
 
-                if (operation[^1] is PdfLiteral literal && literal.ToString() == "Do")
+                if (operation[^1] is not PdfLiteral literal)
+                {
+                    WriteOperation(output, operation);
+                    continue;
+                }
+
+                string operatorName = literal.ToString();
+                if (operatorName == "Do")
                 {
                     doOperationIndex++;
-                    if (targets.Contains(doOperationIndex))
+                    if (imageTargets.Contains(doOperationIndex))
                     {
-                        handled.Add(doOperationIndex);
+                        handledImages.Add(doOperationIndex);
+                        continue;
+                    }
+                }
+                else if (IsPathPaintingOperator(operatorName))
+                {
+                    pathOperationIndex++;
+                    if (pathTargets.Contains(pathOperationIndex))
+                    {
+                        handledPaths.Add(pathOperationIndex);
+                        WriteOperation(output, new PdfObject[] { new PdfLiteral("n") });
+                        continue;
+                    }
+                }
+                else if (IsTextShowingOperator(operatorName))
+                {
+                    textOperationIndex++;
+                    if (textTargets.Contains(textOperationIndex))
+                    {
+                        handledText.Add(textOperationIndex);
+                        if (operatorName == "'")
+                        {
+                            WriteOperation(output, new PdfObject[] { new PdfLiteral("T*") });
+                        }
+                        else if (operatorName == "\"" && operation.Count >= 4)
+                        {
+                            WriteOperation(output, new PdfObject[] { operation[0], new PdfLiteral("Tw") });
+                            WriteOperation(output, new PdfObject[] { operation[1], new PdfLiteral("Tc") });
+                            WriteOperation(output, new PdfObject[] { new PdfLiteral("T*") });
+                        }
+                        continue;
+                    }
+                }
+                else if (operatorName == "sh")
+                {
+                    shadingOperationIndex++;
+                    if (shadingTargets.Contains(shadingOperationIndex))
+                    {
+                        handledShadings.Add(shadingOperationIndex);
                         continue;
                     }
                 }
@@ -2140,11 +2733,121 @@ namespace PDF_simple_edit.Helpers
                 WriteOperation(output, operation);
             }
 
-            if (handled.Count != targets.Count)
+            if (handledImages.Count != imageTargets.Count ||
+                handledPaths.Count != pathTargets.Count ||
+                handledText.Count != textTargets.Count ||
+                handledShadings.Count != shadingTargets.Count)
                 return false;
 
             rewrittenBytes = stream.ToArray();
             return true;
+        }
+
+        private readonly record struct GraphicOperationCounts(
+            int Images,
+            int Paths,
+            int Text,
+            int Shadings);
+
+        private static GraphicOperationCounts CountGraphicOperations(byte[] contentBytes)
+        {
+            var sourceFactory = new RandomAccessSourceFactory();
+            var randomSource = sourceFactory.CreateSource(contentBytes);
+            var tokenizer = new PdfTokenizer(new RandomAccessFileOrArray(randomSource));
+            var parser = new PdfCanvasParser(tokenizer);
+            int images = 0;
+            int paths = 0;
+            int text = 0;
+            int shadings = 0;
+            while (true)
+            {
+                var operation = parser.Parse(new List<PdfObject>());
+                if (operation == null || operation.Count == 0)
+                    break;
+                if (operation[^1] is not PdfLiteral literal)
+                    continue;
+                string operatorName = literal.ToString();
+                if (operatorName == "Do") images++;
+                else if (IsPathPaintingOperator(operatorName)) paths++;
+                else if (IsTextShowingOperator(operatorName)) text++;
+                else if (operatorName == "sh") shadings++;
+            }
+            return new GraphicOperationCounts(images, paths, text, shadings);
+        }
+
+        private static bool TryRewriteCombinedPageContentStreamsWithoutGraphics(
+            PdfPage page,
+            IReadOnlyCollection<GraphicStreamRemoval> removals,
+            out List<(PdfStream Stream, byte[] Bytes)> rewrites)
+        {
+            rewrites = new List<(PdfStream Stream, byte[] Bytes)>();
+            var pageStreams = new List<PdfStream>();
+            var offsetsByObject = new Dictionary<int, GraphicOperationCounts>();
+            var offsetsByIndex = new Dictionary<int, GraphicOperationCounts>();
+            using var combined = new MemoryStream();
+            var offset = new GraphicOperationCounts(0, 0, 0, 0);
+            for (int streamIndex = 0; streamIndex < page.GetContentStreamCount(); streamIndex++)
+            {
+                PdfStream? contentStream = page.GetContentStream(streamIndex);
+                if (contentStream == null)
+                    return false;
+                byte[] bytes = contentStream.GetBytes();
+                pageStreams.Add(contentStream);
+                offsetsByIndex[streamIndex] = offset;
+                int objectNumber = contentStream.GetIndirectReference()?.GetObjNumber() ?? -1;
+                if (objectNumber > 0)
+                    offsetsByObject[objectNumber] = offset;
+                GraphicOperationCounts count = CountGraphicOperations(bytes);
+                offset = new GraphicOperationCounts(
+                    offset.Images + count.Images,
+                    offset.Paths + count.Paths,
+                    offset.Text + count.Text,
+                    offset.Shadings + count.Shadings);
+                combined.Write(bytes, 0, bytes.Length);
+                combined.WriteByte((byte)'\n');
+            }
+
+            var imageTargets = new HashSet<int>();
+            var pathTargets = new HashSet<int>();
+            var textTargets = new HashSet<int>();
+            var shadingTargets = new HashSet<int>();
+            foreach (GraphicStreamRemoval removal in removals)
+            {
+                GraphicOperationCounts streamOffset;
+                if (removal.StreamObjectNumber > 0)
+                {
+                    if (!offsetsByObject.TryGetValue(removal.StreamObjectNumber, out streamOffset))
+                        return false;
+                }
+                else if (!offsetsByIndex.TryGetValue(removal.StreamIndex, out streamOffset))
+                {
+                    return false;
+                }
+                imageTargets.UnionWith(removal.ImageOperationIndexes.Select(index => streamOffset.Images + index));
+                pathTargets.UnionWith(removal.PathOperationIndexes.Select(index => streamOffset.Paths + index));
+                textTargets.UnionWith(removal.TextOperationIndexes.Select(index => streamOffset.Text + index));
+                shadingTargets.UnionWith(removal.ShadingOperationIndexes.Select(index => streamOffset.Shadings + index));
+            }
+
+            if (!TryRewriteContentStreamWithoutGraphics(
+                combined.ToArray(), imageTargets, pathTargets, textTargets, shadingTargets,
+                out byte[]? rewrittenBytes) || rewrittenBytes == null)
+            {
+                return false;
+            }
+            for (int index = 0; index < pageStreams.Count; index++)
+                rewrites.Add((pageStreams[index], index == 0 ? rewrittenBytes : Array.Empty<byte>()));
+            return true;
+        }
+
+        private sealed class GraphicStreamRemoval
+        {
+            public int StreamObjectNumber { get; init; }
+            public int StreamIndex { get; init; }
+            public HashSet<int> ImageOperationIndexes { get; } = new();
+            public HashSet<int> PathOperationIndexes { get; } = new();
+            public HashSet<int> TextOperationIndexes { get; } = new();
+            public HashSet<int> ShadingOperationIndexes { get; } = new();
         }
 
         public async Task<bool> RemoveOriginalImageAnnotationsAsync(
@@ -2168,37 +2871,79 @@ namespace PDF_simple_edit.Helpers
                         return;
 
                     PdfPage page = doc.GetPage(pageIndex + 1);
-                    var rewrites = new List<(PdfStream Stream, byte[] Bytes)>();
-                    foreach (var group in targets
-                        .Where(annotation => annotation.ContentStreamObjectNumber > 0)
-                        .GroupBy(annotation => annotation.ContentStreamObjectNumber))
+                    var removals = new Dictionary<(int StreamObjectNumber, int StreamIndex), GraphicStreamRemoval>();
+                    foreach (PdfAnnotation annotation in targets)
                     {
-                        if (doc.GetPdfObject(group.Key) is not PdfStream contentStream ||
-                            !TryRewriteContentStreamWithoutImages(
-                                contentStream.GetBytes(),
-                                group.Select(annotation => annotation.OperationIndex).Distinct().ToList(),
-                                out byte[]? rewrittenBytes) ||
-                            rewrittenBytes == null)
+                        if (annotation.GraphicOperations.Count == 0)
+                        {
+                            var key = (annotation.ContentStreamObjectNumber, annotation.ContentStreamIndex);
+                            if (!removals.TryGetValue(key, out GraphicStreamRemoval? removal))
+                            {
+                                removal = new GraphicStreamRemoval
+                                {
+                                    StreamObjectNumber = key.ContentStreamObjectNumber,
+                                    StreamIndex = key.ContentStreamIndex
+                                };
+                                removals[key] = removal;
+                            }
+                            removal.ImageOperationIndexes.Add(annotation.OperationIndex);
+                            continue;
+                        }
+
+                        foreach (PdfGraphicOperationTarget operation in annotation.GraphicOperations)
+                        {
+                            var key = (operation.StreamObjectNumber, operation.StreamIndex);
+                            if (!removals.TryGetValue(key, out GraphicStreamRemoval? removal))
+                            {
+                                removal = new GraphicStreamRemoval
+                                {
+                                    StreamObjectNumber = key.StreamObjectNumber,
+                                    StreamIndex = key.StreamIndex
+                                };
+                                removals[key] = removal;
+                            }
+                            if (operation.IsShadingOperation)
+                                removal.ShadingOperationIndexes.Add(operation.OperationIndex);
+                            else if (operation.IsTextOperation)
+                                removal.TextOperationIndexes.Add(operation.OperationIndex);
+                            else
+                                removal.PathOperationIndexes.Add(operation.OperationIndex);
+                        }
+                    }
+
+                    var rewrites = new List<(PdfStream Stream, byte[] Bytes)>();
+                    var pageStreamObjectNumbers = Enumerable.Range(0, page.GetContentStreamCount())
+                        .Select(index => page.GetContentStream(index)?.GetIndirectReference()?.GetObjNumber() ?? -1)
+                        .Where(number => number > 0)
+                        .ToHashSet();
+                    List<GraphicStreamRemoval> pageRemovals = removals.Values
+                        .Where(removal => removal.StreamObjectNumber > 0
+                            ? pageStreamObjectNumbers.Contains(removal.StreamObjectNumber)
+                            : removal.StreamIndex >= 0 && removal.StreamIndex < page.GetContentStreamCount())
+                        .ToList();
+                    if (pageRemovals.Count > 0)
+                    {
+                        if (!TryRewriteCombinedPageContentStreamsWithoutGraphics(
+                            page, pageRemovals, out List<(PdfStream Stream, byte[] Bytes)> pageRewrites))
                         {
                             return;
                         }
-
-                        rewrites.Add((contentStream, rewrittenBytes));
+                        rewrites.AddRange(pageRewrites);
                     }
 
-                    foreach (var group in targets
-                        .Where(annotation => annotation.ContentStreamObjectNumber <= 0)
-                        .GroupBy(annotation => annotation.ContentStreamIndex))
+                    foreach (GraphicStreamRemoval removal in removals.Values.Except(pageRemovals))
                     {
-                        if (group.Key < 0 || group.Key >= page.GetContentStreamCount())
-                            return;
-                        PdfStream? contentStream = page.GetContentStream(group.Key);
+                        PdfStream? contentStream = removal.StreamObjectNumber > 0
+                            ? doc.GetPdfObject(removal.StreamObjectNumber) as PdfStream
+                            : null;
                         if (contentStream == null ||
-                            !TryRewriteContentStreamWithoutImages(
+                            !TryRewriteContentStreamWithoutGraphics(
                                 contentStream.GetBytes(),
-                                group.Select(annotation => annotation.OperationIndex).Distinct().ToList(),
-                                out byte[]? rewrittenBytes) ||
-                            rewrittenBytes == null)
+                                removal.ImageOperationIndexes,
+                                removal.PathOperationIndexes,
+                                removal.TextOperationIndexes,
+                                removal.ShadingOperationIndexes,
+                                out byte[]? rewrittenBytes) || rewrittenBytes == null)
                         {
                             return;
                         }
@@ -2256,6 +3001,11 @@ namespace PDF_simple_edit.Helpers
                 resolved.ContentStreamObjectNumber = match.ContentStreamObjectNumber;
                 resolved.OperationIndex = match.OperationIndex;
                 resolved.OriginalImageName = match.ImageId;
+                resolved.GraphicOperationIndexes = new List<int>(match.GraphicOperationIndexes);
+                resolved.GraphicTextOperationIndexes = new List<int>(match.GraphicTextOperationIndexes);
+                resolved.GraphicOperations = match.GraphicOperations
+                    .Select(target => target.Clone())
+                    .ToList();
                 resolvedAnnotations.Add(resolved);
             }
 

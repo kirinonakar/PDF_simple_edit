@@ -88,6 +88,9 @@ public sealed class AnnotationContentService
             OriginalPdfY = content.OriginalPdfY,
             OriginalText = editableText,
             OriginalImageName = isText ? null : content.ImageId,
+            GraphicOperationIndexes = new List<int>(content.GraphicOperationIndexes),
+            GraphicTextOperationIndexes = new List<int>(content.GraphicTextOperationIndexes),
+            GraphicOperations = content.GraphicOperations.Select(target => target.Clone()).ToList(),
             ImagePath = isText || string.IsNullOrEmpty(content.Text) ? null : content.Text,
             OperatorId = content.OperatorId,
             ContentStreamIndex = content.ContentStreamIndex,
@@ -142,7 +145,10 @@ public sealed class AnnotationContentService
         BaselineOffset = source.BaselineOffset,
         OriginalFontObjectNumber = source.OriginalFontObjectNumber,
         TextFragments = source.TextFragments.Select(fragment => fragment.Clone()).ToList(),
-        ImageId = source.ImageId
+        ImageId = source.ImageId,
+        GraphicOperationIndexes = new List<int>(source.GraphicOperationIndexes),
+        GraphicTextOperationIndexes = new List<int>(source.GraphicTextOperationIndexes),
+        GraphicOperations = source.GraphicOperations.Select(target => target.Clone()).ToList()
     };
 
     private static bool CanJoin(PdfPageContent first, PdfPageContent second, out bool startsNewLine)
