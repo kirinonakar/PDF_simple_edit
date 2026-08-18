@@ -59,6 +59,3 @@ You can download the latest version from the [Releases Page](https://github.com/
 
 ## 📄 License
 This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
-
----
-*Created with ❤️ for efficient PDF editing.*
