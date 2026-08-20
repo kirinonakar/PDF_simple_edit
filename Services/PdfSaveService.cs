@@ -40,6 +40,11 @@ public sealed class PdfSaveService
         await WriteAtomicallyAsync(filePath, editedBytes);
 
         manager.ReplacePdfBytesAfterSave(editedBytes, filePath);
+        foreach (PdfAnnotation annotation in annotations.Where(annotation =>
+            annotation.Type is AnnotationType.Text or AnnotationType.FreeText))
+        {
+            annotation.IsApplied = true;
+        }
         foreach (PdfAnnotation annotation in annotations.Where(annotation => annotation.Type == AnnotationType.Signature))
             annotation.IsApplied = true;
 

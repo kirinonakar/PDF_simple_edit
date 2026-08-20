@@ -1766,6 +1766,12 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             if (resizeResult != AnnotationResizeResult.NotActive)
             {
                 OverlayCanvas.ReleasePointerCapture(e.Pointer);
+                if (resizeResult == AnnotationResizeResult.OriginalTextRemovalFailed)
+                {
+                    TxtStatus.Text = "이 PDF의 텍스트는 배경을 보존한 상태로 크기를 조정할 수 없습니다.";
+                    RenderAnnotationOverlays();
+                    return;
+                }
                 if (resizeResult == AnnotationResizeResult.OriginalImageRemovalFailed)
                 {
                     TxtStatus.Text = "이 PDF의 이미지는 원본을 보존한 상태로 크기를 조정할 수 없습니다.";
@@ -2070,6 +2076,10 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             var originalTextTargets = targets
                 .Where(annotation => annotation.IsOriginalTextReplacement)
                 .ToList();
+            var appliedTextTargets = targets
+                .Where(annotation => annotation.IsApplied &&
+                    annotation.Type is AnnotationType.Text or AnnotationType.FreeText)
+                .ToList();
             var originalImageTargets = targets
                 .Where(annotation => annotation.IsOriginalImageReplacement)
                 .ToList();
@@ -2085,6 +2095,21 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 if (!removed)
                 {
                     TxtStatus.Text = "배경을 보존하면서 삭제할 수 없는 PDF 텍스트입니다.";
+                    return false;
+                }
+            }
+            foreach (PdfAnnotation annotation in appliedTextTargets)
+            {
+                bool removed = await _pdfManager.RemoveAppliedTextAnnotationAsync(
+                    _currentPageIndex,
+                    annotation,
+                    annotation.X,
+                    annotation.Y,
+                    annotation.Width,
+                    annotation.Height);
+                if (!removed)
+                {
+                    TxtStatus.Text = "저장된 텍스트를 안전하게 삭제할 수 없습니다.";
                     return false;
                 }
             }
@@ -2105,7 +2130,8 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             _selectedAnnotations.Clear();
             _selectedAnnotation = null;
             _pdfManager.MarkModified();
-            if (originalTextTargets.Count > 0 || originalImageTargets.Count > 0)
+            if (originalTextTargets.Count > 0 || appliedTextTargets.Count > 0 ||
+                originalImageTargets.Count > 0)
                 await RenderCurrentPageAsync();
             RenderAnnotationOverlays();
             TxtStatus.Text = targets.Count > 1
@@ -2121,6 +2147,28 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
         private async Task<bool> PrepareOriginalTextForReplacementAsync(PdfAnnotation annotation)
         {
+            if (annotation.IsApplied)
+            {
+                bool removedAppliedText = await _pdfManager.RemoveAppliedTextAnnotationAsync(
+                    _currentPageIndex,
+                    annotation,
+                    annotation.X,
+                    annotation.Y,
+                    annotation.Width,
+                    annotation.Height);
+                if (!removedAppliedText)
+                {
+                    TxtStatus.Text = "저장된 텍스트를 안전하게 수정할 수 없습니다.";
+                    return false;
+                }
+
+                annotation.IsApplied = false;
+                annotation.IsOriginalTextReplacement = false;
+                _renderTempPath = null;
+                await RenderCurrentPageAsync();
+                return true;
+            }
+
             if (!annotation.IsOriginalTextReplacement)
                 return true;
 
@@ -2133,6 +2181,7 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             }
 
             annotation.IsOriginalTextReplacement = false;
+            annotation.IsApplied = false;
             await RenderCurrentPageAsync();
             return true;
         }
@@ -2162,6 +2211,7 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                         _selectedAnnotation.Width = size.width;
                         _selectedAnnotation.Height = size.height;
                     }
+                    _selectedAnnotation.IsApplied = false;
                     _pdfManager.MarkModified();
                     RenderAnnotationOverlays();
                 }
@@ -2184,6 +2234,7 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                     var size = AnnotationTextLayoutService.MeasureBounds(_selectedAnnotation.Content, _selectedAnnotation.FontFamily, sizeVal, _selectedAnnotation.IsBold, _selectedAnnotation.IsItalic);
                     _selectedAnnotation.Width = size.width;
                     _selectedAnnotation.Height = size.height;
+                    _selectedAnnotation.IsApplied = false;
                     _pdfManager.MarkModified();
                     RenderAnnotationOverlays();
                 }
@@ -2204,6 +2255,7 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 var size = AnnotationTextLayoutService.MeasureBounds(_selectedAnnotation.Content, _selectedAnnotation.FontFamily, _selectedAnnotation.FontSize, _selectedAnnotation.IsBold, _selectedAnnotation.IsItalic);
                 _selectedAnnotation.Width = size.width;
                 _selectedAnnotation.Height = size.height;
+                _selectedAnnotation.IsApplied = false;
                 _pdfManager.MarkModified();
                 RenderAnnotationOverlays();
             }
@@ -2222,6 +2274,7 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 var size = AnnotationTextLayoutService.MeasureBounds(_selectedAnnotation.Content, _selectedAnnotation.FontFamily, _selectedAnnotation.FontSize, _selectedAnnotation.IsBold, _selectedAnnotation.IsItalic);
                 _selectedAnnotation.Width = size.width;
                 _selectedAnnotation.Height = size.height;
+                _selectedAnnotation.IsApplied = false;
                 _pdfManager.MarkModified();
                 RenderAnnotationOverlays();
             }
@@ -2241,6 +2294,8 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                         !await PrepareOriginalTextForReplacementAsync(_selectedAnnotation))
                         return;
                     _selectedAnnotation.Color = color;
+                    if (_selectedAnnotation.Type is AnnotationType.Text or AnnotationType.FreeText)
+                        _selectedAnnotation.IsApplied = false;
                     _pdfManager.MarkModified();
                     RenderAnnotationOverlays();
                 }

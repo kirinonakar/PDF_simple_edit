@@ -15,6 +15,12 @@ public sealed class PdfAnnotationDocumentService
         {
             case AnnotationType.Text:
             case AnnotationType.FreeText:
+                // The saved PDF already contains this annotation after a user save.
+                // Applying it again would append the edited text a second time on
+                // the next save. Any edit that needs to be persisted resets this
+                // flag before reaching the save service.
+                if (annotation.IsApplied)
+                    return;
                 if (annotation.IsOriginalTextReplacement)
                     return;
                 var lineGroups = annotation.TextFragments

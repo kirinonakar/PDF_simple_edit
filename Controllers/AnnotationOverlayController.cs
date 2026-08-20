@@ -43,6 +43,30 @@ public sealed class AnnotationOverlayController
             if (annotation.IsOriginalTextReplacement && !selectedAnnotations.Contains(annotation))
                 continue;
 
+            // A user-saved text annotation is already part of the PDF page image.
+            // Drawing its TextBlock again would make the text appear twice after
+            // saving. Keep only the selection UI so the object can still be edited
+            // or resized without duplicating the visible text.
+            bool isAppliedText = annotation.IsApplied &&
+                annotation.Type is AnnotationType.Text or AnnotationType.FreeText;
+            if (isAppliedText)
+            {
+                if (!selectedAnnotations.Contains(annotation))
+                    continue;
+
+                AddSelectionBorder(canvas, annotation, ref insertIndex, activeEditor);
+                if (annotation == primarySelection)
+                {
+                    AddResizeHandles(
+                        canvas,
+                        annotation,
+                        ref insertIndex,
+                        resizeStarted,
+                        cursorChanged);
+                }
+                continue;
+            }
+
             FrameworkElement? element = CreateElement(annotation, parseColor);
             if (element == null)
                 continue;

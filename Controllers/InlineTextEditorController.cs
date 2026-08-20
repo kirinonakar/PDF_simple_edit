@@ -25,6 +25,8 @@ public sealed class InlineTextEditSession
     public string LastEditorText { get; set; } = string.Empty;
     public bool OriginalRemovalCommitted { get; set; }
     public Task<bool>? RemovalTask { get; set; }
+    public bool WasApplied { get; init; }
+    public bool WasOriginalTextReplacement { get; init; }
 }
 
 public sealed class InlineTextEditorController
@@ -147,7 +149,9 @@ public sealed class InlineTextEditorController
                 {
                     Annotation = existingAnnotation,
                     OriginalContent = initialText,
-                    LastEditorText = initialText
+                    LastEditorText = initialText,
+                    WasApplied = existingAnnotation.IsApplied,
+                    WasOriginalTextReplacement = existingAnnotation.IsOriginalTextReplacement
                 }
                 : new Point(pdfX, pdfY),
             VerticalAlignment = VerticalAlignment.Top,
@@ -251,9 +255,12 @@ public sealed class InlineTextEditorController
         }
         _renderOverlays?.Invoke();
 
-        if (session.Annotation.IsOriginalTextReplacement && session.RemovalTask == null)
+        if (session.RemovalTask == null &&
+            (session.Annotation.IsOriginalTextReplacement || session.Annotation.IsApplied))
         {
-            session.RemovalTask = RemoveOriginalTextForLiveEditAsync(session);
+            session.RemovalTask = session.Annotation.IsApplied
+                ? RemoveAppliedTextForLiveEditAsync(session)
+                : RemoveOriginalTextForLiveEditAsync(session);
             bool removed = await session.RemovalTask;
             if (!removed && _canvas?.Children.Contains(editor) == true)
             {
@@ -306,6 +313,30 @@ public sealed class InlineTextEditorController
             return false;
 
         session.Annotation.IsOriginalTextReplacement = false;
+        session.OriginalRemovalCommitted = true;
+        if (_renderPage != null)
+            await _renderPage();
+        _renderOverlays?.Invoke();
+        return true;
+    }
+
+    private async Task<bool> RemoveAppliedTextForLiveEditAsync(InlineTextEditSession session)
+    {
+        if (_manager == null)
+            return false;
+
+        bool removed = await _manager.RemoveAppliedTextAnnotationAsync(
+            _pageIndex,
+            session.Annotation,
+            session.Annotation.X,
+            session.Annotation.Y,
+            session.Annotation.Width,
+            session.Annotation.Height);
+        if (!removed)
+            return false;
+
+        session.Annotation.IsOriginalTextReplacement = false;
+        session.Annotation.IsApplied = false;
         session.OriginalRemovalCommitted = true;
         if (_renderPage != null)
             await _renderPage();
@@ -374,11 +405,16 @@ public sealed class InlineTextEditorController
             if (session.OriginalRemovalCommitted && _manager?.CanUndo == true)
             {
                 _manager.Undo();
+                session.Annotation.Content = session.OriginalContent;
+                session.Annotation.IsApplied = session.WasApplied;
+                session.Annotation.IsOriginalTextReplacement = session.WasOriginalTextReplacement;
+                _renderOverlays?.Invoke();
             }
             else
             {
                 session.Annotation.Content = session.OriginalContent;
-                session.Annotation.IsApplied = false;
+                session.Annotation.IsApplied = session.WasApplied;
+                session.Annotation.IsOriginalTextReplacement = session.WasOriginalTextReplacement;
                 _renderOverlays?.Invoke();
             }
         }

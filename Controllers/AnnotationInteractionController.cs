@@ -25,6 +25,7 @@ public enum AnnotationResizeResult
 {
     NotActive,
     Completed,
+    OriginalTextRemovalFailed,
     OriginalImageRemovalFailed
 }
 
@@ -142,6 +143,30 @@ public sealed class AnnotationInteractionController
 
         PdfAnnotation? annotation = _resizeAnnotation;
         _resizeAnnotation = null;
+        if (annotation?.IsApplied == true &&
+            annotation.Type is AnnotationType.Text or AnnotationType.FreeText &&
+            _resizeStartBounds is { } savedBounds &&
+            !await manager.RemoveAppliedTextAnnotationAsync(
+                pageIndex,
+                annotation,
+                savedBounds.X,
+                savedBounds.Y,
+                savedBounds.Width,
+                savedBounds.Height))
+        {
+            annotation.X = savedBounds.X;
+            annotation.Y = savedBounds.Y;
+            annotation.Width = savedBounds.Width;
+            annotation.Height = savedBounds.Height;
+            _resizeStartBounds = null;
+            return AnnotationResizeResult.OriginalTextRemovalFailed;
+        }
+        if (annotation?.IsApplied == true &&
+            annotation.Type is AnnotationType.Text or AnnotationType.FreeText)
+        {
+            annotation.IsApplied = false;
+            annotation.IsOriginalTextReplacement = false;
+        }
         if (annotation?.IsOriginalImageReplacement == true)
         {
             bool removed = await manager.RemoveOriginalImageAnnotationsAsync(
@@ -179,8 +204,12 @@ public sealed class AnnotationInteractionController
             return AnnotationMoveResult.NotMoved;
         }
 
+        var appliedText = selectedAnnotations
+            .Where(annotation => annotation.IsApplied &&
+                annotation.Type is AnnotationType.Text or AnnotationType.FreeText)
+            .ToList();
         var originalText = selectedAnnotations
-            .Where(annotation => annotation.IsOriginalTextReplacement)
+            .Where(annotation => annotation.IsOriginalTextReplacement && !annotation.IsApplied)
             .ToList();
         var originalImages = selectedAnnotations
             .Where(annotation => annotation.IsOriginalImageReplacement)
@@ -189,6 +218,21 @@ public sealed class AnnotationInteractionController
         {
             RestoreMoveStartPositions();
             return AnnotationMoveResult.MixedOriginalContentRemovalFailed;
+        }
+        foreach (PdfAnnotation annotation in appliedText)
+        {
+            if (!_moveStartPositions.TryGetValue(annotation, out Point startPosition) ||
+                !await manager.RemoveAppliedTextAnnotationAsync(
+                    pageIndex,
+                    annotation,
+                    startPosition.X,
+                    startPosition.Y,
+                    annotation.Width,
+                    annotation.Height))
+            {
+                RestoreMoveStartPositions();
+                return AnnotationMoveResult.OriginalTextRemovalFailed;
+            }
         }
         if (originalText.Count > 0 &&
             !await manager.RemoveOriginalTextAnnotationsAsync(pageIndex, originalText))
@@ -205,6 +249,11 @@ public sealed class AnnotationInteractionController
 
         foreach (PdfAnnotation annotation in originalText)
             annotation.IsOriginalTextReplacement = false;
+        foreach (PdfAnnotation annotation in appliedText)
+        {
+            annotation.IsApplied = false;
+            annotation.IsOriginalTextReplacement = false;
+        }
         foreach (PdfAnnotation annotation in originalImages)
             annotation.IsOriginalImageReplacement = false;
         _moveStartPositions.Clear();

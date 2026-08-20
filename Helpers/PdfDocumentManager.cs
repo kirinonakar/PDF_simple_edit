@@ -3431,6 +3431,27 @@ namespace PDF_simple_edit.Helpers
             });
         }
 
+        public Task<bool> RemoveAppliedTextAnnotationAsync(
+            int pageIndex,
+            PdfAnnotation annotation,
+            double x,
+            double y,
+            double width,
+            double height)
+        {
+            // Text written by the editor is not part of the annotation's original
+            // fragment metadata. Re-resolve it from the current PDF by its saved
+            // content and bounds before replacing it.
+            PdfAnnotation target = annotation.Clone();
+            target.X = x;
+            target.Y = y;
+            target.Width = width;
+            target.Height = height;
+            target.OriginalText = annotation.Content;
+            target.TextFragments.Clear();
+            return RemoveOriginalTextAnnotationsAsync(pageIndex, new[] { target });
+        }
+
         private async Task<List<PdfAnnotation>?> ResolveCurrentTextAnnotationsAsync(
             int pageIndex,
             IReadOnlyCollection<PdfAnnotation> annotations)
