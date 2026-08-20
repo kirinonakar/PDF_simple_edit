@@ -77,7 +77,8 @@ public sealed class PdfAnnotationDocumentService
                     annotation.PageIndex,
                     annotation.SignaturePoints,
                     color,
-                    annotation.LineWidth);
+                    annotation.LineWidth,
+                    PdfSignatureMetadata.Serialize(annotation));
                 break;
             case AnnotationType.Image when annotation.IsOriginalImageReplacement:
                 // Merely selecting an existing PDF image must not duplicate it on save.

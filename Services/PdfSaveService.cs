@@ -3,6 +3,7 @@ using PDF_simple_edit.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace PDF_simple_edit.Services;
@@ -25,6 +26,7 @@ public sealed class PdfSaveService
     {
         byte[] editedBytes = manager.CreatePdfBytesWithEdits(document =>
         {
+            manager.RemoveSavedSignatureAnnotations(document);
             foreach (PdfAnnotation annotation in annotations)
                 _annotationDocumentService.Apply(manager, document, annotation);
         });
@@ -37,10 +39,9 @@ public sealed class PdfSaveService
 
         await WriteAtomicallyAsync(filePath, editedBytes);
 
-        if (!await manager.OpenAsync(filePath))
-            throw new InvalidOperationException("저장된 PDF를 다시 열 수 없습니다.");
-
-        annotations.Clear();
+        manager.ReplacePdfBytesAfterSave(editedBytes, filePath);
+        foreach (PdfAnnotation annotation in annotations.Where(annotation => annotation.Type == AnnotationType.Signature))
+            annotation.IsApplied = true;
     }
 
     private static async Task WriteAtomicallyAsync(string filePath, byte[] contents)

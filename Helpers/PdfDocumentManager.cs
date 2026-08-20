@@ -254,6 +254,84 @@ namespace PDF_simple_edit.Helpers
             }
         }
 
+        public void ReplacePdfBytesAfterSave(byte[] pdfBytes, string filePath)
+        {
+            ArgumentNullException.ThrowIfNull(pdfBytes);
+            lock (_docLock)
+            {
+                _pdfBytes = (byte[])pdfBytes.Clone();
+                _filePath = filePath;
+                _isModified = false;
+                _contentCache.Clear();
+                _undoStack.Clear();
+                _redoStack.Clear();
+                ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                DocumentChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        public List<PdfAnnotation> LoadSavedSignatures()
+        {
+            var signatures = new List<PdfAnnotation>();
+            if (_pdfBytes == null)
+                return signatures;
+
+            lock (_docLock)
+            {
+                try
+                {
+                    using var input = new MemoryStream(_pdfBytes);
+                    using var reader = new PdfReader(input);
+                    using var document = new PdfDocument(reader);
+                    for (int pageIndex = 0; pageIndex < document.GetNumberOfPages(); pageIndex++)
+                    {
+                        PdfPage page = document.GetPage(pageIndex + 1);
+                        foreach (iText.Kernel.Pdf.Annot.PdfAnnotation pdfAnnotation in page.GetAnnotations())
+                        {
+                            if (!IsSavedSignatureAnnotation(pdfAnnotation))
+                                continue;
+
+                            string? contents = pdfAnnotation.GetContents()?.ToUnicodeString();
+                            if (PdfSignatureMetadata.TryDeserialize(contents, pageIndex, out PdfAnnotation? signature) &&
+                                signature != null)
+                            {
+                                signatures.Add(signature);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Saved signature load error: {ex.Message}");
+                }
+            }
+
+            return signatures;
+        }
+
+        public void RemoveSavedSignatureAnnotations(PdfDocument document)
+        {
+            for (int pageIndex = 0; pageIndex < document.GetNumberOfPages(); pageIndex++)
+            {
+                PdfPage page = document.GetPage(pageIndex + 1);
+                foreach (iText.Kernel.Pdf.Annot.PdfAnnotation annotation in page.GetAnnotations().ToList())
+                {
+                    if (IsSavedSignatureAnnotation(annotation))
+                        page.RemoveAnnotation(annotation);
+                }
+            }
+        }
+
+        private static bool IsSavedSignatureAnnotation(
+            iText.Kernel.Pdf.Annot.PdfAnnotation annotation)
+        {
+            if (!PdfName.Ink.Equals(annotation.GetSubtype()))
+                return false;
+
+            string? contents = annotation.GetContents()?.ToUnicodeString();
+            return contents?.StartsWith(PdfSignatureMetadata.Prefix, StringComparison.Ordinal) == true;
+        }
+
         public void AddText(int pageIndex, double x, double y, string text,
             string fontFamily, double fontSize, Color color,
             bool isBold = false, bool isItalic = false)
@@ -863,42 +941,50 @@ namespace PDF_simple_edit.Helpers
             int pageIndex,
             IReadOnlyList<PdfPathPoint> points,
             Color color,
-            double lineWidth)
+            double lineWidth,
+            string? metadata = null)
         {
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages() || points.Count < 2)
                 return;
 
             PdfPage page = doc.GetPage(pageIndex + 1);
             Rectangle pageSize = page.GetPageSize();
-            PdfCanvas canvas = new PdfCanvas(page, true);
 
-            canvas.SaveState();
-            canvas.SetStrokeColor(color ?? ColorConstants.BLACK);
-            canvas.SetLineWidth((float)Math.Clamp(lineWidth, 0.1, 100));
+            var validPoints = points
+                .Where(point => double.IsFinite(point.X) && double.IsFinite(point.Y))
+                .ToList();
+            if (validPoints.Count < 2)
+                return;
 
-            bool hasPoint = false;
-            foreach (PdfPathPoint point in points)
+            float minX = (float)validPoints.Min(point => point.X);
+            float maxX = (float)validPoints.Max(point => point.X);
+            float minY = (float)validPoints.Min(point => point.Y);
+            float maxY = (float)validPoints.Max(point => point.Y);
+            float pdfBottom = pageSize.GetHeight() - maxY;
+            var rectangle = new Rectangle(
+                minX,
+                pdfBottom,
+                Math.Max(maxX - minX, 1),
+                Math.Max(maxY - minY, 1));
+            var inkPath = new PdfArray();
+            foreach (PdfPathPoint point in validPoints)
             {
-                if (!double.IsFinite(point.X) || !double.IsFinite(point.Y))
-                    continue;
-
-                float pdfX = (float)point.X;
-                float pdfY = pageSize.GetHeight() - (float)point.Y;
-                if (!hasPoint)
-                {
-                    canvas.MoveTo(pdfX, pdfY);
-                    hasPoint = true;
-                }
-                else
-                {
-                    canvas.LineTo(pdfX, pdfY);
-                }
+                inkPath.Add(new PdfNumber((float)point.X));
+                inkPath.Add(new PdfNumber(pageSize.GetHeight() - (float)point.Y));
             }
 
-            if (hasPoint)
-                canvas.Stroke();
-            canvas.RestoreState();
-            canvas.Release();
+            var inkList = new PdfArray();
+            inkList.Add(inkPath);
+            var inkAnnotation = new iText.Kernel.Pdf.Annot.PdfInkAnnotation(rectangle, inkList);
+            inkAnnotation.SetColor(color ?? ColorConstants.BLACK);
+            var borderStyle = new PdfDictionary();
+            borderStyle.Put(
+                PdfName.W,
+                new PdfNumber((float)Math.Clamp(lineWidth, 0.1, 100)));
+            inkAnnotation.SetBorderStyle(borderStyle);
+            if (!string.IsNullOrEmpty(metadata))
+                inkAnnotation.SetContents(metadata);
+            page.AddAnnotation(inkAnnotation);
         }
 
         public void AddImage(int pageIndex, string imagePath, double x, double y,

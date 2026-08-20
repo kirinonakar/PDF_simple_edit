@@ -302,73 +302,66 @@ public sealed class AnnotationInteractionController
     {
         double oldX = annotation.X;
         double oldY = annotation.Y;
-        double oldWidth = Math.Max(annotation.Width, minimumSize);
-        double oldHeight = Math.Max(annotation.Height, minimumSize);
+        double oldWidth = Math.Max(annotation.Width, 0.1);
+        double oldHeight = Math.Max(annotation.Height, 0.1);
         double newX = oldX;
         double newY = oldY;
         double newWidth = oldWidth;
         double newHeight = oldHeight;
 
-        switch (_resizeHandle)
+        bool isCorner = _resizeHandle is "NW" or "NE" or "SW" or "SE";
+        if (isCorner)
         {
-            case "NW":
-                if (oldWidth - dx > minimumSize)
-                {
-                    newX += dx;
-                    newWidth -= dx;
-                }
-                if (oldHeight - dy > minimumSize)
-                {
-                    newY += dy;
-                    newHeight -= dy;
-                }
-                break;
-            case "N":
-                if (oldHeight - dy > minimumSize)
-                {
-                    newY += dy;
-                    newHeight -= dy;
-                }
-                break;
-            case "NE":
-                if (oldWidth + dx > minimumSize)
-                    newWidth += dx;
-                if (oldHeight - dy > minimumSize)
-                {
-                    newY += dy;
-                    newHeight -= dy;
-                }
-                break;
-            case "W":
-                if (oldWidth - dx > minimumSize)
-                {
-                    newX += dx;
-                    newWidth -= dx;
-                }
-                break;
-            case "E":
-                if (oldWidth + dx > minimumSize)
-                    newWidth += dx;
-                break;
-            case "SW":
-                if (oldWidth - dx > minimumSize)
-                {
-                    newX += dx;
-                    newWidth -= dx;
-                }
-                if (oldHeight + dy > minimumSize)
-                    newHeight += dy;
-                break;
-            case "S":
-                if (oldHeight + dy > minimumSize)
-                    newHeight += dy;
-                break;
-            case "SE":
-                if (oldWidth + dx > minimumSize)
-                    newWidth += dx;
-                if (oldHeight + dy > minimumSize)
-                    newHeight += dy;
-                break;
+            bool moveLeft = _resizeHandle is "NW" or "SW";
+            bool moveTop = _resizeHandle is "NW" or "NE";
+            double widthDelta = moveLeft ? -dx : dx;
+            double heightDelta = moveTop ? -dy : dy;
+            double widthScale = (oldWidth + widthDelta) / oldWidth;
+            double heightScale = (oldHeight + heightDelta) / oldHeight;
+            double scale = Math.Abs(widthScale - 1) >= Math.Abs(heightScale - 1)
+                ? widthScale
+                : heightScale;
+            double minimumScale = Math.Max(
+                minimumSize / oldWidth,
+                minimumSize / oldHeight);
+            scale = Math.Max(scale, minimumScale);
+
+            double right = oldX + oldWidth;
+            double bottom = oldY + oldHeight;
+            newWidth = oldWidth * scale;
+            newHeight = oldHeight * scale;
+            if (moveLeft)
+                newX = right - newWidth;
+            if (moveTop)
+                newY = bottom - newHeight;
+        }
+        else
+        {
+            switch (_resizeHandle)
+            {
+                case "N":
+                    if (oldHeight - dy > minimumSize)
+                    {
+                        newY += dy;
+                        newHeight -= dy;
+                    }
+                    break;
+                case "W":
+                    if (oldWidth - dx > minimumSize)
+                    {
+                        newX += dx;
+                        newWidth -= dx;
+                    }
+                    break;
+                case "E":
+                    if (oldWidth + dx > minimumSize)
+                        newWidth += dx;
+                    break;
+                case "S":
+                    if (oldHeight + dy > minimumSize)
+                        newHeight += dy;
+                    break;
+            }
         }
 
         foreach (PdfPathPoint point in annotation.SignaturePoints)

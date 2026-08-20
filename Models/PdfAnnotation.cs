@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 
 namespace PDF_simple_edit.Models
 {
@@ -118,6 +119,78 @@ namespace PDF_simple_edit.Models
         public double Y { get; set; }
 
         public PdfPathPoint Clone() => (PdfPathPoint)MemberwiseClone();
+    }
+
+    /// <summary>
+    /// Stores the editor-specific data needed to restore a saved signature.
+    /// The prefix makes these metadata annotations distinguishable from
+    /// ordinary Ink annotations in an imported PDF.
+    /// </summary>
+    public static class PdfSignatureMetadata
+    {
+        public const string Prefix = "PDFSimpleEditor.Signature:";
+
+        public static string Serialize(PdfAnnotation annotation) =>
+            Prefix + JsonSerializer.Serialize(new Payload
+            {
+                PageIndex = annotation.PageIndex,
+                X = annotation.X,
+                Y = annotation.Y,
+                Width = annotation.Width,
+                Height = annotation.Height,
+                Color = annotation.Color,
+                LineWidth = annotation.LineWidth,
+                Points = annotation.SignaturePoints.Select(point => point.Clone()).ToList()
+            });
+
+        public static bool TryDeserialize(
+            string? contents,
+            int pageIndex,
+            out PdfAnnotation? annotation)
+        {
+            annotation = null;
+            if (string.IsNullOrWhiteSpace(contents) ||
+                !contents.StartsWith(Prefix, StringComparison.Ordinal))
+                return false;
+
+            try
+            {
+                Payload? payload = JsonSerializer.Deserialize<Payload>(contents[Prefix.Length..]);
+                if (payload == null || payload.Points == null || payload.Points.Count < 2)
+                    return false;
+
+                annotation = new PdfAnnotation
+                {
+                    Type = AnnotationType.Signature,
+                    PageIndex = pageIndex,
+                    X = payload.X,
+                    Y = payload.Y,
+                    Width = payload.Width,
+                    Height = payload.Height,
+                    Color = string.IsNullOrWhiteSpace(payload.Color) ? "#000000" : payload.Color,
+                    LineWidth = payload.LineWidth > 0 ? payload.LineWidth : 2,
+                    SignaturePoints = payload.Points.Select(point => point.Clone()).ToList(),
+                    IsApplied = true
+                };
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private sealed class Payload
+        {
+            public int PageIndex { get; set; }
+            public double X { get; set; }
+            public double Y { get; set; }
+            public double Width { get; set; }
+            public double Height { get; set; }
+            public string Color { get; set; } = "#000000";
+            public double LineWidth { get; set; } = 2;
+            public List<PdfPathPoint> Points { get; set; } = new();
+        }
     }
 
     /// <summary>

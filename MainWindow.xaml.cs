@@ -710,6 +710,7 @@ namespace PDF_simple_edit
                 bool success = await newTab.PdfManager.OpenAsync(file.Path);
                 if (success)
                 {
+                    newTab.Annotations.AddRange(newTab.PdfManager.LoadSavedSignatures());
                     _tabs.Add(newTab);
                     DocTabView.SelectedItem = newTab;
                     AddToRecentFiles(file.Path);
