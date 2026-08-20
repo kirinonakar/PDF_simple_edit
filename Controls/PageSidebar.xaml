@@ -10,10 +10,11 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
         <TextBlock Text="페이지" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" FontSize="13"/>
-        <ListView x:Name="PageList" Grid.Row="1" Padding="4">
+        <ListView x:Name="PageList" Grid.Row="1" Padding="4"
+                  AllowDrop="True" CanReorderItems="False" CanDragItems="True">
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="local:PageThumbnailData">
-                    <Grid Margin="8" Width="140">
+                    <Grid Margin="{x:Bind DropMargin, Mode=OneWay}" Width="140">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>

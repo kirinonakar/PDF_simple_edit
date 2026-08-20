@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace PDF_simple_edit
@@ -13,6 +14,7 @@ namespace PDF_simple_edit
     {
         private int _pageNumber;
         private BitmapImage? _thumbnail;
+        private Thickness _dropMargin = new(8);
 
         public int PageNumber
         {
@@ -28,6 +30,22 @@ namespace PDF_simple_edit
         {
             get => _thumbnail;
             set { _thumbnail = value; OnPropertyChanged(); }
+        }
+
+        /// <summary>
+        /// Temporary margin used to make the current page drop position visible.
+        /// </summary>
+        public Thickness DropMargin
+        {
+            get => _dropMargin;
+            set
+            {
+                if (_dropMargin != value)
+                {
+                    _dropMargin = value;
+                    OnPropertyChanged();
+                }
+            }
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;

@@ -1058,6 +1058,26 @@ namespace PDF_simple_edit.Helpers
             doc.RemovePage(pageIndex + 1);
         }
 
+        public void MovePage(int fromIndex, int toIndex)
+        {
+            if (fromIndex == toIndex) return;
+
+            ApplyEdit(doc => MovePageInternal(doc, fromIndex, toIndex));
+            PageStructureChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void MovePageInternal(PdfDocument doc, int fromIndex, int toIndex)
+        {
+            int pageCount = doc.GetNumberOfPages();
+            if (fromIndex < 0 || fromIndex >= pageCount ||
+                toIndex < 0 || toIndex >= pageCount || fromIndex == toIndex)
+                return;
+
+            // iText page numbers are one-based. MovePage's second argument is
+            // the new one-based position in the same document.
+            doc.MovePage(fromIndex + 1, toIndex + 1);
+        }
+
         public void NewDocument()
         {
             lock (_docLock)

@@ -77,6 +77,13 @@ namespace PDF_simple_edit
         private readonly List<PdfPathPoint> _signaturePoints = new();
         private Microsoft.UI.Xaml.Shapes.Polyline? _signaturePreview;
         private System.Threading.CancellationTokenSource? _thumbnailCts;
+        private PageThumbnailData? _draggedPageThumbnail;
+        private int _draggedPageOriginalIndex = -1;
+        private int _pageIndexBeforeReorder = -1;
+        private int _pageDropIndex = -1;
+        private bool _isPageReorderInProgress;
+        private bool _pageListPointerPressed;
+        private bool _preserveThumbnailsAfterPageReorder;
 
         private readonly PrintHelper _printHelper = new();
         private readonly TextFontSettings _fontSettings = new();
@@ -367,6 +374,24 @@ namespace PDF_simple_edit
             EditorToolbar.FitToPageButton.Click += FitToPage_Click;
 
             PageListView.SelectionChanged += PageListView_SelectionChanged;
+            PageListView.AddHandler(
+                UIElement.PointerPressedEvent,
+                new PointerEventHandler(PageListView_PointerPressed),
+                true);
+            PageListView.AddHandler(
+                UIElement.PointerReleasedEvent,
+                new PointerEventHandler(PageListView_PointerReleased),
+                true);
+            PageListView.AddHandler(
+                UIElement.DragOverEvent,
+                new DragEventHandler(PageListView_DragOver),
+                true);
+            PageListView.AddHandler(
+                UIElement.DragLeaveEvent,
+                new DragEventHandler(PageListView_DragLeave),
+                true);
+            PageListView.DragItemsStarting += PageListView_DragItemsStarting;
+            PageListView.DragItemsCompleted += PageListView_DragItemsCompleted;
             PdfSurface.OpenButton.Click += OpenFile_Click;
             PdfSurface.NewButton.Click += NewDocument_Click;
             PdfScrollViewer.ViewChanged += PdfScrollViewer_ViewChanged;
@@ -482,7 +507,12 @@ namespace PDF_simple_edit
         {
             DispatcherQueue.TryEnqueue(async () =>
             {
-                if (_pdfManager.IsLoaded)
+                // MovePage에서 이미 현재 썸네일 컬렉션을 같은 순서로 이동했으므로,
+                // 직후의 재로드가 컬렉션을 원래 순서로 덮어쓰지 않게 합니다.
+                bool preserveCurrentThumbnails = _preserveThumbnailsAfterPageReorder;
+                _preserveThumbnailsAfterPageReorder = false;
+
+                if (_pdfManager.IsLoaded && !preserveCurrentThumbnails)
                 {
                     await LoadThumbnailsAsync();
                 }
@@ -736,8 +766,105 @@ namespace PDF_simple_edit
             await OpenPdfFileInNewTabAsync(file);
         }
 
+        private bool IsPageListDrag(DragEventArgs e)
+        {
+            if (_isPageReorderInProgress || _pageListPointerPressed)
+                return true;
+
+            DependencyObject? source = e.OriginalSource as DependencyObject;
+            while (source != null)
+            {
+                if (ReferenceEquals(source, PageListView))
+                    return true;
+
+                source = VisualTreeHelper.GetParent(source);
+            }
+
+            return false;
+        }
+
+        private void PageListView_PointerPressed(object sender, PointerRoutedEventArgs e)
+        {
+            _pageListPointerPressed = true;
+        }
+
+        private void PageListView_PointerReleased(object sender, PointerRoutedEventArgs e)
+        {
+            _pageListPointerPressed = false;
+        }
+
+        private void PageListView_DragOver(object sender, DragEventArgs e)
+        {
+            if (!_isPageReorderInProgress)
+                return;
+
+            _pageDropIndex = GetPageDropIndex(e.GetPosition(PageListView));
+            UpdatePageDropVisual();
+            e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move;
+            e.Handled = true;
+        }
+
+        private void PageListView_DragLeave(object sender, DragEventArgs e)
+        {
+            // DragLeave가 Drop 직전에 발생할 수 있으므로 여기서 드롭 위치를
+            // 초기화하지 않습니다. DragItemsCompleted에서 상태를 정리합니다.
+        }
+
+        private int GetPageDropIndex(Point position)
+        {
+            for (int i = 0; i < _pageThumbnails.Count; i++)
+            {
+                if (PageListView.ContainerFromIndex(i) is not FrameworkElement container)
+                    continue;
+
+                Point topLeft = container.TransformToVisual(PageListView)
+                    .TransformPoint(new Point(0, 0));
+                if (position.Y < topLeft.Y + container.ActualHeight / 2)
+                    return i;
+            }
+
+            return _pageThumbnails.Count;
+        }
+
+        private void UpdatePageDropVisual()
+        {
+            const double normalMargin = 8;
+            const double dropGap = 36;
+
+            for (int i = 0; i < _pageThumbnails.Count; i++)
+            {
+                double top = _pageDropIndex == i ? dropGap : 0;
+                double bottom = _pageDropIndex == _pageThumbnails.Count &&
+                                i == _pageThumbnails.Count - 1 ? dropGap : 0;
+                _pageThumbnails[i].DropMargin = new Thickness(
+                    normalMargin,
+                    normalMargin + top,
+                    normalMargin,
+                    normalMargin + bottom);
+            }
+        }
+
+        private void ClearPageDropVisual()
+        {
+            foreach (PageThumbnailData thumbnail in _pageThumbnails)
+                thumbnail.DropMargin = new Thickness(8);
+        }
+
         private void Grid_DragOver(object sender, DragEventArgs e)
         {
+            // 페이지 썸네일을 재정렬하는 내부 드래그는 파일 열기 드롭과
+            // 구분해야 합니다. 내부 드래그를 Copy로 처리하면 ListView의
+            // 기본 재정렬 동작이 취소될 수 있습니다.
+            if (IsPageListDrag(e) ||
+                !e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+            {
+                e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move;
+                e.DragUIOverride.Caption = "페이지 순서 변경";
+                e.DragUIOverride.IsCaptionVisible = true;
+                e.Handled = true;
+                return;
+            }
+
             e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
             e.DragUIOverride.Caption = "PDF 열기";
             e.DragUIOverride.IsCaptionVisible = true;
@@ -745,13 +872,23 @@ namespace PDF_simple_edit
 
         private async void Grid_Drop(object sender, DragEventArgs e)
         {
-            if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+            // 내부 페이지 드래그는 여기서 파일 열기로 처리하지 않습니다.
+            if (IsPageListDrag(e))
             {
-                var items = await e.DataView.GetStorageItemsAsync();
-                if (items.Count > 0 && items[0] is StorageFile file && file.FileType.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
-                {
-                    await OpenPdfFileAsync(file);
-                }
+                e.Handled = true;
+                return;
+            }
+
+            if (!e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+            {
+                e.Handled = true;
+                return;
+            }
+
+            var items = await e.DataView.GetStorageItemsAsync();
+            if (items.Count > 0 && items[0] is StorageFile file && file.FileType.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                await OpenPdfFileAsync(file);
             }
         }
 
@@ -924,6 +1061,9 @@ namespace PDF_simple_edit
 
         private async void PageListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_isPageReorderInProgress)
+                return;
+
             if (PageListView.SelectedItem is PageThumbnailData thumb)
             {
                 if (_currentPageIndex != thumb.PageIndex)
@@ -932,6 +1072,112 @@ namespace PDF_simple_edit
                     await RenderCurrentPageAsync();
                 }
             }
+        }
+
+        private void PageListView_DragItemsStarting(object sender, DragItemsStartingEventArgs e)
+        {
+            PageThumbnailData? thumbnail = e.Items.OfType<PageThumbnailData>().FirstOrDefault();
+            if (thumbnail == null)
+            {
+                e.Cancel = true;
+                return;
+            }
+
+            int originalIndex = _pageThumbnails.IndexOf(thumbnail);
+            if (originalIndex < 0)
+            {
+                e.Cancel = true;
+                return;
+            }
+
+            _draggedPageThumbnail = thumbnail;
+            _draggedPageOriginalIndex = originalIndex;
+            _pageIndexBeforeReorder = _currentPageIndex;
+            _pageDropIndex = -1;
+            ClearPageDropVisual();
+            _isPageReorderInProgress = true;
+        }
+
+        private void PageListView_DragItemsCompleted(object sender, DragItemsCompletedEventArgs e)
+        {
+            PageThumbnailData? draggedPage = _draggedPageThumbnail;
+            int originalIndex = _draggedPageOriginalIndex;
+            int dropIndex = _pageDropIndex;
+            int pageIndexBeforeReorder = _pageIndexBeforeReorder;
+
+            if (draggedPage == null || originalIndex < 0 ||
+                dropIndex < 0 || dropIndex > _pageThumbnails.Count)
+            {
+                ResetPageReorderState();
+                return;
+            }
+
+            // dropIndex is an insertion point before removing the dragged item.
+            int newIndex = dropIndex > originalIndex ? dropIndex - 1 : dropIndex;
+            newIndex = Math.Clamp(newIndex, 0, _pageThumbnails.Count - 1);
+
+            if (originalIndex == newIndex)
+            {
+                UpdatePageThumbnailNumbers();
+                ResetPageReorderState();
+                return;
+            }
+
+            try
+            {
+                _currentPageIndex = GetReorderedPageIndex(
+                    pageIndexBeforeReorder, originalIndex, newIndex);
+                _pageThumbnails.Move(originalIndex, newIndex);
+                UpdatePageThumbnailNumbers();
+                _renderTempPath = null;
+                _preserveThumbnailsAfterPageReorder = true;
+                _pdfManager.MovePage(originalIndex, newIndex);
+                TxtStatus.Text = "페이지 순서가 변경되었습니다";
+                SyncPageListSelection();
+            }
+            catch (Exception ex)
+            {
+                // Keep the visual list and the PDF in sync if the PDF edit fails.
+                _pageThumbnails.Move(newIndex, originalIndex);
+                UpdatePageThumbnailNumbers();
+                _preserveThumbnailsAfterPageReorder = false;
+                _currentPageIndex = pageIndexBeforeReorder;
+                TxtStatus.Text = "페이지 순서 변경에 실패했습니다";
+                System.Diagnostics.Debug.WriteLine($"Move page error: {ex.Message}");
+                SyncPageListSelection();
+            }
+            finally
+            {
+                ClearPageDropVisual();
+                ResetPageReorderState();
+            }
+        }
+
+        private static int GetReorderedPageIndex(int currentIndex, int oldIndex, int newIndex)
+        {
+            if (currentIndex == oldIndex)
+                return newIndex;
+            if (oldIndex < currentIndex && currentIndex <= newIndex)
+                return currentIndex - 1;
+            if (newIndex <= currentIndex && currentIndex < oldIndex)
+                return currentIndex + 1;
+            return currentIndex;
+        }
+
+        private void UpdatePageThumbnailNumbers()
+        {
+            for (int i = 0; i < _pageThumbnails.Count; i++)
+                _pageThumbnails[i].PageNumber = i + 1;
+        }
+
+        private void ResetPageReorderState()
+        {
+            _draggedPageThumbnail = null;
+            _draggedPageOriginalIndex = -1;
+            _pageIndexBeforeReorder = -1;
+            _pageDropIndex = -1;
+            _isPageReorderInProgress = false;
+            _pageListPointerPressed = false;
         }
 
         private void SyncPageListSelection()
