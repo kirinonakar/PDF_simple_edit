@@ -149,6 +149,23 @@ public sealed class AnnotationOverlayController
                 IsHitTestVisible = false
             };
         }
+        if (annotation.Type == AnnotationType.Signature)
+        {
+            var polyline = new Microsoft.UI.Xaml.Shapes.Polyline
+            {
+                Stroke = new SolidColorBrush(parseColor(annotation.Color)),
+                StrokeThickness = Math.Max(annotation.LineWidth * PdfToPixels, 1),
+                StrokeLineJoin = Microsoft.UI.Xaml.Media.PenLineJoin.Round,
+                IsHitTestVisible = false
+            };
+            foreach (PdfPathPoint point in annotation.SignaturePoints)
+            {
+                polyline.Points.Add(new Point(
+                    (point.X - annotation.X) * PdfToPixels,
+                    (point.Y - annotation.Y) * PdfToPixels));
+            }
+            return polyline.Points.Count >= 2 ? polyline : null;
+        }
         if (annotation.Type != AnnotationType.Image)
             return null;
         if (annotation.ImagePath != null)

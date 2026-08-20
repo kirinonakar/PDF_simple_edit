@@ -858,6 +858,49 @@ namespace PDF_simple_edit.Helpers
             canvas.Release();
         }
 
+        public void AddSignatureInternal(
+            PdfDocument doc,
+            int pageIndex,
+            IReadOnlyList<PdfPathPoint> points,
+            Color color,
+            double lineWidth)
+        {
+            if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages() || points.Count < 2)
+                return;
+
+            PdfPage page = doc.GetPage(pageIndex + 1);
+            Rectangle pageSize = page.GetPageSize();
+            PdfCanvas canvas = new PdfCanvas(page, true);
+
+            canvas.SaveState();
+            canvas.SetStrokeColor(color ?? ColorConstants.BLACK);
+            canvas.SetLineWidth((float)Math.Clamp(lineWidth, 0.1, 100));
+
+            bool hasPoint = false;
+            foreach (PdfPathPoint point in points)
+            {
+                if (!double.IsFinite(point.X) || !double.IsFinite(point.Y))
+                    continue;
+
+                float pdfX = (float)point.X;
+                float pdfY = pageSize.GetHeight() - (float)point.Y;
+                if (!hasPoint)
+                {
+                    canvas.MoveTo(pdfX, pdfY);
+                    hasPoint = true;
+                }
+                else
+                {
+                    canvas.LineTo(pdfX, pdfY);
+                }
+            }
+
+            if (hasPoint)
+                canvas.Stroke();
+            canvas.RestoreState();
+            canvas.Release();
+        }
+
         public void AddImage(int pageIndex, string imagePath, double x, double y,
             double width, double height)
         {

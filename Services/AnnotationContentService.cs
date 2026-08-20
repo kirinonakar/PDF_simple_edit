@@ -29,6 +29,15 @@ public sealed class AnnotationContentService
                     y >= annotation.Y - 5 && y <= annotation.Y + height)
                     return annotation;
             }
+            else if (annotation.Type == AnnotationType.Signature)
+            {
+                double tolerance = Math.Max(annotation.LineWidth * 2, 8);
+                if (x >= annotation.X - tolerance &&
+                    x <= annotation.X + Math.Max(annotation.Width, 1) + tolerance &&
+                    y >= annotation.Y - tolerance &&
+                    y <= annotation.Y + Math.Max(annotation.Height, 1) + tolerance)
+                    return annotation;
+            }
             else if (x >= annotation.X && x <= annotation.X + annotation.Width &&
                      y >= annotation.Y && y <= annotation.Y + annotation.Height)
             {

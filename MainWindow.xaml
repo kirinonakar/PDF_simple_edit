@@ -132,6 +132,9 @@
                 <ToggleMenuFlyoutItem Text="텍스트 강조" x:Name="MenuHighlight" Click="HighlightTool_Click" IsEnabled="False">
                     <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE7E6;"/></ToggleMenuFlyoutItem.Icon>
                 </ToggleMenuFlyoutItem>
+                <ToggleMenuFlyoutItem Text="서명 그리기" x:Name="MenuSignature" Click="SignatureTool_Click" IsEnabled="False">
+                    <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE929;"/></ToggleMenuFlyoutItem.Icon>
+                </ToggleMenuFlyoutItem>
                 <MenuFlyoutItem Text="이미지 추가" x:Name="MenuAddImage" Click="AddImageTool_Click" IsEnabled="False">
                     <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B9;"/></MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>

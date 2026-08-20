@@ -12,7 +12,8 @@ namespace PDF_simple_edit.Models
         Text,
         Highlight,
         Image,
-        FreeText
+        FreeText,
+        Signature
     }
 
     /// <summary>
@@ -35,6 +36,8 @@ namespace PDF_simple_edit.Models
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
         public double Opacity { get; set; } = 1.0;
+        public double LineWidth { get; set; } = 2.0;
+        public List<PdfPathPoint> SignaturePoints { get; set; } = new();
         public string? ImagePath { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public bool IsApplied { get; set; } = false;
@@ -78,6 +81,8 @@ namespace PDF_simple_edit.Models
                 IsBold = this.IsBold,
                 IsItalic = this.IsItalic,
                 Opacity = this.Opacity,
+                LineWidth = this.LineWidth,
+                SignaturePoints = this.SignaturePoints.Select(point => point.Clone()).ToList(),
                 ImagePath = this.ImagePath,
                 CreatedAt = this.CreatedAt,
                 IsApplied = this.IsApplied,
@@ -101,6 +106,18 @@ namespace PDF_simple_edit.Models
                 TextFragments = this.TextFragments.Select(fragment => fragment.Clone()).ToList()
             };
         }
+    }
+
+    /// <summary>
+    /// A point in a freehand signature path. Coordinates use the editor's
+    /// top-left PDF-point coordinate system.
+    /// </summary>
+    public class PdfPathPoint
+    {
+        public double X { get; set; }
+        public double Y { get; set; }
+
+        public PdfPathPoint Clone() => (PdfPathPoint)MemberwiseClone();
     }
 
     /// <summary>
@@ -151,6 +168,7 @@ namespace PDF_simple_edit.Models
         AddText,
         AddImage,
         Highlight,
+        Signature,
         MoveText,
         ColorPicker
     }

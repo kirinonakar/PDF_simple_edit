@@ -17,6 +17,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Windows.Storage.Pickers;
 using Windows.Storage;
+using Windows.Foundation;
 using Microsoft.UI.Windowing;
 using Microsoft.UI;
 using WinRT.Interop;
@@ -73,10 +74,14 @@ namespace PDF_simple_edit
         private bool _controlKeyIsDown;
         private uint? _pendingSelectPointerId;
         private long _selectPointerPressSequence;
+        private readonly List<PdfPathPoint> _signaturePoints = new();
+        private Microsoft.UI.Xaml.Shapes.Polyline? _signaturePreview;
         private System.Threading.CancellationTokenSource? _thumbnailCts;
 
         private readonly PrintHelper _printHelper = new();
         private readonly TextFontSettings _fontSettings = new();
+        private string _signatureColor = "#000000";
+        private double _signatureLineWidth = 2.0;
 
 
         
@@ -99,6 +104,13 @@ namespace PDF_simple_edit
         private ToggleButton BtnSelect => EditorToolbar.SelectButton;
         private ToggleButton BtnAddText => EditorToolbar.AddTextButton;
         private ToggleButton BtnHighlight => EditorToolbar.HighlightButton;
+        private ToggleButton BtnSignature => EditorToolbar.SignatureButton;
+        private Border SignatureColorIndicator => EditorToolbar.SignatureColorIndicator;
+        private Flyout SignatureSettingsFlyout => EditorToolbar.SignatureSettingsFlyout;
+        private ColorPicker SignatureColorPicker => EditorToolbar.SignatureColorPicker;
+        private Slider SldSignatureWidth => EditorToolbar.SignatureWidthSlider;
+        private TextBlock TxtSignatureWidth => EditorToolbar.SignatureWidthText;
+        private Button BtnSignatureSettings => EditorToolbar.SignatureSettingsButton;
         private Border HighlightColorIndicator => EditorToolbar.HighlightIndicator;
         private Flyout HighlightFlyout => EditorToolbar.HighlightSettingsFlyout;
         private ColorPicker HighlightColorPicker => EditorToolbar.HighlightPicker;
@@ -184,6 +196,10 @@ namespace PDF_simple_edit
                 SldHighlightOpacity.Value = _fontSettings.HighlightOpacity;
                 HighlightColorIndicator.Background = new SolidColorBrush(ParseColor(_fontSettings.HighlightColor));
                 TxtHighlightOpacity.Text = $"{(int)(_fontSettings.HighlightOpacity * 100)}%";
+                SignatureColorPicker.Color = ParseColor(_signatureColor);
+                SldSignatureWidth.Value = _signatureLineWidth;
+                SignatureColorIndicator.Background = new SolidColorBrush(ParseColor(_signatureColor));
+                TxtSignatureWidth.Text = $"{_signatureLineWidth:0.#} pt";
 
                 _recentFilesService.Load();
                 UpdateRecentFilesMenu();
@@ -333,10 +349,14 @@ namespace PDF_simple_edit
             BtnAddText.Click += AddTextTool_Click;
             BtnHighlight.Click += HighlightTool_Click;
             BtnHighlightSettings.Click += HighlightSettings_Click;
+            BtnSignature.Click += SignatureTool_Click;
+            BtnSignatureSettings.Click += SignatureSettings_Click;
             BtnColorPicker.Click += ColorPickerTool_Click;
             BtnAddImage.Click += AddImageTool_Click;
             HighlightColorPicker.ColorChanged += HighlightColorPicker_ColorChanged;
             SldHighlightOpacity.ValueChanged += HighlightOpacity_Changed;
+            SignatureColorPicker.ColorChanged += SignatureColorPicker_ColorChanged;
+            SldSignatureWidth.ValueChanged += SignatureWidth_Changed;
             CmbFontFamily.SelectionChanged += FontFamily_Changed;
             CmbFontSize.SelectionChanged += FontSize_Changed;
             BtnBold.Click += FontBold_Click;
@@ -524,6 +544,7 @@ namespace PDF_simple_edit
             MenuSelect.IsEnabled = hasDoc;
             MenuAddText.IsEnabled = hasDoc;
             MenuHighlight.IsEnabled = hasDoc;
+            MenuSignature.IsEnabled = hasDoc;
             MenuAddImage.IsEnabled = hasDoc;
             MenuSplitPdf.IsEnabled = hasDoc;
             MenuDeletePage.IsEnabled = hasDoc;
@@ -537,6 +558,8 @@ namespace PDF_simple_edit
             BtnAddText.IsEnabled = hasDoc;
             BtnHighlight.IsEnabled = hasDoc;
             BtnHighlightSettings.IsEnabled = hasDoc;
+            BtnSignature.IsEnabled = hasDoc;
+            BtnSignatureSettings.IsEnabled = hasDoc;
             BtnColorPicker.IsEnabled = hasDoc;
             BtnAddImage.IsEnabled = hasDoc;
 
@@ -1030,16 +1053,19 @@ private void FitToPage()
             BtnSelect.IsChecked = mode == EditToolMode.Select;
             BtnAddText.IsChecked = mode == EditToolMode.AddText;
             BtnHighlight.IsChecked = mode == EditToolMode.Highlight;
+            BtnSignature.IsChecked = mode == EditToolMode.Signature;
             BtnColorPicker.IsChecked = mode == EditToolMode.ColorPicker;
             
             if (MenuSelect != null) MenuSelect.IsChecked = mode == EditToolMode.Select;
             if (MenuAddText != null) MenuAddText.IsChecked = mode == EditToolMode.AddText;
             if (MenuHighlight != null) MenuHighlight.IsChecked = mode == EditToolMode.Highlight;
+            if (MenuSignature != null) MenuSignature.IsChecked = mode == EditToolMode.Signature;
 
             TxtToolMode.Text = mode switch
             {
                 EditToolMode.AddText => "도구: 텍스트 추가",
                 EditToolMode.Highlight => "도구: 텍스트 강조",
+                EditToolMode.Signature => "도구: 서명 그리기",
                 EditToolMode.AddImage => "도구: 이미지 추가",
                 EditToolMode.Select => "도구: 선택",
                 EditToolMode.ColorPicker => "도구: 색상 추출",
@@ -1077,6 +1103,16 @@ private void FitToPage()
             FlyoutBase.ShowAttachedFlyout(BtnHighlight);
         }
 
+        private void SignatureTool_Click(object sender, RoutedEventArgs e)
+        {
+            SetToolMode(_currentTool == EditToolMode.Signature ? EditToolMode.None : EditToolMode.Signature);
+        }
+
+        private void SignatureSettings_Click(object sender, RoutedEventArgs e)
+        {
+            FlyoutBase.ShowAttachedFlyout(BtnSignature);
+        }
+
         private void ColorPickerTool_Click(object sender, RoutedEventArgs e)
         {
             SetToolMode(_currentTool == EditToolMode.ColorPicker ? EditToolMode.None : EditToolMode.ColorPicker);
@@ -1093,6 +1129,19 @@ private void FitToPage()
             _fontSettings.HighlightOpacity = e.NewValue;
             if (TxtHighlightOpacity != null)
                 TxtHighlightOpacity.Text = $"{(int)(e.NewValue * 100)}%";
+        }
+
+        private void SignatureColorPicker_ColorChanged(ColorPicker sender, ColorChangedEventArgs args)
+        {
+            _signatureColor = args.NewColor.ToString();
+            SignatureColorIndicator.Background = new SolidColorBrush(args.NewColor);
+        }
+
+        private void SignatureWidth_Changed(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+        {
+            _signatureLineWidth = e.NewValue;
+            if (TxtSignatureWidth != null)
+                TxtSignatureWidth.Text = $"{e.NewValue:0.#} pt";
         }
 
 
@@ -1202,7 +1251,7 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
     double pdfX = pos.X / PdfToPixels;
     double pdfY = pos.Y / PdfToPixels;
 
-    if (!isLeft && _currentTool == EditToolMode.Select) return;
+    if (!isLeft && (_currentTool == EditToolMode.Select || _currentTool == EditToolMode.Signature)) return;
     if (isLeft && _currentTool == EditToolMode.Select)
     {
         if (_annotationInteractionController.CancelMove())
@@ -1288,6 +1337,22 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             OverlayCanvas.CapturePointer(e.Pointer);
             break;
 
+        case EditToolMode.Signature:
+            _signaturePoints.Clear();
+            _signaturePoints.Add(new PdfPathPoint { X = pdfX, Y = pdfY });
+            _signaturePreview = new Microsoft.UI.Xaml.Shapes.Polyline
+            {
+                Stroke = new SolidColorBrush(ParseColor(_signatureColor)),
+                StrokeThickness = Math.Max(_signatureLineWidth * PdfToPixels, 1),
+                StrokeLineJoin = Microsoft.UI.Xaml.Media.PenLineJoin.Round,
+                IsHitTestVisible = false
+            };
+            _signaturePreview.Points.Add(pos);
+            OverlayCanvas.Children.Add(_signaturePreview);
+            OverlayCanvas.CapturePointer(e.Pointer);
+            TxtStatus.Text = "서명을 그리는 중...";
+            break;
+
         case EditToolMode.ColorPicker:
             TxtStatus.Text = "색상 추출 중...";
             var pickedColor = await _screenColorPickerService.PickAsync(
@@ -1312,6 +1377,24 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
         private void OverlayCanvas_PointerMoved(object sender, PointerRoutedEventArgs e)
         {
             var pointerPoint = e.GetCurrentPoint(OverlayCanvas);
+
+            if (_signaturePreview != null && _currentTool == EditToolMode.Signature)
+            {
+                if (!pointerPoint.Properties.IsLeftButtonPressed)
+                    return;
+
+                Point position = pointerPoint.Position;
+                PdfPathPoint last = _signaturePoints[^1];
+                double pdfX = position.X / PdfToPixels;
+                double pdfY = position.Y / PdfToPixels;
+                if (Math.Sqrt(Math.Pow(pdfX - last.X, 2) + Math.Pow(pdfY - last.Y, 2)) >= 0.75)
+                {
+                    _signaturePoints.Add(new PdfPathPoint { X = pdfX, Y = pdfY });
+                    _signaturePreview.Points.Add(position);
+                }
+                return;
+            }
+
             if (_annotationInteractionController.IsMoving &&
                 !pointerPoint.Properties.IsLeftButtonPressed)
             {
@@ -1337,6 +1420,44 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
         private async void OverlayCanvas_PointerReleased(object sender, PointerRoutedEventArgs e)
         {
+            if (_signaturePreview != null && _currentTool == EditToolMode.Signature)
+            {
+                OverlayCanvas.ReleasePointerCapture(e.Pointer);
+                OverlayCanvas.Children.Remove(_signaturePreview);
+                _signaturePreview = null;
+
+                if (_signaturePoints.Count >= 2)
+                {
+                    double minX = _signaturePoints.Min(point => point.X);
+                    double minY = _signaturePoints.Min(point => point.Y);
+                    double maxX = _signaturePoints.Max(point => point.X);
+                    double maxY = _signaturePoints.Max(point => point.Y);
+                    var signature = new PdfAnnotation
+                    {
+                        Type = AnnotationType.Signature,
+                        PageIndex = _currentPageIndex,
+                        X = minX,
+                        Y = minY,
+                        Width = Math.Max(maxX - minX, 1),
+                        Height = Math.Max(maxY - minY, 1),
+                        Color = _signatureColor,
+                        LineWidth = _signatureLineWidth,
+                        SignaturePoints = _signaturePoints.Select(point => point.Clone()).ToList()
+                    };
+                    _annotations.Add(signature);
+                    _pdfManager.MarkModified();
+                    TxtStatus.Text = "서명이 추가되었습니다 (저장 시 반영)";
+                    RenderAnnotationOverlays();
+                }
+                else
+                {
+                    TxtStatus.Text = "서명이 너무 짧습니다.";
+                }
+
+                _signaturePoints.Clear();
+                return;
+            }
+
             if (_pendingSelectPointerId == e.Pointer.PointerId)
             {
                 _pendingSelectPointerId = null;

@@ -69,6 +69,33 @@
                     Padding="4,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
                 <FontIcon Glyph="&#xE713;" FontSize="12"/>
             </Button>
+            <ToggleButton x:Name="SignatureButton" x:FieldModifier="public" ToolTipService.ToolTip="서명 그리기" IsEnabled="False" Padding="8,6">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <FontIcon Glyph="&#xE929;" FontSize="16"/>
+                    <Border x:Name="SignatureColorIndicator" x:FieldModifier="public" Width="12" Height="4" CornerRadius="1"
+                            VerticalAlignment="Bottom" Margin="0,0,0,2" Background="Black"/>
+                </StackPanel>
+                <FlyoutBase.AttachedFlyout>
+                    <Flyout x:Name="SignatureSettingsFlyout" x:FieldModifier="public" FlyoutBase.Placement="BottomEdgeAlignedRight">
+                        <StackPanel Spacing="10" Width="360" HorizontalAlignment="Left">
+                            <TextBlock Text="서명 선 설정" FontWeight="Bold"/>
+                            <ColorPicker x:Name="SignatureColorPicker" x:FieldModifier="public" Width="340" HorizontalAlignment="Left"
+                                         IsAlphaEnabled="False" IsColorSpectrumVisible="True"
+                                         IsColorSliderVisible="True" IsHexInputVisible="True"/>
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <TextBlock Text="선 두께" VerticalAlignment="Center"/>
+                                <Slider x:Name="SignatureWidthSlider" x:FieldModifier="public" Minimum="0.5" Maximum="12"
+                                        StepFrequency="0.5" Value="2" Width="150"/>
+                                <TextBlock x:Name="SignatureWidthText" x:FieldModifier="public" Text="2 pt" VerticalAlignment="Center" FontSize="12"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Flyout>
+                </FlyoutBase.AttachedFlyout>
+            </ToggleButton>
+            <Button x:Name="SignatureSettingsButton" x:FieldModifier="public" ToolTipService.ToolTip="서명 설정"
+                    Padding="4,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                <FontIcon Glyph="&#xE713;" FontSize="12"/>
+            </Button>
             <ToggleButton x:Name="ColorPickerButton" x:FieldModifier="public" ToolTipService.ToolTip="색상 추출 (Eyedropper)" IsEnabled="False" Padding="8,6">
                 <FontIcon Glyph="&#xEF3C;" FontSize="16"/>
             </ToggleButton>

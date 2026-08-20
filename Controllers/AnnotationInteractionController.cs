@@ -70,8 +70,11 @@ public sealed class AnnotationInteractionController
 
         foreach ((PdfAnnotation annotation, Point position) in _moveStartPositions)
         {
+            double dx = position.X - annotation.X;
+            double dy = position.Y - annotation.Y;
             annotation.X = position.X;
             annotation.Y = position.Y;
+            ShiftSignaturePoints(annotation, dx, dy);
         }
 
         IsMoving = false;
@@ -212,8 +215,11 @@ public sealed class AnnotationInteractionController
     {
         foreach ((PdfAnnotation annotation, Point position) in _moveStartPositions)
         {
+            double dx = position.X - annotation.X;
+            double dy = position.Y - annotation.Y;
             annotation.X = position.X;
             annotation.Y = position.Y;
+            ShiftSignaturePoints(annotation, dx, dy);
         }
         _moveStartPositions.Clear();
     }
@@ -358,9 +364,23 @@ public sealed class AnnotationInteractionController
         {
             annotation.X += dx;
             annotation.Y += dy;
+            ShiftSignaturePoints(annotation, dx, dy);
             annotation.IsApplied = false;
         }
         _lastPointerPosition = position;
         return true;
+    }
+
+    private static void ShiftSignaturePoints(PdfAnnotation annotation, double dx, double dy)
+    {
+        if (annotation.Type != AnnotationType.Signature ||
+            (Math.Abs(dx) < double.Epsilon && Math.Abs(dy) < double.Epsilon))
+            return;
+
+        foreach (PdfPathPoint point in annotation.SignaturePoints)
+        {
+            point.X += dx;
+            point.Y += dy;
+        }
     }
 }
