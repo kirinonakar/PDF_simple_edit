@@ -21,9 +21,9 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 
 ### 📂 Document Management
 - **Multi-Tab Interface**: Work on multiple PDF files simultaneously using a modern tabbed layout.
-- **Page Operations**: Delete unnecessary pages or reorder document structure.
+- **Page Operations**: Select multiple pages with `Ctrl`/`Shift`, reorder them, delete unnecessary pages, or extract selected pages into a new PDF.
 - **Merge & Split**: Combine multiple PDF files into one or split specific page ranges into new documents.
-- **Page Thumbnails**: Navigate quickly through large documents using the interactive sidebar.
+- **Page Thumbnails**: Navigate and manage pages quickly using the interactive sidebar and its right-click menu.
 
 ### 🛠️ Modern UX/UI
 - **WinUI 3 & Windows App SDK**: Native look and feel with fluent design elements.
