@@ -374,6 +374,8 @@ namespace PDF_simple_edit
             EditorToolbar.FitToPageButton.Click += FitToPage_Click;
 
             PageListView.SelectionChanged += PageListView_SelectionChanged;
+            PagePanel.ExtractMenuItem.Click += ExtractSelectedPages_Click;
+            PagePanel.DeleteMenuItem.Click += DeletePage_Click;
             PageListView.AddHandler(
                 UIElement.PointerPressedEvent,
                 new PointerEventHandler(PageListView_PointerPressed),
@@ -578,6 +580,11 @@ namespace PDF_simple_edit
             MenuAddImage.IsEnabled = hasDoc;
             MenuSplitPdf.IsEnabled = hasDoc;
             MenuDeletePage.IsEnabled = hasDoc;
+
+            int selectedPageCount = GetSelectedPageIndices().Count;
+            PagePanel.ExtractMenuItem.IsEnabled = hasDoc && selectedPageCount > 0;
+            PagePanel.DeleteMenuItem.IsEnabled = hasDoc &&
+                selectedPageCount > 0 && selectedPageCount < _pdfManager.PageCount;
 
             BtnSave.IsEnabled = hasDoc;
             BtnSaveAs.IsEnabled = hasDoc;
@@ -785,7 +792,34 @@ namespace PDF_simple_edit
 
         private void PageListView_PointerPressed(object sender, PointerRoutedEventArgs e)
         {
+            var point = e.GetCurrentPoint(PageListView);
+            if (point.Properties.IsRightButtonPressed)
+            {
+                if (FindPageListItem(e.OriginalSource as DependencyObject) is ListViewItem item &&
+                    item.Content is PageThumbnailData thumbnail &&
+                    !PageListView.SelectedItems.Contains(thumbnail))
+                {
+                    PageListView.SelectedItems.Clear();
+                    PageListView.SelectedItems.Add(thumbnail);
+                }
+
+                UpdateUIState();
+                return;
+            }
+
             _pageListPointerPressed = true;
+        }
+
+        private static ListViewItem? FindPageListItem(DependencyObject? source)
+        {
+            while (source != null)
+            {
+                if (source is ListViewItem item)
+                    return item;
+                source = VisualTreeHelper.GetParent(source);
+            }
+
+            return null;
         }
 
         private void PageListView_PointerReleased(object sender, PointerRoutedEventArgs e)
@@ -1184,9 +1218,25 @@ namespace PDF_simple_edit
         {
             if (_currentPageIndex < _pageThumbnails.Count)
             {
-                PageListView.SelectedIndex = _currentPageIndex;
-                PageListView.ScrollIntoView(PageListView.SelectedItem);
+                PageThumbnailData current = _pageThumbnails[_currentPageIndex];
+                if (PageListView.SelectedItems.Count <= 1)
+                    PageListView.SelectedItem = current;
+
+                PageListView.ScrollIntoView(current);
             }
+
+            UpdateUIState();
+        }
+
+        private List<int> GetSelectedPageIndices()
+        {
+            return PageListView.SelectedItems
+                .OfType<PageThumbnailData>()
+                .Select(thumbnail => thumbnail.PageIndex)
+                .Where(index => index >= 0 && index < _pdfManager.PageCount)
+                .Distinct()
+                .OrderBy(index => index)
+                .ToList();
         }
 
         private void Undo_Click(object sender, RoutedEventArgs e)
@@ -2289,12 +2339,25 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
         private async void DeletePage_Click(object sender, RoutedEventArgs e)
         {
-            if (!_pdfManager.IsLoaded || _pdfManager.PageCount <= 1) return;
+            if (!_pdfManager.IsLoaded)
+                return;
+
+            List<int> pageIndices = GetSelectedPageIndices();
+            if (pageIndices.Count == 0)
+                pageIndices.Add(_currentPageIndex);
+            if (pageIndices.Count == 0 || pageIndices.Count >= _pdfManager.PageCount)
+                return;
+
+            int pageCountBeforeDelete = _pdfManager.PageCount;
+            int currentPageBeforeDelete = _currentPageIndex;
+            string pageDescription = pageIndices.Count == 1
+                ? $"페이지 {pageIndices[0] + 1}"
+                : $"선택한 {pageIndices.Count}개 페이지";
 
             var dialog = new ContentDialog
             {
                 Title = "페이지 삭제",
-                Content = $"페이지 {_currentPageIndex + 1}을(를) 삭제하시겠습니까?",
+                Content = $"{pageDescription}를 삭제하시겠습니까?",
                 PrimaryButtonText = "삭제",
                 CloseButtonText = "취소",
                 XamlRoot = Content.XamlRoot
@@ -2302,9 +2365,14 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
             if (await dialog.ShowAsync() == ContentDialogResult.Primary)
             {
-                _pdfManager.DeletePage(_currentPageIndex);
+                int deletedBeforeCurrent = pageIndices.Count(index => index < currentPageBeforeDelete);
+                _pdfManager.DeletePages(pageIndices);
+                PageListView.SelectedItems.Clear();
+                _currentPageIndex = currentPageBeforeDelete - deletedBeforeCurrent;
                 if (_currentPageIndex >= _pdfManager.PageCount)
                     _currentPageIndex = _pdfManager.PageCount - 1;
+                if (_currentPageIndex < 0)
+                    _currentPageIndex = 0;
 
                 // [중요] 렌더링 캐시 초기화
                 _renderTempPath = null;
@@ -2312,8 +2380,57 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 // PdfManager.DeletePage()가 DocumentChanged를 호출하고, 
                 // 이는 PdfManager_DocumentChanged 핸들러에 의해 자동으로 Render 및 Thumbnail 로드를 수행합니다.
                 UpdateUIState();
-                TxtStatus.Text = "페이지가 삭제되었습니다";
+                TxtStatus.Text = pageCountBeforeDelete == _pdfManager.PageCount + pageIndices.Count
+                    ? "페이지가 삭제되었습니다"
+                    : "페이지 삭제에 실패했습니다";
             }
+        }
+
+        private async void ExtractSelectedPages_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_pdfManager.IsLoaded)
+                return;
+
+            List<int> pageIndices = GetSelectedPageIndices();
+            if (pageIndices.Count == 0)
+                return;
+
+            var picker = new FileSavePicker
+            {
+                SuggestedFileName = GetSuggestedExtractFileName()
+            };
+            picker.FileTypeChoices.Add("PDF 파일", new List<string> { ".pdf" });
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+
+            StorageFile? file = await picker.PickSaveFileAsync();
+            if (file == null)
+                return;
+
+            TxtStatus.Text = "페이지 추출 중...";
+            LoadingRing.IsActive = true;
+            try
+            {
+                bool success = await _pdfManager.ExportPagesAsync(file.Path, pageIndices);
+                TxtStatus.Text = success
+                    ? $"페이지 추출 완료: {pageIndices.Count}개 페이지"
+                    : "페이지 추출에 실패했습니다";
+            }
+            catch (Exception ex)
+            {
+                await ShowErrorDialogAsync("페이지 추출 오류", $"페이지 추출 중 오류가 발생했습니다: {ex.Message}");
+            }
+            finally
+            {
+                LoadingRing.IsActive = false;
+            }
+        }
+
+        private string GetSuggestedExtractFileName()
+        {
+            string baseName = !string.IsNullOrWhiteSpace(_pdfManager.FilePath)
+                ? Path.GetFileNameWithoutExtension(_pdfManager.FilePath)
+                : "문서";
+            return $"{baseName}_추출.pdf";
         }
 
         #endregion

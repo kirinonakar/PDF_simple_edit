@@ -1052,6 +1052,24 @@ namespace PDF_simple_edit.Helpers
             PageStructureChanged?.Invoke(this, EventArgs.Empty);
         }
 
+        public void DeletePages(IEnumerable<int> pageIndices)
+        {
+            List<int> indices = pageIndices
+                .Distinct()
+                .Where(index => index >= 0 && index < PageCount)
+                .OrderByDescending(index => index)
+                .ToList();
+            if (indices.Count == 0 || indices.Count >= PageCount)
+                return;
+
+            ApplyEdit(doc =>
+            {
+                foreach (int pageIndex in indices)
+                    DeletePageInternal(doc, pageIndex);
+            });
+            PageStructureChanged?.Invoke(this, EventArgs.Empty);
+        }
+
         public void DeletePageInternal(PdfDocument doc, int pageIndex)
         {
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages()) return;
@@ -3648,6 +3666,41 @@ namespace PDF_simple_edit.Helpers
                     System.Diagnostics.Debug.WriteLine($"Split error: {ex.Message}");
                 }
                 return count;
+            });
+        }
+
+        public async Task<bool> ExportPagesAsync(string outputPath, IEnumerable<int> pageIndices)
+        {
+            if (_pdfBytes == null)
+                return false;
+
+            List<int> indices = pageIndices.Distinct().OrderBy(index => index).ToList();
+            if (indices.Count == 0)
+                return false;
+
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    using var input = new MemoryStream(_pdfBytes);
+                    using var reader = new PdfReader(input);
+                    using var sourceDoc = new PdfDocument(reader);
+                    using var writer = new PdfWriter(outputPath);
+                    using var destinationDoc = new PdfDocument(writer);
+
+                    foreach (int pageIndex in indices)
+                    {
+                        if (pageIndex >= 0 && pageIndex < sourceDoc.GetNumberOfPages())
+                            sourceDoc.CopyPagesTo(pageIndex + 1, pageIndex + 1, destinationDoc);
+                    }
+
+                    return destinationDoc.GetNumberOfPages() > 0;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Export pages error: {ex.Message}");
+                    return false;
+                }
             });
         }
     }

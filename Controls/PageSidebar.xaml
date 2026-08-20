@@ -11,7 +11,14 @@
         </Grid.RowDefinitions>
         <TextBlock Text="페이지" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" FontSize="13"/>
         <ListView x:Name="PageList" Grid.Row="1" Padding="4"
-                  AllowDrop="True" CanReorderItems="False" CanDragItems="True">
+                  AllowDrop="True" CanReorderItems="False" CanDragItems="True"
+                  SelectionMode="Extended">
+            <ListView.ContextFlyout>
+                <MenuFlyout x:Name="PageContextMenu">
+                    <MenuFlyoutItem x:Name="ExtractPagesMenuItem" Text="선택한 페이지 추출..."/>
+                    <MenuFlyoutItem x:Name="DeletePagesMenuItem" Text="선택한 페이지 삭제"/>
+                </MenuFlyout>
+            </ListView.ContextFlyout>
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="local:PageThumbnailData">
                     <Grid Margin="{x:Bind DropMargin, Mode=OneWay}" Width="140">

@@ -57,7 +57,10 @@ public sealed class PdfPageRenderService
         if (!manager.IsLoaded)
             yield break;
 
-        string? sourcePath = renderPath ?? manager.FilePath;
+        // 수정된 문서는 FilePath의 원본 파일과 메모리상의 PDF 내용이 다를 수 있습니다.
+        // 원본 경로를 사용하면 페이지 삭제/순서 변경 후에도 이전 썸네일이 표시되므로,
+        // 수정 상태에서는 메모리 바이트를 렌더링 소스로 사용합니다.
+        string? sourcePath = renderPath ?? (!manager.IsModified ? manager.FilePath : null);
         byte[]? pdfBytes = string.IsNullOrEmpty(sourcePath) ? manager.GetPdfBytes() : null;
         if (string.IsNullOrEmpty(sourcePath) && pdfBytes == null)
             yield break;

@@ -10,4 +10,6 @@ public sealed partial class PageSidebar : UserControl
     }
 
     public ListView ListView => PageList;
+    public MenuFlyoutItem ExtractMenuItem => ExtractPagesMenuItem;
+    public MenuFlyoutItem DeleteMenuItem => DeletePagesMenuItem;
 }
