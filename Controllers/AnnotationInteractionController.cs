@@ -259,6 +259,14 @@ public sealed class AnnotationInteractionController
         double dx = (position.X - _lastPointerPosition.X) / PdfToPixels;
         double dy = (position.Y - _lastPointerPosition.Y) / PdfToPixels;
         const double minimumSize = 10;
+        if (annotation.Type == AnnotationType.Signature)
+        {
+            ResizeSignature(annotation, dx, dy, minimumSize);
+            annotation.IsApplied = false;
+            _lastPointerPosition = position;
+            return;
+        }
+
         switch (_resizeHandle)
         {
             case "NW":
@@ -288,6 +296,93 @@ public sealed class AnnotationInteractionController
         }
         annotation.IsApplied = false;
         _lastPointerPosition = position;
+    }
+
+    private void ResizeSignature(PdfAnnotation annotation, double dx, double dy, double minimumSize)
+    {
+        double oldX = annotation.X;
+        double oldY = annotation.Y;
+        double oldWidth = Math.Max(annotation.Width, minimumSize);
+        double oldHeight = Math.Max(annotation.Height, minimumSize);
+        double newX = oldX;
+        double newY = oldY;
+        double newWidth = oldWidth;
+        double newHeight = oldHeight;
+
+        switch (_resizeHandle)
+        {
+            case "NW":
+                if (oldWidth - dx > minimumSize)
+                {
+                    newX += dx;
+                    newWidth -= dx;
+                }
+                if (oldHeight - dy > minimumSize)
+                {
+                    newY += dy;
+                    newHeight -= dy;
+                }
+                break;
+            case "N":
+                if (oldHeight - dy > minimumSize)
+                {
+                    newY += dy;
+                    newHeight -= dy;
+                }
+                break;
+            case "NE":
+                if (oldWidth + dx > minimumSize)
+                    newWidth += dx;
+                if (oldHeight - dy > minimumSize)
+                {
+                    newY += dy;
+                    newHeight -= dy;
+                }
+                break;
+            case "W":
+                if (oldWidth - dx > minimumSize)
+                {
+                    newX += dx;
+                    newWidth -= dx;
+                }
+                break;
+            case "E":
+                if (oldWidth + dx > minimumSize)
+                    newWidth += dx;
+                break;
+            case "SW":
+                if (oldWidth - dx > minimumSize)
+                {
+                    newX += dx;
+                    newWidth -= dx;
+                }
+                if (oldHeight + dy > minimumSize)
+                    newHeight += dy;
+                break;
+            case "S":
+                if (oldHeight + dy > minimumSize)
+                    newHeight += dy;
+                break;
+            case "SE":
+                if (oldWidth + dx > minimumSize)
+                    newWidth += dx;
+                if (oldHeight + dy > minimumSize)
+                    newHeight += dy;
+                break;
+        }
+
+        foreach (PdfPathPoint point in annotation.SignaturePoints)
+        {
+            double normalizedX = (point.X - oldX) / oldWidth;
+            double normalizedY = (point.Y - oldY) / oldHeight;
+            point.X = newX + normalizedX * newWidth;
+            point.Y = newY + normalizedY * newHeight;
+        }
+
+        annotation.X = newX;
+        annotation.Y = newY;
+        annotation.Width = newWidth;
+        annotation.Height = newHeight;
     }
 
     private static void ResizeCorner(

@@ -63,7 +63,7 @@ public sealed class AnnotationOverlayController
 
             if (annotation == primarySelection &&
                 annotation.Type is AnnotationType.Text or AnnotationType.FreeText or
-                AnnotationType.Image or AnnotationType.Highlight)
+                AnnotationType.Image or AnnotationType.Highlight or AnnotationType.Signature)
             {
                 AddResizeHandles(
                     canvas,
