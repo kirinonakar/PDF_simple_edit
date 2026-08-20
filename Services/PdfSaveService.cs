@@ -42,6 +42,11 @@ public sealed class PdfSaveService
         manager.ReplacePdfBytesAfterSave(editedBytes, filePath);
         foreach (PdfAnnotation annotation in annotations.Where(annotation => annotation.Type == AnnotationType.Signature))
             annotation.IsApplied = true;
+
+        // Keep the just-saved Ink annotations in the file, but remove them from
+        // the in-memory render source. The overlay renders the editor copies;
+        // otherwise a moved signature would appear twice until the next save.
+        manager.DetachSavedSignatureAnnotationsForEditing();
     }
 
     private static async Task WriteAtomicallyAsync(string filePath, byte[] contents)

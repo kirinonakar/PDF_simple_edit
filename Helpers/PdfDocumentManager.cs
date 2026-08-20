@@ -306,6 +306,18 @@ namespace PDF_simple_edit.Helpers
                 }
             }
 
+            if (signatures.Count > 0)
+            {
+                try
+                {
+                    DetachSavedSignatureAnnotationsForEditing();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Saved signature detach error: {ex.Message}");
+                }
+            }
+
             return signatures;
         }
 
@@ -319,6 +331,26 @@ namespace PDF_simple_edit.Helpers
                     if (IsSavedSignatureAnnotation(annotation))
                         page.RemoveAnnotation(annotation);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Removes the application's saved Ink annotations from the in-memory
+        /// document while keeping the editor annotations as the UI source of
+        /// truth. The file on disk is not changed and the document remains
+        /// unmodified, so the annotations are written back exactly once on
+        /// the next save.
+        /// </summary>
+        public void DetachSavedSignatureAnnotationsForEditing()
+        {
+            if (_pdfBytes == null)
+                return;
+
+            byte[] detachedBytes = CreatePdfBytesWithEdits(RemoveSavedSignatureAnnotations);
+            lock (_docLock)
+            {
+                _pdfBytes = detachedBytes;
+                _contentCache.Clear();
             }
         }
 

@@ -17,7 +17,7 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 ### 🖋️ Annotation & Highlighting
 - **Smooth Highlighting**: Add semi-transparent highlights to text blocks.
 - **Advanced Color Control**: Integrated color picker (eyedropper) and transparency sliders to customize highlight styles.
-- **Font Support**: Comprehensive support for system fonts, including specialized mapping for Korean fonts (Malgun Gothic, Gulim, etc.).
+- **Signature Tool**: Draw, customize, select, move, resize proportionally, edit, and save mouse-drawn signatures for reuse after reopening the PDF.
 
 ### 📂 Document Management
 - **Multi-Tab Interface**: Work on multiple PDF files simultaneously using a modern tabbed layout.
