@@ -510,8 +510,8 @@ namespace PDF_simple_edit.Helpers
                 {
                     string[] fallbackFamilies = fallbackKey switch
                     {
-                        "Korean" => new[] { "맑은 고딕", "Noto Sans KR" },
-                        "Japanese" => new[] { "Yu Gothic UI", "Meiryo", "Noto Sans JP" },
+                        "Korean" => new[] { "Noto Sans JP", "Noto Sans KR", "맑은 고딕" },
+                        "Japanese" => new[] { "Noto Sans JP", "Meiryo" },
                         _ => new[] { "맑은 고딕" }
                     };
 
