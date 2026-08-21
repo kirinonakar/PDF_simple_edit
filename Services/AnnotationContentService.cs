@@ -50,11 +50,27 @@ public sealed class AnnotationContentService
 
     public PdfPageContent? FindEditableContent(List<PdfPageContent> contents, double x, double y)
     {
-        int matchIndex = contents.FindIndex(content =>
-            x >= content.X - 5 && x <= content.X + content.Width + 5 &&
-            y >= content.Y - 5 && y <= content.Y + content.Height + 5);
-        if (matchIndex < 0)
+        var matches = contents
+            .Select((content, index) => (Content: content, Index: index))
+            .Where(match =>
+                x >= match.Content.X - 5 && x <= match.Content.X + match.Content.Width + 5 &&
+                y >= match.Content.Y - 5 && y <= match.Content.Y + match.Content.Height + 5)
+            .ToList();
+        if (matches.Count == 0)
             return null;
+
+        // PDF font ascent/descent data is occasionally incorrect, leaving text
+        // boxes that overlap nearby visible lines. Prefer the text whose actual
+        // fragment baseline is nearest to the pointer instead of whichever item
+        // happened to be extracted first.
+        var textMatches = matches
+            .Where(match => match.Content.Type == PageContentType.Text)
+            .OrderBy(match => GetTextHitDistance(match.Content, x, y))
+            .ThenBy(match => Math.Max(match.Content.Width, 1) * Math.Max(match.Content.Height, 1))
+            .ToList();
+        int matchIndex = textMatches.Count > 0
+            ? textMatches[0].Index
+            : matches[0].Index;
 
         PdfPageContent match = contents[matchIndex];
         if (match.Type != PageContentType.Text)
@@ -76,6 +92,30 @@ public sealed class AnnotationContentService
         }
 
         return expanded;
+    }
+
+    private static double GetTextHitDistance(PdfPageContent content, double x, double y)
+    {
+        if (content.TextFragments.Count == 0)
+        {
+            double centerX = content.X + content.Width / 2.0;
+            double centerY = content.Y + content.Height / 2.0;
+            return Math.Pow(x - centerX, 2) + Math.Pow(y - centerY, 2);
+        }
+
+        return content.TextFragments.Min(fragment =>
+        {
+            double horizontalDistance = x < fragment.X
+                ? fragment.X - x
+                : x > fragment.X + fragment.Width
+                    ? x - (fragment.X + fragment.Width)
+                    : 0;
+            double visualCenterY = fragment.BaselineOffset > 0.1
+                ? fragment.Y + fragment.BaselineOffset - Math.Max(fragment.FontSize, 1) * 0.35
+                : fragment.Y + fragment.Height / 2.0;
+            double verticalDistance = y - visualCenterY;
+            return horizontalDistance * horizontalDistance + verticalDistance * verticalDistance;
+        });
     }
 
     public PdfAnnotation ConvertToAnnotation(PdfPageContent content, int pageIndex)

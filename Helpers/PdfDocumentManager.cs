@@ -1500,6 +1500,45 @@ namespace PDF_simple_edit.Helpers
             return (minX, uiY, width, height, minX, minY);
         }
 
+        private static (float x, float y, float width, float height, float originalPdfX, float originalPdfY) NormalizePathologicalTextBounds(
+            TextRenderInfo textInfo,
+            (float x, float y, float width, float height, float originalPdfX, float originalPdfY) bounds,
+            float pageHeight,
+            float fontSize)
+        {
+            // Some embedded fonts report ascent/descent boxes almost three times the
+            // rendered font size. Those boxes overlap adjacent lines and make a click
+            // select text that is visibly above or below the pointer. For horizontal
+            // text, replace only clearly pathological vertical metrics with a
+            // conservative typographic box anchored to the actual baseline.
+            if (fontSize <= 0.1f ||
+                bounds.height <= Math.Max(fontSize * 1.8f, fontSize + 4f))
+            {
+                return bounds;
+            }
+
+            var baseline = textInfo.GetBaseline();
+            var start = baseline.GetStartPoint();
+            var end = baseline.GetEndPoint();
+            float deltaX = end.Get(0) - start.Get(0);
+            float deltaY = end.Get(1) - start.Get(1);
+            if (Math.Abs(deltaY) > Math.Max(0.5f, Math.Abs(deltaX) * 0.1f))
+                return bounds;
+
+            const float ascentRatio = 0.85f;
+            const float descentRatio = 0.25f;
+            float baselinePdfY = start.Get(1);
+            float normalizedTopPdfY = baselinePdfY + fontSize * ascentRatio;
+            float normalizedBottomPdfY = baselinePdfY - fontSize * descentRatio;
+            return (
+                bounds.x,
+                pageHeight - normalizedTopPdfY,
+                bounds.width,
+                normalizedTopPdfY - normalizedBottomPdfY,
+                bounds.originalPdfX,
+                normalizedBottomPdfY);
+        }
+
         private static void MergeBounds(PdfPageContent content, (float x, float y, float width, float height, float originalPdfX, float originalPdfY) bounds)
         {
             float left = Math.Min((float)content.X, bounds.x);
@@ -2493,6 +2532,8 @@ namespace PDF_simple_edit.Helpers
 
                 var bounds = GetTextBounds(textInfo, _pageHeight);
                 float fontSize = ResolveFontSize(textInfo, bounds.height);
+                bounds = NormalizePathologicalTextBounds(
+                    textInfo, bounds, _pageHeight, fontSize);
                 var baseline = textInfo.GetBaseline().GetStartPoint();
                 double baselineOffset = (_pageHeight - baseline.Get(1)) - bounds.y;
                 PdfFontMetadata fontMetadata = GetFontMetadata(textInfo, _fontMetadataCache);
