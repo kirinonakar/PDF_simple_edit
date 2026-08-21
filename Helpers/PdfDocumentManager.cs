@@ -1439,13 +1439,13 @@ namespace PDF_simple_edit.Helpers
                 return extractedContents;
             });
 
-            await PopulateVectorGraphicImagesAsync(pdfSnapshot, pageIndex, contents);
+            await PopulateRenderedImagePreviewsAsync(pdfSnapshot, pageIndex, contents);
             lock (_docLock)
                 _contentCache[pageIndex] = contents;
             return contents;
         }
 
-        private static async Task PopulateVectorGraphicImagesAsync(
+        private static async Task PopulateRenderedImagePreviewsAsync(
             byte[] pdfBytes,
             int pageIndex,
             IEnumerable<PdfPageContent> contents)
@@ -1453,7 +1453,6 @@ namespace PDF_simple_edit.Helpers
             const double pdfToPixels = 96.0 / 72.0;
             foreach (PdfPageContent content in contents.Where(content =>
                 content.Type == PageContentType.Image &&
-                content.GraphicOperations.Count > 0 &&
                 string.IsNullOrEmpty(content.Text)))
             {
                 using var input = new MemoryStream(pdfBytes);
@@ -2769,9 +2768,17 @@ namespace PDF_simple_edit.Helpers
                         return;
 
                     PdfImageXObject image = imageInfo.GetImage();
-                    byte[] imageBytes = image.GetImageBytes(true);
-                    string extension = NormalizeImageExtension(image.IdentifyImageFileExtension());
-                    string imagePath = SaveExtractedImage(imageBytes, extension);
+                    PdfStream imageStream = image.GetPdfObject();
+                    bool requiresRenderedPreview =
+                        imageStream.ContainsKey(PdfName.SMask) ||
+                        imageStream.ContainsKey(PdfName.Mask);
+                    string imagePath = string.Empty;
+                    if (!requiresRenderedPreview)
+                    {
+                        byte[] imageBytes = image.GetImageBytes(true);
+                        string extension = NormalizeImageExtension(image.IdentifyImageFileExtension());
+                        imagePath = SaveExtractedImage(imageBytes, extension);
+                    }
 
                     Contents.Add(new PdfPageContent
                     {
@@ -2782,6 +2789,9 @@ namespace PDF_simple_edit.Helpers
                         Height = top - bottom,
                         OriginalPdfX = left,
                         OriginalPdfY = bottom,
+                        // iText's decoded image bytes do not include a separate
+                        // PDF soft/color-key mask. Leave the preview empty so the
+                        // page renderer rebuilds the image with its transparency.
                         Text = imagePath,
                         ImageId = target.ResourceName,
                         ContentStreamIndex = target.StreamIndex,
