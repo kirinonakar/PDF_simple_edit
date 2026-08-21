@@ -28,6 +28,7 @@ using System.Text;
 using iText.Kernel.Pdf.Canvas.Parser.Util;
 using iText.Kernel.Pdf.Xobject;
 using System.Security.Cryptography;
+using PDF_simple_edit.Services;
 
 namespace PDF_simple_edit.Helpers
 {
@@ -397,6 +398,8 @@ namespace PDF_simple_edit.Helpers
                 .Split('\n');
 
             var originalFontCache = new Dictionary<int, PdfFont>();
+            var embeddedProgramFontCache = new Dictionary<int, PdfFont>();
+            var selectedFamilyFonts = new Dictionary<string, PdfFont>(StringComparer.Ordinal);
             // Cache by writing system. Korean and Japanese are both non-Latin,
             // but they must not share the same fallback font.
             var fallbackFonts = new Dictionary<string, PdfFont>(StringComparer.Ordinal);
@@ -427,6 +430,32 @@ namespace PDF_simple_edit.Helpers
                             originalFontCache[objectNumber] = candidate;
                         }
                         fonts.Add(candidate);
+
+                        // A PDF font dictionary can restrict its encoding even when
+                        // the embedded font program contains more glyphs. Recreate a
+                        // Unicode font from that same program so newly typed text can
+                        // still use the exact original face whenever possible.
+                        if (!embeddedProgramFontCache.TryGetValue(objectNumber, out PdfFont? programFont) &&
+                            PdfFontMetadataResolver.TryGetEmbeddedFontBytes(candidate, out byte[] fontBytes))
+                        {
+                            try
+                            {
+                                FontProgram fontProgram = FontProgramFactory.CreateFont(fontBytes);
+                                programFont = PdfFontFactory.CreateFont(
+                                    fontProgram,
+                                    PdfEncodings.IDENTITY_H,
+                                    PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
+                                embeddedProgramFontCache[objectNumber] = programFont;
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine(
+                                    $"Embedded original font program reuse error: {ex.Message}");
+                            }
+                        }
+
+                        if (programFont != null && !ReferenceEquals(candidate, programFont))
+                            fonts.Add(programFont);
                     }
                     catch (Exception ex)
                     {
@@ -436,38 +465,46 @@ namespace PDF_simple_edit.Helpers
                 return fonts;
             }
 
+            PdfFont? ResolveSelectedFamilyFont(string sampleText)
+            {
+                string cacheKey = GetFallbackScript(sampleText);
+                if (selectedFamilyFonts.TryGetValue(cacheKey, out PdfFont? cachedFont))
+                    return FontSupportsText(cachedFont, sampleText) ? cachedFont : null;
+
+                try
+                {
+                    string? resolvedPath = GetSystemFontPath(
+                        fontFamily,
+                        resolvedFontWeight,
+                        sampleText,
+                        isItalic);
+                    if (string.IsNullOrEmpty(resolvedPath))
+                        return null;
+
+                    PdfFont candidate = PdfFontFactory.CreateFont(
+                        resolvedPath,
+                        PdfEncodings.IDENTITY_H,
+                        PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
+                    if (!FontSupportsText(candidate, sampleText))
+                        return null;
+
+                    selectedFamilyFonts[cacheKey] = candidate;
+                    return candidate;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Selected font load error: {ex.Message}");
+                    return null;
+                }
+            }
+
             PdfFont ResolveFallbackFont(string sampleText)
             {
                 string fallbackKey = GetFallbackScript(sampleText);
                 if (fallbackFonts.TryGetValue(fallbackKey, out PdfFont? cachedFont))
                     return cachedFont;
 
-                PdfFont? resolvedFallback = null;
-                try
-                {
-                    string? resolvedPath = GetSystemFontPath(
-                        fontFamily,
-                        resolvedFontWeight,
-                        sampleText);
-                    if (!string.IsNullOrEmpty(resolvedPath))
-                    {
-                        PdfFont candidate = PdfFontFactory.CreateFont(
-                            resolvedPath,
-                            PdfEncodings.IDENTITY_H,
-                            PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
-
-                        // WinUI renders a missing glyph with a script-specific
-                        // fallback font. iText does not do this automatically, so
-                        // never keep the selected font when it cannot encode the
-                        // character being written.
-                        if (FontSupportsText(candidate, sampleText))
-                            resolvedFallback = candidate;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Font load error: {ex.Message}");
-                }
+                PdfFont? resolvedFallback = ResolveSelectedFamilyFont(sampleText);
 
                 if (resolvedFallback == null)
                 {
@@ -485,7 +522,8 @@ namespace PDF_simple_edit.Helpers
                             string? fallbackPath = GetSystemFontPath(
                                 fallbackFamily,
                                 resolvedFontWeight,
-                                sampleText);
+                                sampleText,
+                                isItalic);
                             if (string.IsNullOrEmpty(fallbackPath))
                                 continue;
 
@@ -545,6 +583,98 @@ namespace PDF_simple_edit.Helpers
                 {
                     if (char.IsControl(character) || char.IsWhiteSpace(character))
                         continue;
+                    try
+                    {
+                        if (!font.ContainsGlyph(character))
+                            return false;
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+
+            static float GetMissingSpaceAdvance(PdfFont font, float resolvedFontSize)
+            {
+                try
+                {
+                    float encodedSpaceWidth = font.GetWidth(" ", resolvedFontSize);
+                    float expectedSpaceWidth = resolvedFontSize * 0.25f;
+                    return encodedSpaceWidth < expectedSpaceWidth * 0.2f
+                        ? expectedSpaceWidth - Math.Max(encodedSpaceWidth, 0)
+                        : 0;
+                }
+                catch
+                {
+                    return resolvedFontSize * 0.25f;
+                }
+            }
+
+            static int CountSpaces(string value) => value.Count(character => character == ' ');
+
+            static void ShowTextPreservingSpaces(
+                PdfCanvas targetCanvas,
+                TextFontSegment segment,
+                float resolvedFontSize,
+                float missingSpaceAdvance)
+            {
+                if (missingSpaceAdvance <= 0.001f || !segment.Text.Contains(' '))
+                {
+                    targetCanvas.ShowText(segment.Text);
+                    return;
+                }
+
+                var adjustedText = new PdfArray();
+                int runStart = 0;
+                for (int index = 0; index < segment.Text.Length; index++)
+                {
+                    if (segment.Text[index] != ' ')
+                        continue;
+
+                    if (index > runStart)
+                    {
+                        adjustedText.Add(new PdfString(
+                            segment.Font.ConvertToBytes(segment.Text[runStart..index])));
+                    }
+
+                    // Keep an actual U+0020 in the content for searching and text
+                    // extraction, then add the advance that the zero-width subset
+                    // font omitted. TJ values are subtracted in 1/1000 text units.
+                    adjustedText.Add(new PdfString(
+                        segment.Font.ConvertToBytes(" ")));
+                    adjustedText.Add(new PdfNumber(
+                        -missingSpaceAdvance * 1000f / resolvedFontSize));
+                    runStart = index + 1;
+                }
+
+                if (runStart < segment.Text.Length)
+                {
+                    adjustedText.Add(new PdfString(
+                        segment.Font.ConvertToBytes(segment.Text[runStart..])));
+                }
+
+                targetCanvas.ShowText(adjustedText);
+            }
+
+            static bool OriginalFontSupportsEditedLine(
+                PdfFont font,
+                string editedLine,
+                string? originalLine)
+            {
+                foreach (char character in editedLine)
+                {
+                    if (char.IsControl(character) || char.IsWhiteSpace(character))
+                        continue;
+
+                    // A character already present in the source line is known to
+                    // have an encoding in a subset font, even when ContainsGlyph
+                    // incorrectly reports false for that PDF wrapper.
+                    if (originalLine?.IndexOf(character) >= 0)
+                        continue;
+
                     try
                     {
                         if (!font.ContainsGlyph(character))
@@ -622,6 +752,29 @@ namespace PDF_simple_edit.Helpers
                     };
                 }
 
+                PdfFont? exactOriginalLineFont = originalFonts.FirstOrDefault(font =>
+                    OriginalFontSupportsEditedLine(font, line, originalLine));
+                if (exactOriginalLineFont != null)
+                {
+                    return new List<TextFontSegment>
+                    {
+                        new(line, exactOriginalLineFont, false)
+                    };
+                }
+
+                // If an embedded subset cannot encode a genuinely new character,
+                // use the installed copy of that same family for the whole line.
+                // This avoids mixing the source face and a fallback face inside one
+                // edited word while retaining the original font family and weight.
+                PdfFont? selectedFamilyFont = ResolveSelectedFamilyFont(line);
+                if (selectedFamilyFont != null)
+                {
+                    return new List<TextFontSegment>
+                    {
+                        new(line, selectedFamilyFont, false)
+                    };
+                }
+
                 var segments = new List<TextFontSegment>();
                 var segmentText = new StringBuilder();
                 PdfFont? segmentFont = null;
@@ -656,6 +809,12 @@ namespace PDF_simple_edit.Helpers
                             // embedded font used by the original PDF. This is more
                             // reliable than ContainsGlyph for subset Type0 fonts,
                             // whose Unicode cmap can report false for valid glyphs.
+                            selectedFont = preferredOriginalFont;
+                        }
+                        else if (originalLine?.IndexOf(character) >= 0)
+                        {
+                            // Repeated/inserted occurrences of a glyph already used
+                            // by the source line are also safe in a subset font.
                             selectedFont = preferredOriginalFont;
                         }
                         else if (matchedTargetCharacters == null)
@@ -772,6 +931,14 @@ namespace PDF_simple_edit.Helpers
                         -(currentBaselineOffset - previousBaselineOffset));
                 }
                 float characterSpacing = 0;
+                float resolvedFontSize = (float)Math.Max(fontSize, 1);
+                var missingSpaceAdvances = resolvedLineSegments[i]
+                    .Select(segment => GetMissingSpaceAdvance(segment.Font, resolvedFontSize))
+                    .ToList();
+                float addedSpaceWidth = resolvedLineSegments[i]
+                    .Select((segment, index) =>
+                        CountSpaces(segment.Text) * missingSpaceAdvances[index])
+                    .Sum();
                 if (displayLineWidths != null &&
                     i < displayLineWidths.Count &&
                     displayLineWidths[i] > 0.1 &&
@@ -782,16 +949,23 @@ namespace PDF_simple_edit.Helpers
                             segment.Text,
                             (float)Math.Max(fontSize, 1)));
                     characterSpacing = (float)(
-                        (displayLineWidths[i] - measuredLineWidth) /
+                        (displayLineWidths[i] - measuredLineWidth - addedSpaceWidth) /
                         Math.Max(lines[i].Length, 1));
                 }
                 canvas.SetCharacterSpacing(characterSpacing);
-                foreach (TextFontSegment segment in resolvedLineSegments[i])
+                for (int segmentIndex = 0;
+                    segmentIndex < resolvedLineSegments[i].Count;
+                    segmentIndex++)
                 {
+                    TextFontSegment segment = resolvedLineSegments[i][segmentIndex];
                     canvas.SetFontAndSize(
                         segment.Font,
-                        (float)Math.Max(fontSize, 1));
-                    canvas.ShowText(segment.Text);
+                        resolvedFontSize);
+                    ShowTextPreservingSpaces(
+                        canvas,
+                        segment,
+                        resolvedFontSize,
+                        missingSpaceAdvances[segmentIndex]);
                 }
             }
 
@@ -803,7 +977,8 @@ namespace PDF_simple_edit.Helpers
         private string? GetSystemFontPath(
             string nameOrFile,
             int fontWeight = 400,
-            string? sampleText = null)
+            string? sampleText = null,
+            bool isItalic = false)
         {
             if (string.IsNullOrWhiteSpace(nameOrFile)) return null;
 
@@ -906,6 +1081,13 @@ namespace PDF_simple_edit.Helpers
                     }
                 }
             }
+
+            string? registeredFontPath = InstalledFontService.FindFontFile(
+                nameOrFile,
+                fontWeight,
+                isItalic);
+            if (!string.IsNullOrEmpty(registeredFontPath))
+                return registeredFontPath;
 
             // 파일명 자체가 들어온 경우 처리
             if (nameOrFile.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) || 

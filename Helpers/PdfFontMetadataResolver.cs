@@ -48,6 +48,8 @@ internal static class PdfFontMetadataResolver
                 weight = embeddedWeight;
         }
 
+        rawName = ResolveAnonymousTimesFamily(font, rawName, ref weight);
+
         weight = ResolveNamedFontWeight(rawName, weight);
         return new PdfFontMetadata(rawName, Math.Clamp(weight > 0 ? weight : 400, 1, 999));
     }
@@ -68,11 +70,89 @@ internal static class PdfFontMetadataResolver
         if (normalized.Contains("semibold") || normalized.Contains("demibold")) return 600;
         if (normalized.Contains("extrabold") || normalized.Contains("ultrabold")) return 800;
         if (normalized.Contains("black") || normalized.Contains("heavy")) return 900;
-        if (normalized.Contains("bold")) return 700;
+        if (normalized.Contains("bold") || normalized.EndsWith(".b", StringComparison.Ordinal)) return 700;
         return fallbackWeight;
     }
 
-    private static bool TryGetEmbeddedFontBytes(PdfFont font, out byte[] bytes)
+    private static string ResolveAnonymousTimesFamily(
+        PdfFont? font,
+        string rawFontName,
+        ref int weight)
+    {
+        if (font == null || string.IsNullOrWhiteSpace(rawFontName))
+            return rawFontName;
+
+        string unprefixedName = rawFontName;
+        int subsetSeparator = unprefixedName.IndexOf('+');
+        if (subsetSeparator >= 0 && subsetSeparator + 1 < unprefixedName.Length)
+            unprefixedName = unprefixedName[(subsetSeparator + 1)..];
+        if (!unprefixedName.StartsWith("AdvTT", StringComparison.OrdinalIgnoreCase))
+            return rawFontName;
+
+        bool isBold = unprefixedName.EndsWith(".B", StringComparison.OrdinalIgnoreCase);
+        bool isItalic = unprefixedName.EndsWith(".I", StringComparison.OrdinalIgnoreCase);
+        if (!MatchesTimesNewRomanMetrics(font, isBold, isItalic))
+            return rawFontName;
+
+        if (isBold)
+            weight = 700;
+        return isBold && isItalic
+            ? "Times New Roman Bold Italic"
+            : isBold
+                ? "Times New Roman Bold"
+                : isItalic
+                    ? "Times New Roman Italic"
+                    : "Times New Roman";
+    }
+
+    private static bool MatchesTimesNewRomanMetrics(PdfFont font, bool isBold, bool isItalic)
+    {
+        string samples;
+        int[] expectedWidths;
+        if (isBold)
+        {
+            samples = "AMWaimst";
+            expectedWidths = new[] { 722, 944, 1000, 500, 278, 833, 389, 333 };
+        }
+        else if (isItalic)
+        {
+            samples = "AMWaimst";
+            expectedWidths = new[] { 611, 833, 833, 500, 278, 722, 389, 278 };
+        }
+        else
+        {
+            samples = "AMWaimst";
+            expectedWidths = new[] { 722, 889, 944, 444, 278, 778, 389, 278 };
+        }
+
+        int compared = 0;
+        int totalDifference = 0;
+        int maximumDifference = 0;
+        for (int index = 0; index < samples.Length; index++)
+        {
+            try
+            {
+                int actualWidth = font.GetWidth(samples[index]);
+                if (actualWidth <= 0)
+                    continue;
+
+                int difference = Math.Abs(actualWidth - expectedWidths[index]);
+                totalDifference += difference;
+                maximumDifference = Math.Max(maximumDifference, difference);
+                compared++;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        return compared >= 4 &&
+            maximumDifference <= 55 &&
+            totalDifference / compared <= 25;
+    }
+
+    internal static bool TryGetEmbeddedFontBytes(PdfFont font, out byte[] bytes)
     {
         bytes = Array.Empty<byte>();
         try
