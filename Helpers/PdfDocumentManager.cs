@@ -1725,6 +1725,10 @@ namespace PDF_simple_edit.Helpers
             public double Width { get; init; }
             public double Height { get; init; }
             public int ShapeCount { get; init; }
+            public int HorizontalRuleCount { get; init; }
+            public int VerticalRuleCount { get; init; }
+            public double LongestHorizontalRule { get; init; }
+            public double LongestVerticalRule { get; init; }
             public PathOperationDescriptor Target { get; init; } = new();
             public TextOperationDescriptor? TextTarget { get; init; }
             public ShadingOperationDescriptor? ShadingTarget { get; init; }
@@ -2208,6 +2212,22 @@ namespace PDF_simple_edit.Helpers
                 if (component.Sum(path => path.ShapeCount) < 3 || width < 8 || height < 5)
                     continue;
 
+                // Connected table borders can span most of a page. Exposing their
+                // bounding box as one editable image makes a click on any border
+                // select the whole form and then intercept later text clicks.
+                // Keep layout grids in the page background instead.
+                int horizontalRules = component.Sum(path => path.HorizontalRuleCount);
+                int verticalRules = component.Sum(path => path.VerticalRuleCount);
+                double longestHorizontalRule = component.Max(path => path.LongestHorizontalRule);
+                double longestVerticalRule = component.Max(path => path.LongestVerticalRule);
+                if (horizontalRules >= 2 && verticalRules >= 2 &&
+                    horizontalRules + verticalRules >= 6 &&
+                    longestHorizontalRule >= width * 0.25 &&
+                    longestVerticalRule >= height * 0.25)
+                {
+                    continue;
+                }
+
                 const double cropPadding = 1.0;
                 left -= cropPadding;
                 top -= cropPadding;
@@ -2619,6 +2639,38 @@ namespace PDF_simple_edit.Helpers
                 float e = matrix.Get(Matrix.I31);
                 float f = matrix.Get(Matrix.I32);
                 var subpaths = pathInfo.GetPath().GetSubpaths();
+                int horizontalRuleCount = 0;
+                int verticalRuleCount = 0;
+                double longestHorizontalRule = 0;
+                double longestVerticalRule = 0;
+                const double maximumRuleThickness = 2.0;
+                const double minimumRuleLength = 3.0;
+                foreach (var subpath in subpaths)
+                {
+                    var subpathPoints = subpath.GetSegments()
+                        .SelectMany(segment => segment.GetBasePoints())
+                        .Select(point => (
+                            X: (double)(a * point.GetX() + c * point.GetY() + e),
+                            Y: (double)(b * point.GetX() + d * point.GetY() + f)))
+                        .ToList();
+                    if (subpathPoints.Count == 0)
+                        continue;
+
+                    double subpathWidth = subpathPoints.Max(point => point.X) -
+                        subpathPoints.Min(point => point.X);
+                    double subpathHeight = subpathPoints.Max(point => point.Y) -
+                        subpathPoints.Min(point => point.Y);
+                    if (subpathWidth >= minimumRuleLength && subpathHeight <= maximumRuleThickness)
+                    {
+                        horizontalRuleCount++;
+                        longestHorizontalRule = Math.Max(longestHorizontalRule, subpathWidth);
+                    }
+                    else if (subpathHeight >= minimumRuleLength && subpathWidth <= maximumRuleThickness)
+                    {
+                        verticalRuleCount++;
+                        longestVerticalRule = Math.Max(longestVerticalRule, subpathHeight);
+                    }
+                }
                 var points = subpaths
                     .SelectMany(subpath => subpath.GetSegments())
                     .SelectMany(segment => segment.GetBasePoints())
@@ -2654,6 +2706,10 @@ namespace PDF_simple_edit.Helpers
                     Width = right - left,
                     Height = top - bottom,
                     ShapeCount = subpaths.Count,
+                    HorizontalRuleCount = horizontalRuleCount,
+                    VerticalRuleCount = verticalRuleCount,
+                    LongestHorizontalRule = longestHorizontalRule,
+                    LongestVerticalRule = longestVerticalRule,
                     Target = target ?? new PathOperationDescriptor(),
                     TextTarget = CurrentTarget
                 });
