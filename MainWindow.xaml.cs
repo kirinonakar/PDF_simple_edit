@@ -1166,6 +1166,7 @@ namespace PDF_simple_edit
                 _renderTempPath = null;
                 _preserveThumbnailsAfterPageReorder = true;
                 _pdfManager.MovePage(originalIndex, newIndex);
+                UpdateAnnotationPageIndicesAfterReorder(originalIndex, newIndex);
                 TxtStatus.Text = "페이지 순서가 변경되었습니다";
                 SyncPageListSelection();
             }
@@ -1196,6 +1197,15 @@ namespace PDF_simple_edit
             if (newIndex <= currentIndex && currentIndex < oldIndex)
                 return currentIndex + 1;
             return currentIndex;
+        }
+
+        private void UpdateAnnotationPageIndicesAfterReorder(int oldIndex, int newIndex)
+        {
+            foreach (PdfAnnotation annotation in _annotations)
+            {
+                annotation.PageIndex = GetReorderedPageIndex(
+                    annotation.PageIndex, oldIndex, newIndex);
+            }
         }
 
         private void UpdatePageThumbnailNumbers()
