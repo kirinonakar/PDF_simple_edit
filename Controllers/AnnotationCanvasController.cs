@@ -92,7 +92,22 @@ public sealed class AnnotationCanvasController
         _selectionController = new AnnotationSelectionController(_contentService);
     }
 
-    public PdfAnnotation? PrimarySelection { get; set; }
+    private PdfAnnotation? _primarySelection;
+
+    public event Action<PdfAnnotation?>? PrimarySelectionChanged;
+
+    public PdfAnnotation? PrimarySelection
+    {
+        get => _primarySelection;
+        set
+        {
+            if (ReferenceEquals(_primarySelection, value))
+                return;
+
+            _primarySelection = value;
+            PrimarySelectionChanged?.Invoke(value);
+        }
+    }
 
     public List<PdfAnnotation> SelectedAnnotations { get; } = new();
 
@@ -525,6 +540,9 @@ public sealed class AnnotationCanvasController
             return;
         }
 
+        // Editing a text object also makes it the primary selection so the
+        // toolbar can show the font metadata extracted from the PDF.
+        SelectOnly(annotation);
         _dispatcherQueue.TryEnqueue(() =>
             AddInlineTextBox(annotation.X, annotation.Y, annotation));
     }

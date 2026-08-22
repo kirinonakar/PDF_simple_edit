@@ -74,6 +74,7 @@ namespace PDF_simple_edit
         private readonly TextFontSettings _fontSettings = new();
         private string _signatureColor = "#000000";
         private double _signatureLineWidth = 2.0;
+        private bool _isSyncingFontControls;
 
 
         
@@ -182,6 +183,8 @@ namespace PDF_simple_edit
                             Content.Focus(FocusState.Programmatic);
                         }
                     });
+                _annotationCanvasController.PrimarySelectionChanged +=
+                    SyncFontControlsWithSelection;
                 _pageViewController = new PageViewController(
                     _pageRenderService,
                     PageListView,
@@ -494,39 +497,90 @@ namespace PDF_simple_edit
 
         private void ApplyFontSettingsToControls()
         {
-            if (CmbFontFamily != null)
-            {
-                var fontItem = CmbFontFamily.Items
-                    .OfType<ComboBoxItem>()
-                    .FirstOrDefault(item => string.Equals(
-                        item.Content?.ToString(),
-                        _fontSettings.FontFamily,
-                        StringComparison.Ordinal));
+            ApplyFontValuesToControls(
+                _fontSettings.FontFamily,
+                _fontSettings.FontSize,
+                _fontSettings.IsBold,
+                _fontSettings.IsItalic,
+                _fontSettings.Color);
+        }
 
-                if (fontItem != null && !ReferenceEquals(CmbFontFamily.SelectedItem, fontItem))
-                    CmbFontFamily.SelectedItem = fontItem;
+        private void SyncFontControlsWithSelection(PdfAnnotation? annotation)
+        {
+            if (annotation?.Type is AnnotationType.Text or AnnotationType.FreeText)
+            {
+                ApplyFontValuesToControls(
+                    annotation.FontFamily,
+                    annotation.FontSize,
+                    annotation.IsBold,
+                    annotation.IsItalic,
+                    annotation.Color);
+                return;
             }
 
-            if (CmbFontSize != null)
+            ApplyFontSettingsToControls();
+        }
+
+        private void ApplyFontValuesToControls(
+            string fontFamily,
+            double fontSize,
+            bool isBold,
+            bool isItalic,
+            string color)
+        {
+            _isSyncingFontControls = true;
+            try
             {
-                string sizeText = _fontSettings.FontSize.ToString("0.##", CultureInfo.InvariantCulture);
-                var sizeItem = CmbFontSize.Items
-                    .OfType<ComboBoxItem>()
-                    .FirstOrDefault(item => string.Equals(
-                        item.Content?.ToString(),
-                        sizeText,
-                        StringComparison.Ordinal));
+                if (CmbFontFamily != null && !string.IsNullOrWhiteSpace(fontFamily))
+                {
+                    ComboBoxItem? fontItem = CmbFontFamily.Items
+                        .OfType<ComboBoxItem>()
+                        .FirstOrDefault(item => string.Equals(
+                            item.Content?.ToString(),
+                            fontFamily,
+                            StringComparison.OrdinalIgnoreCase));
+                    if (fontItem == null)
+                    {
+                        fontItem = new ComboBoxItem { Content = fontFamily };
+                        CmbFontFamily.Items.Add(fontItem);
+                    }
 
-                if (sizeItem != null && !ReferenceEquals(CmbFontSize.SelectedItem, sizeItem))
-                    CmbFontSize.SelectedItem = sizeItem;
+                    if (!ReferenceEquals(CmbFontFamily.SelectedItem, fontItem))
+                        CmbFontFamily.SelectedItem = fontItem;
+                }
+
+                if (CmbFontSize != null && double.IsFinite(fontSize) && fontSize > 0)
+                {
+                    string sizeText = fontSize.ToString("0.##", CultureInfo.InvariantCulture);
+                    ComboBoxItem? sizeItem = CmbFontSize.Items
+                        .OfType<ComboBoxItem>()
+                        .FirstOrDefault(item => double.TryParse(
+                                item.Content?.ToString(),
+                                NumberStyles.Float,
+                                CultureInfo.InvariantCulture,
+                                out double itemSize) &&
+                            Math.Abs(itemSize - fontSize) < 0.005);
+                    if (sizeItem == null)
+                    {
+                        sizeItem = new ComboBoxItem { Content = sizeText };
+                        CmbFontSize.Items.Add(sizeItem);
+                    }
+
+                    if (!ReferenceEquals(CmbFontSize.SelectedItem, sizeItem))
+                        CmbFontSize.SelectedItem = sizeItem;
+                }
+
+                if (BtnBold != null)
+                    BtnBold.IsChecked = isBold;
+                if (BtnItalic != null)
+                    BtnItalic.IsChecked = isItalic;
+                if (FontColorIndicator != null)
+                    FontColorIndicator.Background = new SolidColorBrush(ParseColor(color));
             }
-
-            if (BtnBold != null)
-                BtnBold.IsChecked = _fontSettings.IsBold;
-            if (BtnItalic != null)
-                BtnItalic.IsChecked = _fontSettings.IsItalic;
-            if (FontColorIndicator != null)
-                FontColorIndicator.Background = new SolidColorBrush(ParseColor(_fontSettings.Color));
+            finally
+            {
+                _isSyncingFontControls = false;
+            }
         }
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
@@ -1869,6 +1923,9 @@ namespace PDF_simple_edit
 
         private async void FontFamily_Changed(object sender, SelectionChangedEventArgs e)
         {
+            if (_isSyncingFontControls)
+                return;
+
             if (CmbFontFamily.SelectedItem is ComboBoxItem item)
             {
                 string font = item.Content?.ToString() ?? "맑은 고딕";
@@ -1879,8 +1936,15 @@ namespace PDF_simple_edit
 
         private async void FontSize_Changed(object sender, SelectionChangedEventArgs e)
         {
-            if (CmbFontSize.SelectedItem is ComboBoxItem item && 
-                double.TryParse(item.Content?.ToString(), out double sizeVal))
+            if (_isSyncingFontControls)
+                return;
+
+            if (CmbFontSize.SelectedItem is ComboBoxItem item &&
+                double.TryParse(
+                    item.Content?.ToString(),
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out double sizeVal))
             {
                 await _annotationEditController.ApplyFontSizeAsync(sizeVal);
                 SaveWindowPosition();
