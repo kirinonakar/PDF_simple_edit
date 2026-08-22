@@ -39,7 +39,7 @@
             <ToggleButton x:Name="SelectButton" x:FieldModifier="public" ToolTipService.ToolTip="선택 (S)" IsEnabled="False" Padding="8,6">
                 <FontIcon Glyph="&#xEF20;" FontSize="16"/>
             </ToggleButton>
-            <ToggleButton x:Name="AddTextButton" x:FieldModifier="public" ToolTipService.ToolTip="텍스트 추가" IsEnabled="False" Padding="8,6">
+            <ToggleButton x:Name="AddTextButton" x:FieldModifier="public" ToolTipService.ToolTip="텍스트 추가 (A)" IsEnabled="False" Padding="8,6">
                 <FontIcon Glyph="&#xE8D2;" FontSize="16"/>
             </ToggleButton>
             <ToggleButton x:Name="HighlightButton" x:FieldModifier="public" ToolTipService.ToolTip="텍스트 강조" IsEnabled="False" Padding="8,6">
