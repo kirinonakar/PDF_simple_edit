@@ -14,9 +14,13 @@ using System.Globalization;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.Graphics.Imaging;
 using Windows.Storage.Pickers;
 using Windows.Storage;
+using Windows.Storage.Streams;
 using Microsoft.UI.Windowing;
 using Microsoft.UI;
 using WinRT.Interop;
@@ -25,6 +29,8 @@ namespace PDF_simple_edit
 {
     public sealed partial class MainWindow : Window
     {
+        private const string AnnotationClipboardFormat = "PDFSimpleEditor.Annotations.v1";
+
         private readonly ObservableCollection<PdfDocumentTab> _tabs = new();
         private PdfDocumentTab? _activeTab;
 
@@ -454,7 +460,8 @@ namespace PDF_simple_edit
             PdfSurface.AlignTopItem.Click += AlignTop_Click;
             PdfSurface.AlignBottomItem.Click += AlignBottom_Click;
             PdfSurface.AnnotationContextMenu.Opening += AnnotationContextMenu_Opening;
-            PdfSurface.CopyTextItem.Click += CopySelectedText_Click;
+            PdfSurface.CopyItem.Click += CopySelectedObjects_Click;
+            PdfSurface.PasteItem.Click += Paste_Click;
             PdfSurface.SaveImageItem.Click += SaveSelectedImage_Click;
             PdfSurface.DeleteItem.Click += DeleteAnnotation_Click;
 
@@ -1259,13 +1266,11 @@ namespace PDF_simple_edit
 
         private void AnnotationContextMenu_Opening(object? sender, object e)
         {
-            bool hasSelectedText = _annotationCanvasController.SelectedAnnotations.Any(annotation =>
-                annotation.Type is AnnotationType.Text or AnnotationType.FreeText &&
-                !string.IsNullOrWhiteSpace(annotation.Content));
-            PdfSurface.CopyTextItem.Visibility = hasSelectedText
+            bool hasCopyableSelection = GetCopyableSelection().Count > 0;
+            PdfSurface.CopyItem.Visibility = hasCopyableSelection
                 ? Visibility.Visible
                 : Visibility.Collapsed;
-            PdfSurface.CopyTextSeparator.Visibility = PdfSurface.CopyTextItem.Visibility;
+            PdfSurface.PasteItem.IsEnabled = CanPasteClipboardContent();
 
             PdfAnnotation? selectedImage = _annotationCanvasController.SelectedAnnotations.Count == 1
                 ? _annotationCanvasController.SelectedAnnotations[0]
@@ -1275,27 +1280,303 @@ namespace PDF_simple_edit
                 File.Exists(selectedImage.ImagePath);
         }
 
-        private void CopySelectedText_Click(object sender, RoutedEventArgs e)
+        private async void CopySelectedObjects_Click(object sender, RoutedEventArgs e) =>
+            await CopySelectedObjectsAsync();
+
+        private async Task<bool> CopySelectedObjectsAsync()
         {
-            string selectedText = string.Join(
-                Environment.NewLine,
-                _annotationCanvasController.SelectedAnnotations
-                    .Where(annotation =>
-                        annotation.Type is AnnotationType.Text or AnnotationType.FreeText &&
-                        !string.IsNullOrWhiteSpace(annotation.Content))
-                    .OrderBy(annotation => annotation.PageIndex)
-                    .ThenBy(annotation => annotation.Y)
-                    .ThenBy(annotation => annotation.X)
-                    .Select(annotation => annotation.Content));
-            if (selectedText.Length == 0)
+            List<PdfAnnotation> selectedObjects = GetCopyableSelection();
+            if (selectedObjects.Count == 0)
+                return false;
+
+            try
+            {
+                var dataPackage = new DataPackage
+                {
+                    RequestedOperation = DataPackageOperation.Copy
+                };
+                dataPackage.SetData(
+                    AnnotationClipboardFormat,
+                    JsonSerializer.Serialize(selectedObjects.Select(annotation => annotation.Clone())));
+
+                List<PdfAnnotation> selectedText = selectedObjects
+                    .Where(IsTextAnnotation)
+                    .ToList();
+                if (selectedText.Count > 0)
+                {
+                    dataPackage.SetText(string.Join(
+                        Environment.NewLine,
+                        selectedText.Select(annotation => annotation.Content)));
+                }
+
+                PdfAnnotation? selectedImage = selectedObjects.FirstOrDefault(annotation =>
+                    annotation.Type == AnnotationType.Image &&
+                    !string.IsNullOrWhiteSpace(annotation.ImagePath) &&
+                    File.Exists(annotation.ImagePath));
+                if (selectedImage?.ImagePath != null)
+                {
+                    StorageFile imageFile = await StorageFile.GetFileFromPathAsync(selectedImage.ImagePath);
+                    dataPackage.SetBitmap(RandomAccessStreamReference.CreateFromFile(imageFile));
+                }
+
+                Clipboard.SetContent(dataPackage);
+                Clipboard.Flush();
+                TxtStatus.Text = selectedObjects.Count > 1
+                    ? $"{selectedObjects.Count}개 객체를 클립보드에 복사했습니다."
+                    : selectedObjects[0].Type == AnnotationType.Image
+                        ? "이미지를 클립보드에 복사했습니다."
+                        : "텍스트를 클립보드에 복사했습니다.";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Clipboard copy error: {ex}");
+                TxtStatus.Text = "클립보드에 복사하지 못했습니다.";
+                return false;
+            }
+        }
+
+        private async void Paste_Click(object sender, RoutedEventArgs e) =>
+            await PasteClipboardContentAsync();
+
+        private async Task<bool> PasteClipboardContentAsync()
+        {
+            if (!_pdfManager.IsLoaded)
+                return false;
+
+            try
+            {
+                DataPackageView clipboardContent = Clipboard.GetContent();
+                if (clipboardContent.Contains(AnnotationClipboardFormat))
+                {
+                    object data = await clipboardContent.GetDataAsync(AnnotationClipboardFormat);
+                    if (data is string json)
+                    {
+                        List<PdfAnnotation>? annotations =
+                            JsonSerializer.Deserialize<List<PdfAnnotation>>(json);
+                        if (annotations != null && PasteAnnotationObjects(annotations))
+                            return true;
+                    }
+                }
+
+                if (clipboardContent.Contains(StandardDataFormats.Bitmap))
+                {
+                    RandomAccessStreamReference bitmapReference =
+                        await clipboardContent.GetBitmapAsync();
+                    ClipboardImageData image = await SaveClipboardImageAsync(bitmapReference);
+                    AddPastedAnnotations(new[] { CreateImageAnnotation(image) });
+                    TxtStatus.Text = "이미지를 새 객체로 붙여넣었습니다.";
+                    return true;
+                }
+
+                if (clipboardContent.Contains(StandardDataFormats.Text))
+                {
+                    string text = await clipboardContent.GetTextAsync();
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        AddPastedAnnotations(new[] { CreateTextAnnotation(text) });
+                        TxtStatus.Text = "텍스트를 새 객체로 붙여넣었습니다.";
+                        return true;
+                    }
+                }
+
+                TxtStatus.Text = "붙여넣을 수 있는 텍스트나 이미지가 없습니다.";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Clipboard paste error: {ex}");
+                TxtStatus.Text = "클립보드 내용을 붙여넣지 못했습니다.";
+                return false;
+            }
+        }
+
+        private List<PdfAnnotation> GetCopyableSelection() =>
+            _annotationCanvasController.SelectedAnnotations
+                .Where(annotation =>
+                    IsTextAnnotation(annotation)
+                        ? !string.IsNullOrWhiteSpace(annotation.Content)
+                        : annotation.Type == AnnotationType.Image &&
+                          !string.IsNullOrWhiteSpace(annotation.ImagePath) &&
+                          File.Exists(annotation.ImagePath))
+                .OrderBy(annotation => annotation.PageIndex)
+                .ThenBy(annotation => annotation.Y)
+                .ThenBy(annotation => annotation.X)
+                .ToList();
+
+        private static bool IsTextAnnotation(PdfAnnotation annotation) =>
+            annotation.Type is AnnotationType.Text or AnnotationType.FreeText;
+
+        private static bool CanPasteClipboardContent()
+        {
+            try
+            {
+                DataPackageView content = Clipboard.GetContent();
+                return content.Contains(AnnotationClipboardFormat) ||
+                    content.Contains(StandardDataFormats.Text) ||
+                    content.Contains(StandardDataFormats.Bitmap);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool PasteAnnotationObjects(IEnumerable<PdfAnnotation> sourceAnnotations)
+        {
+            (double pageWidth, double pageHeight) = _pdfManager.GetPageSize(_currentPageIndex);
+            var pasted = new List<PdfAnnotation>();
+            foreach (PdfAnnotation source in sourceAnnotations.Where(annotation =>
+                IsTextAnnotation(annotation) || annotation.Type == AnnotationType.Image))
+            {
+                if (source.Type == AnnotationType.Image &&
+                    (string.IsNullOrWhiteSpace(source.ImagePath) || !File.Exists(source.ImagePath)))
+                {
+                    continue;
+                }
+
+                PdfAnnotation annotation = source.Clone();
+                PreparePastedAnnotation(annotation);
+                annotation.X = Math.Clamp(
+                    source.X + 12,
+                    0,
+                    Math.Max(pageWidth - Math.Max(annotation.Width, 1), 0));
+                annotation.Y = Math.Clamp(
+                    source.Y + 12,
+                    0,
+                    Math.Max(pageHeight - Math.Max(annotation.Height, 1), 0));
+                pasted.Add(annotation);
+            }
+
+            if (pasted.Count == 0)
+                return false;
+
+            AddPastedAnnotations(pasted);
+            TxtStatus.Text = pasted.Count > 1
+                ? $"{pasted.Count}개 객체를 붙여넣었습니다."
+                : pasted[0].Type == AnnotationType.Image
+                    ? "이미지를 새 객체로 붙여넣었습니다."
+                    : "텍스트를 새 객체로 붙여넣었습니다.";
+            return true;
+        }
+
+        private void PreparePastedAnnotation(PdfAnnotation annotation)
+        {
+            annotation.Id = Guid.NewGuid().ToString();
+            annotation.PageIndex = _currentPageIndex;
+            annotation.CreatedAt = DateTime.Now;
+            annotation.IsApplied = false;
+            annotation.IsOriginalTextReplacement = false;
+            annotation.IsOriginalImageReplacement = false;
+            annotation.OriginalPdfX = 0;
+            annotation.OriginalPdfY = 0;
+            annotation.OriginalText = string.Empty;
+            annotation.OriginalImageName = null;
+            annotation.OperatorId = null;
+            annotation.ContentStreamIndex = -1;
+            annotation.ContentStreamObjectNumber = -1;
+            annotation.OperationIndex = -1;
+            annotation.OriginalFontObjectNumber = -1;
+            annotation.GraphicOperationIndexes.Clear();
+            annotation.GraphicTextOperationIndexes.Clear();
+            annotation.GraphicOperations.Clear();
+            if (IsTextAnnotation(annotation))
+                annotation.TextFragments.Clear();
+        }
+
+        private PdfAnnotation CreateTextAnnotation(string text)
+        {
+            (double pageWidth, double pageHeight) = _pdfManager.GetPageSize(_currentPageIndex);
+            (double width, double height) = AnnotationTextLayoutService.MeasureBounds(
+                text,
+                _fontSettings.FontFamily,
+                _fontSettings.FontSize,
+                _fontSettings.IsBold,
+                _fontSettings.IsItalic,
+                _fontSettings.IsBold ? 700 : 400);
+            return new PdfAnnotation
+            {
+                Type = AnnotationType.Text,
+                PageIndex = _currentPageIndex,
+                X = Math.Max((pageWidth - width) / 2, 0),
+                Y = Math.Max((pageHeight - height) / 2, 0),
+                Width = Math.Max(width, 1),
+                Height = Math.Max(height, 1),
+                Content = text,
+                FontFamily = _fontSettings.FontFamily,
+                FontSize = _fontSettings.FontSize,
+                Color = _fontSettings.Color,
+                FontWeight = _fontSettings.IsBold ? 700 : 400,
+                IsBold = _fontSettings.IsBold,
+                IsItalic = _fontSettings.IsItalic,
+                IsApplied = false
+            };
+        }
+
+        private PdfAnnotation CreateImageAnnotation(ClipboardImageData image)
+        {
+            (double pageWidth, double pageHeight) = _pdfManager.GetPageSize(_currentPageIndex);
+            (double width, double height) = CalculateInitialImageSize(
+                image.PixelWidth,
+                image.PixelHeight,
+                pageWidth,
+                pageHeight);
+            return new PdfAnnotation
+            {
+                Type = AnnotationType.Image,
+                PageIndex = _currentPageIndex,
+                X = Math.Max((pageWidth - width) / 2, 0),
+                Y = Math.Max((pageHeight - height) / 2, 0),
+                Width = width,
+                Height = height,
+                ImagePath = image.Path,
+                IsApplied = false
+            };
+        }
+
+        private static async Task<ClipboardImageData> SaveClipboardImageAsync(
+            RandomAccessStreamReference bitmapReference)
+        {
+            using IRandomAccessStreamWithContentType sourceStream =
+                await bitmapReference.OpenReadAsync();
+            BitmapDecoder decoder = await BitmapDecoder.CreateAsync(sourceStream);
+
+            StorageFolder tempFolder = await StorageFolder.GetFolderFromPathAsync(Path.GetTempPath());
+            StorageFolder appFolder = await tempFolder.CreateFolderAsync(
+                "PDF_simple_edit",
+                CreationCollisionOption.OpenIfExists);
+            StorageFolder clipboardFolder = await appFolder.CreateFolderAsync(
+                "clipboard",
+                CreationCollisionOption.OpenIfExists);
+            StorageFile imageFile = await clipboardFolder.CreateFileAsync(
+                $"clipboard_{Guid.NewGuid():N}.png",
+                CreationCollisionOption.GenerateUniqueName);
+
+            using IRandomAccessStream outputStream = await imageFile.OpenAsync(FileAccessMode.ReadWrite);
+            BitmapEncoder encoder = await BitmapEncoder.CreateForTranscodingAsync(
+                outputStream,
+                decoder);
+            await encoder.FlushAsync();
+            return new ClipboardImageData(imageFile.Path, decoder.PixelWidth, decoder.PixelHeight);
+        }
+
+        private void AddPastedAnnotations(IEnumerable<PdfAnnotation> annotations)
+        {
+            List<PdfAnnotation> pasted = annotations.ToList();
+            if (pasted.Count == 0)
                 return;
 
-            var dataPackage = new Windows.ApplicationModel.DataTransfer.DataPackage();
-            dataPackage.SetText(selectedText);
-            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dataPackage);
-            Windows.ApplicationModel.DataTransfer.Clipboard.Flush();
-            TxtStatus.Text = "선택한 텍스트를 클립보드에 복사했습니다.";
+            SetToolMode(EditToolMode.Select);
+            _annotations.AddRange(pasted);
+            _annotationCanvasController.ClearSelection();
+            foreach (PdfAnnotation annotation in pasted)
+                _annotationCanvasController.SelectedAnnotations.Add(annotation);
+            _annotationCanvasController.PrimarySelection = pasted[^1];
+            _pdfManager.MarkModified();
+            RenderAnnotationOverlays();
         }
+
+        private sealed record ClipboardImageData(string Path, uint PixelWidth, uint PixelHeight);
 
         private async void SaveSelectedImage_Click(object sender, RoutedEventArgs e)
         {
@@ -1496,6 +1777,31 @@ namespace PDF_simple_edit
                         await _annotationCanvasController.FinishActiveInlineEditAsync();
                 }
                 return;
+            }
+
+            bool controlDown = _controlKeyIsDown || KeyboardStateService.IsControlDown();
+            object? focusedElement = Content.XamlRoot == null
+                ? null
+                : FocusManager.GetFocusedElement(Content.XamlRoot);
+            bool textInputFocused = focusedElement is TextBox or RichEditBox or
+                NumberBox or ComboBox;
+            if (controlDown && !textInputFocused &&
+                !_annotationCanvasController.IsInlineEditing)
+            {
+                if (e.Key == Windows.System.VirtualKey.C &&
+                    GetCopyableSelection().Count > 0)
+                {
+                    e.Handled = true;
+                    await CopySelectedObjectsAsync();
+                    return;
+                }
+
+                if (e.Key == Windows.System.VirtualKey.V && _pdfManager.IsLoaded)
+                {
+                    e.Handled = true;
+                    await PasteClipboardContentAsync();
+                    return;
+                }
             }
 
             if (e.Key == Windows.System.VirtualKey.Delete &&
