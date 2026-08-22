@@ -12,6 +12,8 @@ public static class InstalledFontService
 
     private static readonly (string Family, string[] FileNames)[] SupportedNotoFamilies =
     {
+        ("Noto Sans CJK KR", new[] { "NotoSansCJKkr-Regular.otf", "NotoSansCJKkr-Regular.ttf" }),
+        ("Noto Serif CJK KR", new[] { "NotoSerifCJKkr-Regular.otf", "NotoSerifCJKkr-Regular.ttf" }),
         ("Noto Sans KR", new[] { "NotoSansKR-VF.ttf", "NotoSansKR-Regular.ttf" }),
         ("Noto Serif KR", new[] { "NotoSerifKR-VF.ttf", "NotoSerifKR-Regular.ttf" }),
         ("Noto Sans", new[] { "NotoSans-Regular.ttf" }),

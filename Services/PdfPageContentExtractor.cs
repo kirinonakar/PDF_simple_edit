@@ -265,8 +265,13 @@ namespace PDF_simple_edit.Services
             if (lowerFont.Contains("batang")) return "바탕";
             if (lowerFont.Contains("gungsuh")) return "궁서";
             if (lowerFont.Contains("nanumgothic")) return "나눔고딕";
-            if (lowerFont.Contains("notosanscjkkr") || lowerFont.Contains("notosanskr")) return "Noto Sans KR";
-            if (lowerFont.Contains("notoserifcjkkr") || lowerFont.Contains("notoserifkr")) return "Noto Serif KR";
+            // Keep the legacy CJK family distinct from the newer language-specific
+            // Noto family. They are compatible fallbacks, but they are not the same
+            // font build and can have visibly different Latin and Korean glyphs.
+            if (lowerFont.Contains("notosanscjkkr")) return "Noto Sans CJK KR";
+            if (lowerFont.Contains("notoserifcjkkr")) return "Noto Serif CJK KR";
+            if (lowerFont.Contains("notosanskr")) return "Noto Sans KR";
+            if (lowerFont.Contains("notoserifkr")) return "Noto Serif KR";
             if (lowerFont.Contains("cambriamath")) return "Cambria Math";
             if (lowerFont.Contains("cambria")) return "Cambria";
             if (lowerFont.Contains("arial")) return "Arial";

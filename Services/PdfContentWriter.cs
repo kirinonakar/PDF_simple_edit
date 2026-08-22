@@ -682,6 +682,18 @@ namespace PDF_simple_edit.Services
             string notoSerifKrExtraBold = containsNonLatin
                 ? "NotoSerifKR-ExtraBold.ttf|NanumMyeongjoExtraBold.ttf|NanumMyeongjoBold.ttf|NotoSerif-Bold.ttf|NotoSerifKR-Regular.ttf"
                 : "NotoSerifKR-ExtraBold.ttf|NotoSerif-Bold.ttf|NanumMyeongjoExtraBold.ttf|NanumMyeongjoBold.ttf|NotoSerifKR-Regular.ttf";
+            string notoSansCjkKrRegular =
+                $"NotoSansCJKkr-Regular.otf|NotoSansCJKkr-Regular.ttf|{notoSansKrRegular}";
+            string notoSansCjkKrBold =
+                $"NotoSansCJKkr-Bold.otf|NotoSansCJKkr-Bold.ttf|{notoSansKrBold}";
+            string notoSansCjkKrExtraBold =
+                $"NotoSansCJKkr-Black.otf|NotoSansCJKkr-Black.ttf|{notoSansKrExtraBold}";
+            string notoSerifCjkKrRegular =
+                $"NotoSerifCJKkr-Regular.otf|NotoSerifCJKkr-Regular.ttf|{notoSerifKrRegular}";
+            string notoSerifCjkKrBold =
+                $"NotoSerifCJKkr-Bold.otf|NotoSerifCJKkr-Bold.ttf|{notoSerifKrBold}";
+            string notoSerifCjkKrExtraBold =
+                $"NotoSerifCJKkr-Black.otf|NotoSerifCJKkr-Black.ttf|{notoSerifKrExtraBold}";
 
             // 핵심: 굴림/돋움은 gulim.ttc에, 바탕/궁서는 batang.ttc에 묶여 있습니다. 인덱스를 지정해야 합니다.
             var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -707,6 +719,16 @@ namespace PDF_simple_edit.Services
                     : fontWeight >= 600
                         ? notoSerifKrBold
                         : notoSerifKrRegular },
+                { "Noto Sans CJK KR", fontWeight >= 800
+                    ? notoSansCjkKrExtraBold
+                    : fontWeight >= 600
+                        ? notoSansCjkKrBold
+                        : notoSansCjkKrRegular },
+                { "Noto Serif CJK KR", fontWeight >= 800
+                    ? notoSerifCjkKrExtraBold
+                    : fontWeight >= 600
+                        ? notoSerifCjkKrBold
+                        : notoSerifCjkKrRegular },
                 { "Noto Sans", SelectFace("NotoSans-Regular.ttf", "NotoSans-Bold.ttf") },
                 { "Noto Serif", SelectFace("NotoSerif-Regular.ttf", "NotoSerif-Bold.ttf") },
                 { "Noto Sans JP", "NotoSansJP-VF.ttf" },
