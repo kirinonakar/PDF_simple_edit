@@ -45,6 +45,7 @@ public sealed class InlineTextEditorController
     private Action<string>? _setStatus;
     private Action<PdfAnnotation>? _annotationRemoved;
     private Action<bool>? _restoreFocus;
+    private Task? _finishingTask;
 
     public bool IsEditing { get; private set; }
 
@@ -180,7 +181,7 @@ public sealed class InlineTextEditorController
                 (!editor.AcceptsReturn || KeyboardStateService.IsControlDown()))
             {
                 args.Handled = true;
-                await ApplyAsync(editor);
+                await StartApplyAsync(editor);
             }
             else if (args.Key == Windows.System.VirtualKey.Escape)
             {
@@ -188,17 +189,41 @@ public sealed class InlineTextEditorController
                 await CancelAsync(editor);
             }
         };
-        editor.LostFocus += async (_, _) => await ApplyAsync(editor);
+        editor.LostFocus += async (_, _) => await StartApplyAsync(editor);
         canvas.Children.Add(editor);
         _activeEditor = editor;
         _renderOverlays?.Invoke();
         return true;
     }
 
-    public async Task FinishActiveEditAsync()
+    public Task FinishActiveEditAsync()
     {
         if (_activeEditor != null)
-            await ApplyAsync(_activeEditor);
+            return StartApplyAsync(_activeEditor);
+
+        return _finishingTask ?? Task.CompletedTask;
+    }
+
+    private Task StartApplyAsync(RichEditBox editor)
+    {
+        if (_finishingTask is { IsCompleted: false })
+            return _finishingTask;
+
+        Task task = ApplyAsync(editor);
+        _finishingTask = AwaitAndClearFinishingTaskAsync(task);
+        return _finishingTask;
+    }
+
+    private async Task AwaitAndClearFinishingTaskAsync(Task task)
+    {
+        try
+        {
+            await task;
+        }
+        finally
+        {
+            _finishingTask = null;
+        }
     }
 
     private async void InlineEditor_TextChanged(object sender, RoutedEventArgs e)

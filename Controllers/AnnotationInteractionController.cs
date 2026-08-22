@@ -33,10 +33,12 @@ public sealed class AnnotationInteractionController
 {
     private const double PdfToPixels = 96.0 / 72.0;
     private readonly Dictionary<PdfAnnotation, Point> _moveStartPositions = new();
+    private readonly Dictionary<PdfAnnotation, bool> _moveStartAppliedStates = new();
     private bool _hasMoved;
     private string? _resizeHandle;
     private PdfAnnotation? _resizeAnnotation;
     private (double X, double Y, double Width, double Height)? _resizeStartBounds;
+    private bool _resizeWasApplied;
     private Point _lastPointerPosition;
     private Point _highlightStart;
     private Microsoft.UI.Xaml.Shapes.Rectangle? _highlightRectangle;
@@ -50,6 +52,7 @@ public sealed class AnnotationInteractionController
         IsResizing = true;
         _resizeAnnotation = annotation;
         _resizeStartBounds = (annotation.X, annotation.Y, annotation.Width, annotation.Height);
+        _resizeWasApplied = annotation.IsApplied;
         _resizeHandle = direction;
         _lastPointerPosition = position;
     }
@@ -59,8 +62,12 @@ public sealed class AnnotationInteractionController
         IsMoving = true;
         _hasMoved = false;
         _moveStartPositions.Clear();
+        _moveStartAppliedStates.Clear();
         foreach (PdfAnnotation annotation in annotations)
+        {
             _moveStartPositions[annotation] = new Point(annotation.X, annotation.Y);
+            _moveStartAppliedStates[annotation] = annotation.IsApplied;
+        }
         _lastPointerPosition = position;
     }
 
@@ -76,11 +83,14 @@ public sealed class AnnotationInteractionController
             annotation.X = position.X;
             annotation.Y = position.Y;
             ShiftSignaturePoints(annotation, dx, dy);
+            if (_moveStartAppliedStates.TryGetValue(annotation, out bool wasApplied))
+                annotation.IsApplied = wasApplied;
         }
 
         IsMoving = false;
         _hasMoved = false;
         _moveStartPositions.Clear();
+        _moveStartAppliedStates.Clear();
         return true;
     }
 
@@ -143,7 +153,7 @@ public sealed class AnnotationInteractionController
 
         PdfAnnotation? annotation = _resizeAnnotation;
         _resizeAnnotation = null;
-        if (annotation?.IsApplied == true &&
+        if (annotation != null && _resizeWasApplied &&
             annotation.Type is AnnotationType.Text or AnnotationType.FreeText &&
             _resizeStartBounds is { } savedBounds &&
             !await manager.RemoveAppliedTextAnnotationAsync(
@@ -158,10 +168,12 @@ public sealed class AnnotationInteractionController
             annotation.Y = savedBounds.Y;
             annotation.Width = savedBounds.Width;
             annotation.Height = savedBounds.Height;
+            annotation.IsApplied = true;
             _resizeStartBounds = null;
+            _resizeWasApplied = false;
             return AnnotationResizeResult.OriginalTextRemovalFailed;
         }
-        if (annotation?.IsApplied == true &&
+        if (annotation != null && _resizeWasApplied &&
             annotation.Type is AnnotationType.Text or AnnotationType.FreeText)
         {
             annotation.IsApplied = false;
@@ -187,6 +199,7 @@ public sealed class AnnotationInteractionController
         }
 
         _resizeStartBounds = null;
+        _resizeWasApplied = false;
         return AnnotationResizeResult.Completed;
     }
 
@@ -201,11 +214,14 @@ public sealed class AnnotationInteractionController
         if (!_hasMoved)
         {
             _moveStartPositions.Clear();
+            _moveStartAppliedStates.Clear();
             return AnnotationMoveResult.NotMoved;
         }
 
         var appliedText = selectedAnnotations
-            .Where(annotation => annotation.IsApplied &&
+            .Where(annotation =>
+                _moveStartAppliedStates.TryGetValue(annotation, out bool wasApplied) &&
+                wasApplied &&
                 annotation.Type is AnnotationType.Text or AnnotationType.FreeText)
             .ToList();
         var originalText = selectedAnnotations
@@ -257,6 +273,7 @@ public sealed class AnnotationInteractionController
         foreach (PdfAnnotation annotation in originalImages)
             annotation.IsOriginalImageReplacement = false;
         _moveStartPositions.Clear();
+        _moveStartAppliedStates.Clear();
         return AnnotationMoveResult.Completed;
     }
 
@@ -269,8 +286,11 @@ public sealed class AnnotationInteractionController
             annotation.X = position.X;
             annotation.Y = position.Y;
             ShiftSignaturePoints(annotation, dx, dy);
+            if (_moveStartAppliedStates.TryGetValue(annotation, out bool wasApplied))
+                annotation.IsApplied = wasApplied;
         }
         _moveStartPositions.Clear();
+        _moveStartAppliedStates.Clear();
     }
 
     public PdfAnnotation? CompleteHighlight(
@@ -343,6 +363,9 @@ public sealed class AnnotationInteractionController
                 ResizeCorner(annotation, dx, dy, moveLeft: false, moveTop: false, minimumSize: minimumSize);
                 break;
         }
+        // The original applied state is kept separately until completion so the
+        // pointer preview can render at its temporary bounds without losing the
+        // information needed to remove the baked PDF text.
         annotation.IsApplied = false;
         _lastPointerPosition = position;
     }
@@ -502,6 +525,9 @@ public sealed class AnnotationInteractionController
             annotation.X += dx;
             annotation.Y += dy;
             ShiftSignaturePoints(annotation, dx, dy);
+            // The original applied state is tracked in _moveStartAppliedStates.
+            // Clearing the display flag here keeps the drag preview responsive;
+            // completion still knows which baked PDF text must be removed.
             annotation.IsApplied = false;
         }
         _lastPointerPosition = position;

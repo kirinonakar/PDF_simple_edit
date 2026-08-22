@@ -162,12 +162,15 @@ public sealed class AnnotationContentService
         };
     }
 
-    public string BuildEditableText(PdfAnnotation annotation) => BuildEditableText(new PdfPageContent
+    public string BuildEditableText(PdfAnnotation annotation)
     {
-        Text = annotation.Content,
-        FontSize = annotation.FontSize,
-        TextFragments = annotation.TextFragments
-    });
+        // Content becomes the source of truth as soon as the user edits an
+        // annotation. TextFragments still describe the original/saved PDF
+        // operations and can therefore omit newly typed characters such as '!'.
+        // Rebuilding from those stale fragments on the next edit would silently
+        // revert the editor text even though the change was already committed.
+        return NormalizeLineEndings(annotation.Content ?? string.Empty);
+    }
 
     private static PdfPageContent Clone(PdfPageContent source) => new()
     {

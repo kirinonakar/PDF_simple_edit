@@ -2214,9 +2214,9 @@ namespace PDF_simple_edit
 
             try
             {
-                // 저장 버튼을 누르는 순간 아직 인라인 편집 중인 텍스트도 먼저 확정합니다.
-                if (_annotationCanvasController.IsInlineEditing)
-                    await _annotationCanvasController.FinishActiveInlineEditAsync();
+                // LostFocus에서 시작된 비동기 확정도 끝까지 기다려야 마지막 입력
+                // (특히 IME 입력 직후의 문장부호)이 저장에서 빠지지 않습니다.
+                await _annotationCanvasController.FinishActiveInlineEditAsync();
 
                 await _pdfSaveService.SaveAsync(
                     _pdfManager,

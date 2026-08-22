@@ -321,11 +321,18 @@ namespace PDF_simple_edit.Services
                     if (char.IsControl(character) || char.IsWhiteSpace(character))
                         continue;
 
-                    // A character already present in the source line is known to
-                    // have an encoding in a subset font, even when ContainsGlyph
-                    // incorrectly reports false for that PDF wrapper.
-                    if (originalLine?.IndexOf(character) >= 0)
-                        continue;
+                    if (originalLine != null)
+                    {
+                        // A source PDF font dictionary is often subset-encoded.
+                        // ContainsGlyph can still report true for a newly typed
+                        // punctuation mark even though ConvertToBytes cannot emit
+                        // it. Use the original wrapper for a whole edited line only
+                        // when every character was already encoded by the source.
+                        if (originalLine.IndexOf(character) >= 0)
+                            continue;
+
+                        return false;
+                    }
 
                     try
                     {
