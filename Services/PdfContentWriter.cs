@@ -663,37 +663,46 @@ namespace PDF_simple_edit.Services
                 return regular;
             }
 
-            bool containsNonLatin = sampleText?.Any(character => character > 0x02FF) == true;
-            string notoSansKrRegular = containsNonLatin
-                ? "NotoSansKR-Regular.ttf|NotoSans-Regular.ttf"
-                : "NotoSans-Regular.ttf|NotoSansKR-Regular.ttf";
-            string notoSansKrBold = containsNonLatin
-                ? "NotoSansKR-Bold.ttf|NanumGothicBold.ttf|NotoSans-Bold.ttf|NotoSansKR-Regular.ttf"
-                : "NotoSansKR-Bold.ttf|NotoSans-Bold.ttf|NanumGothicBold.ttf|NotoSansKR-Regular.ttf";
-            string notoSansKrExtraBold = containsNonLatin
-                ? "NotoSansKR-ExtraBold.ttf|NanumGothicExtraBold.ttf|NanumGothicBold.ttf|NotoSans-Bold.ttf|NotoSansKR-Regular.ttf"
-                : "NotoSansKR-ExtraBold.ttf|NotoSans-Bold.ttf|NanumGothicExtraBold.ttf|NanumGothicBold.ttf|NotoSansKR-Regular.ttf";
-            string notoSerifKrRegular = containsNonLatin
-                ? "NotoSerifKR-Regular.ttf|NotoSerif-Regular.ttf"
-                : "NotoSerif-Regular.ttf|NotoSerifKR-Regular.ttf";
-            string notoSerifKrBold = containsNonLatin
-                ? "NotoSerifKR-Bold.ttf|NanumMyeongjoBold.ttf|NotoSerif-Bold.ttf|NotoSerifKR-Regular.ttf"
-                : "NotoSerifKR-Bold.ttf|NotoSerif-Bold.ttf|NanumMyeongjoBold.ttf|NotoSerifKR-Regular.ttf";
-            string notoSerifKrExtraBold = containsNonLatin
-                ? "NotoSerifKR-ExtraBold.ttf|NanumMyeongjoExtraBold.ttf|NanumMyeongjoBold.ttf|NotoSerif-Bold.ttf|NotoSerifKR-Regular.ttf"
-                : "NotoSerifKR-ExtraBold.ttf|NotoSerif-Bold.ttf|NanumMyeongjoExtraBold.ttf|NanumMyeongjoBold.ttf|NotoSerifKR-Regular.ttf";
+            string SelectNotoKrFace(string stem, string variableFile)
+            {
+                var faces = new (string Suffix, int Weight)[]
+                {
+                    ("Thin", 100),
+                    ("ExtraLight", 200),
+                    ("Light", 300),
+                    ("Regular", 400),
+                    ("Medium", 500),
+                    ("SemiBold", 600),
+                    ("Bold", 700),
+                    ("ExtraBold", 800),
+                    ("Black", 900)
+                };
+
+                // Only use files from the selected KR family. The previous list
+                // silently substituted Noto Sans, Nanum Gothic, or Nanum Myeongjo
+                // depending on the text and weight, so the saved PDF no longer
+                // matched the Noto Sans/Serif KR preview in the editor.
+                IEnumerable<string> staticFaces = faces
+                    .OrderBy(face => Math.Abs(fontWeight - face.Weight))
+                    .ThenBy(face => face.Weight == 400 ? 0 : 1)
+                    .Select(face => $"{stem}-{face.Suffix}.ttf");
+                return string.Join('|', staticFaces.Append(variableFile));
+            }
+
+            string notoSansKr = SelectNotoKrFace("NotoSansKR", "NotoSansKR-VF.ttf");
+            string notoSerifKr = SelectNotoKrFace("NotoSerifKR", "NotoSerifKR-VF.ttf");
             string notoSansCjkKrRegular =
-                $"NotoSansCJKkr-Regular.otf|NotoSansCJKkr-Regular.ttf|{notoSansKrRegular}";
+                $"NotoSansCJKkr-Regular.otf|NotoSansCJKkr-Regular.ttf|{notoSansKr}";
             string notoSansCjkKrBold =
-                $"NotoSansCJKkr-Bold.otf|NotoSansCJKkr-Bold.ttf|{notoSansKrBold}";
+                $"NotoSansCJKkr-Bold.otf|NotoSansCJKkr-Bold.ttf|{notoSansKr}";
             string notoSansCjkKrExtraBold =
-                $"NotoSansCJKkr-Black.otf|NotoSansCJKkr-Black.ttf|{notoSansKrExtraBold}";
+                $"NotoSansCJKkr-Black.otf|NotoSansCJKkr-Black.ttf|{notoSansKr}";
             string notoSerifCjkKrRegular =
-                $"NotoSerifCJKkr-Regular.otf|NotoSerifCJKkr-Regular.ttf|{notoSerifKrRegular}";
+                $"NotoSerifCJKkr-Regular.otf|NotoSerifCJKkr-Regular.ttf|{notoSerifKr}";
             string notoSerifCjkKrBold =
-                $"NotoSerifCJKkr-Bold.otf|NotoSerifCJKkr-Bold.ttf|{notoSerifKrBold}";
+                $"NotoSerifCJKkr-Bold.otf|NotoSerifCJKkr-Bold.ttf|{notoSerifKr}";
             string notoSerifCjkKrExtraBold =
-                $"NotoSerifCJKkr-Black.otf|NotoSerifCJKkr-Black.ttf|{notoSerifKrExtraBold}";
+                $"NotoSerifCJKkr-Black.otf|NotoSerifCJKkr-Black.ttf|{notoSerifKr}";
 
             // 핵심: 굴림/돋움은 gulim.ttc에, 바탕/궁서는 batang.ttc에 묶여 있습니다. 인덱스를 지정해야 합니다.
             var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -709,16 +718,8 @@ namespace PDF_simple_edit.Services
                 { "궁서", "batang.ttc,2" },
                 { "궁서체", "batang.ttc,3" },
                 { "나눔고딕", SelectFace("NanumGothic.ttf", "NanumGothicBold.ttf", extraBold: "NanumGothicExtraBold.ttf") },
-                { "Noto Sans KR", fontWeight >= 800
-                    ? notoSansKrExtraBold
-                    : fontWeight >= 600
-                        ? notoSansKrBold
-                        : notoSansKrRegular },
-                { "Noto Serif KR", fontWeight >= 800
-                    ? notoSerifKrExtraBold
-                    : fontWeight >= 600
-                        ? notoSerifKrBold
-                        : notoSerifKrRegular },
+                { "Noto Sans KR", notoSansKr },
+                { "Noto Serif KR", notoSerifKr },
                 { "Noto Sans CJK KR", fontWeight >= 800
                     ? notoSansCjkKrExtraBold
                     : fontWeight >= 600
