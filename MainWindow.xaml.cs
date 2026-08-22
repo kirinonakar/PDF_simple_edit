@@ -454,6 +454,7 @@ namespace PDF_simple_edit
             PdfSurface.AlignTopItem.Click += AlignTop_Click;
             PdfSurface.AlignBottomItem.Click += AlignBottom_Click;
             PdfSurface.AnnotationContextMenu.Opening += AnnotationContextMenu_Opening;
+            PdfSurface.CopyTextItem.Click += CopySelectedText_Click;
             PdfSurface.SaveImageItem.Click += SaveSelectedImage_Click;
             PdfSurface.DeleteItem.Click += DeleteAnnotation_Click;
 
@@ -1258,12 +1259,42 @@ namespace PDF_simple_edit
 
         private void AnnotationContextMenu_Opening(object? sender, object e)
         {
+            bool hasSelectedText = _annotationCanvasController.SelectedAnnotations.Any(annotation =>
+                annotation.Type is AnnotationType.Text or AnnotationType.FreeText &&
+                !string.IsNullOrWhiteSpace(annotation.Content));
+            PdfSurface.CopyTextItem.Visibility = hasSelectedText
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            PdfSurface.CopyTextSeparator.Visibility = PdfSurface.CopyTextItem.Visibility;
+
             PdfAnnotation? selectedImage = _annotationCanvasController.SelectedAnnotations.Count == 1
                 ? _annotationCanvasController.SelectedAnnotations[0]
                 : null;
             PdfSurface.SaveImageItem.IsEnabled = selectedImage?.Type == AnnotationType.Image &&
                 !string.IsNullOrWhiteSpace(selectedImage.ImagePath) &&
                 File.Exists(selectedImage.ImagePath);
+        }
+
+        private void CopySelectedText_Click(object sender, RoutedEventArgs e)
+        {
+            string selectedText = string.Join(
+                Environment.NewLine,
+                _annotationCanvasController.SelectedAnnotations
+                    .Where(annotation =>
+                        annotation.Type is AnnotationType.Text or AnnotationType.FreeText &&
+                        !string.IsNullOrWhiteSpace(annotation.Content))
+                    .OrderBy(annotation => annotation.PageIndex)
+                    .ThenBy(annotation => annotation.Y)
+                    .ThenBy(annotation => annotation.X)
+                    .Select(annotation => annotation.Content));
+            if (selectedText.Length == 0)
+                return;
+
+            var dataPackage = new Windows.ApplicationModel.DataTransfer.DataPackage();
+            dataPackage.SetText(selectedText);
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dataPackage);
+            Windows.ApplicationModel.DataTransfer.Clipboard.Flush();
+            TxtStatus.Text = "선택한 텍스트를 클립보드에 복사했습니다.";
         }
 
         private async void SaveSelectedImage_Click(object sender, RoutedEventArgs e)

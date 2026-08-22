@@ -22,6 +22,10 @@
                 <Canvas x:Name="AnnotationCanvas" x:FieldModifier="public" HorizontalAlignment="Center" VerticalAlignment="Top" Background="Transparent">
                     <Canvas.ContextFlyout>
                         <MenuFlyout x:Name="AnnotationContextMenu" x:FieldModifier="public">
+                            <MenuFlyoutItem x:Name="CopyTextItem" x:FieldModifier="public" Text="복사" Visibility="Collapsed">
+                                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C8;"/></MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                            <MenuFlyoutSeparator x:Name="CopyTextSeparator" x:FieldModifier="public" Visibility="Collapsed"/>
                             <MenuFlyoutItem x:Name="AlignLeftItem" x:FieldModifier="public" Text="왼쪽 맞춤">
                                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E4;"/></MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>
