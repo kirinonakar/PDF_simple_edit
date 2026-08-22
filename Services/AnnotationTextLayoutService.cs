@@ -11,6 +11,7 @@ namespace PDF_simple_edit.Services;
 public static class AnnotationTextLayoutService
 {
     private const double PdfToPixels = 96.0 / 72.0;
+    private const double InlineEditorBottomGuard = 6.0;
     public const double InlineEditorTopInset = 0.0;
 
     public static bool ContainsLineBreak(string? text) =>
@@ -242,14 +243,37 @@ public static class AnnotationTextLayoutService
             sample.Measure(new Windows.Foundation.Size(
                 double.PositiveInfinity,
                 double.PositiveInfinity));
-            // One pixel above and below keeps the caret and descenders visible
-            // without retaining the much taller original annotation bounds.
-            return Math.Max(Math.Ceiling(sample.DesiredSize.Height + 2.0), 1);
+            // RichEditBox needs a little more room below the TextBlock metrics.
+            // Some fonts otherwise clip descenders when a context-menu click
+            // removes focus and commits the inline edit.
+            return Math.Max(
+                Math.Ceiling(sample.DesiredSize.Height) + InlineEditorBottomGuard,
+                1);
         }
         catch
         {
-            return Math.Max(Math.Ceiling(fontSize * PdfToPixels + 2.0), 1);
+            return Math.Max(
+                Math.Ceiling(fontSize * PdfToPixels) + InlineEditorBottomGuard,
+                1);
         }
+    }
+
+    public static double GetRequiredTextBoxHeight(PdfAnnotation annotation, string? text)
+    {
+        double displayFontSize = GetDisplayFontSize(annotation, text ?? string.Empty);
+        double contentHeight = GetInlineEditorHeight(
+            text,
+            annotation.FontFamily,
+            displayFontSize,
+            annotation.IsBold,
+            annotation.IsItalic,
+            annotation.FontWeight,
+            annotation.LineHeight);
+        double topOffset = Math.Max(GetTopOffset(annotation, displayFontSize), 0);
+
+        // Return PDF points so the persisted annotation and its selection box use
+        // the same safe lower edge as the inline editor.
+        return Math.Max(annotation.Height, (topOffset + contentHeight) / PdfToPixels);
     }
 
     public static (double width, double height) MeasureBounds(

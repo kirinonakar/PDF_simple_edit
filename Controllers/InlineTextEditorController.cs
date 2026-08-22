@@ -513,6 +513,16 @@ public sealed class InlineTextEditorController
                         existingAnnotation.Width = size.width;
                         existingAnnotation.Height = size.height;
                     }
+                    else
+                    {
+                        // Original PDF glyph bounds can be shorter than WinUI's
+                        // text layout box. Keep the original width, but grow the
+                        // lower edge so the committed preview cannot clip text.
+                        existingAnnotation.Height =
+                            AnnotationTextLayoutService.GetRequiredTextBoxHeight(
+                                existingAnnotation,
+                                text);
+                    }
                     existingAnnotation.IsApplied = false;
                     _manager.MarkModified();
                     _setStatus?.Invoke("텍스트가 수정되었습니다 (저장 시 반영)");

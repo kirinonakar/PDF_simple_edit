@@ -244,7 +244,11 @@ public sealed class AnnotationOverlayController
                 ? Math.Max(annotation.Width * PdfToPixels, 1)
                 : double.NaN,
             Height = hasOriginalLineLayout
-                ? Math.Max(annotation.Height * PdfToPixels, 1)
+                ? Math.Max(
+                    AnnotationTextLayoutService.GetRequiredTextBoxHeight(
+                        annotation,
+                        annotation.Content) * PdfToPixels,
+                    1)
                 : containsLineBreak
                     ? AnnotationTextLayoutService.GetMultilineHeight(
                         annotation, annotation.Content, annotation.FontSize)
