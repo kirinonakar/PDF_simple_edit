@@ -39,7 +39,13 @@
                                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E3;"/></MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>
                             <MenuFlyoutItem x:Name="AlignBottomItem" x:FieldModifier="public" Text="아래쪽 맞춤">
-                                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E1;"/></MenuFlyoutItem.Icon>
+                                <MenuFlyoutItem.Icon>
+                                    <FontIcon Glyph="&#xE8E3;" RenderTransformOrigin="0.5,0.5">
+                                        <FontIcon.RenderTransform>
+                                            <RotateTransform Angle="180"/>
+                                        </FontIcon.RenderTransform>
+                                    </FontIcon>
+                                </MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>
                             <MenuFlyoutSeparator/>
                             <MenuFlyoutItem x:Name="SaveImageItem" x:FieldModifier="public" Text="이미지 저장..." IsEnabled="False">
