@@ -17,7 +17,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Windows.Storage.Pickers;
 using Windows.Storage;
-using Windows.Foundation;
 using Microsoft.UI.Windowing;
 using Microsoft.UI;
 using WinRT.Interop;
@@ -51,40 +50,19 @@ namespace PDF_simple_edit
             get => _activeTab?.IsFirstLoad ?? false;
             set { if (_activeTab != null) _activeTab.IsFirstLoad = value; }
         }
-        private PdfAnnotation? _selectedAnnotation;
-        private readonly List<PdfAnnotation> _selectedAnnotations = new();
+        private AnnotationCanvasController _annotationCanvasController = null!;
+        private AnnotationEditController _annotationEditController = null!;
+        private PageViewController _pageViewController = null!;
+        private WindowSettingsController _windowSettingsController = null!;
+        private RecentFilesController _recentFilesController = null!;
 
-        private readonly RecentFilesService _recentFilesService = new();
-        private readonly EditorSettingsService _settingsService = new();
         private readonly DocumentSearchController _documentSearchController = new(new PdfSearchService());
-        private readonly AnnotationContentService _annotationContentService = new();
         private readonly PdfPageRenderService _pageRenderService = new();
         private readonly PdfOperationService _pdfOperationService = new();
         private readonly EditorDialogService _dialogService = new();
-        private readonly AnnotationOverlayController _annotationOverlayController = new();
-        private readonly AnnotationAlignmentService _annotationAlignmentService = new();
-        private readonly ScreenColorPickerService _screenColorPickerService = new();
-        private readonly AnnotationInteractionController _annotationInteractionController = new();
-        private readonly InlineTextEditorController _inlineTextEditorController = new();
         private readonly PdfSaveService _pdfSaveService;
-        private readonly AnnotationSelectionController _annotationSelectionController;
         private bool _isSaveInProgress;
-        private bool _isInitializing = true;
-        private bool _isRestoringSettings;
         private bool _controlKeyIsDown;
-        private uint? _pendingSelectPointerId;
-        private long _selectPointerPressSequence;
-        private readonly List<PdfPathPoint> _signaturePoints = new();
-        private Microsoft.UI.Xaml.Shapes.Polyline? _signaturePreview;
-        private System.Threading.CancellationTokenSource? _thumbnailCts;
-        private PageThumbnailData? _draggedPageThumbnail;
-        private int _draggedPageOriginalIndex = -1;
-        private int _pageIndexBeforeReorder = -1;
-        private int _pageDropIndex = -1;
-        private bool _isPageReorderInProgress;
-        private bool _pageListPointerPressed;
-        private bool _preserveThumbnailsAfterPageReorder;
-
         private readonly PrintHelper _printHelper = new();
         private readonly TextFontSettings _fontSettings = new();
         private string _signatureColor = "#000000";
@@ -96,9 +74,6 @@ namespace PDF_simple_edit
         private PdfDocumentManager _pdfManager => _activeTab?.PdfManager ?? new PdfDocumentManager();
         private ObservableCollection<PageThumbnailData> _pageThumbnails => _activeTab?.PageThumbnails ?? new ObservableCollection<PageThumbnailData>();
         private List<PdfAnnotation> _annotations => _activeTab?.Annotations ?? new List<PdfAnnotation>();
-
-        // PDF는 72 DPI, Windows 논리 픽셀은 96 DPI입니다.
-        private const double PdfToPixels = 96.0 / 72.0;
 
         // MainWindow composes focused UserControls. These aliases keep the
         // document workflow independent from the controls' internal XAML names.
@@ -157,7 +132,6 @@ namespace PDF_simple_edit
 
         public MainWindow()
         {
-            _annotationSelectionController = new AnnotationSelectionController(_annotationContentService);
             _pdfSaveService = new PdfSaveService(new PdfAnnotationDocumentService());
             try
             {
@@ -168,6 +142,80 @@ namespace PDF_simple_edit
                 _fontSettings.Color = "#000000";
 
                 InitializeComponent();
+                _annotationCanvasController = new AnnotationCanvasController(
+                    OverlayCanvas,
+                    PdfPageImage,
+                    TxtStatus,
+                    DispatcherQueue,
+                    () => _pdfManager,
+                    () => _annotations,
+                    () => _currentPageIndex,
+                    () => _currentTool,
+                    SetToolMode,
+                    _fontSettings,
+                    () => _signatureColor,
+                    () => _signatureLineWidth,
+                    color =>
+                    {
+                        _fontSettings.HighlightColor = color.ToString();
+                        HighlightColorPicker.Color = color;
+                        HighlightColorIndicator.Background = new SolidColorBrush(color);
+                    },
+                    () => _renderTempPath = null,
+                    RenderCurrentPageAsync,
+                    cancelled =>
+                    {
+                        if (cancelled)
+                        {
+                            DocTabView.Focus(FocusState.Programmatic);
+                        }
+                        else
+                        {
+                            BtnSelect.Focus(FocusState.Programmatic);
+                            Content.Focus(FocusState.Programmatic);
+                        }
+                    });
+                _pageViewController = new PageViewController(
+                    _pageRenderService,
+                    PageListView,
+                    PdfPageImage,
+                    OverlayCanvas,
+                    PdfScrollViewer,
+                    TxtStatus,
+                    TxtZoom,
+                    TxtGoToPage,
+                    () => _pdfManager,
+                    () => _pageThumbnails,
+                    () => _annotations,
+                    () => _currentPageIndex,
+                    value => _currentPageIndex = value,
+                    () => _zoomLevel,
+                    value => _zoomLevel = value,
+                    () => _renderTempPath,
+                    value => _renderTempPath = value,
+                    () => _renderScale,
+                    RenderAnnotationOverlays,
+                    UpdateUIState);
+                _annotationEditController = new AnnotationEditController(
+                    _annotationCanvasController,
+                    new AnnotationAlignmentService(),
+                    _fontSettings,
+                    TxtStatus,
+                    () => _pdfManager,
+                    () => _annotations,
+                    () => _currentPageIndex,
+                    () => _renderTempPath = null,
+                    RenderCurrentPageAsync);
+                _windowSettingsController = new WindowSettingsController(
+                    this,
+                    new EditorSettingsService(),
+                    _fontSettings,
+                    ApplyFontSettingsToControls);
+                _recentFilesController = new RecentFilesController(
+                    new RecentFilesService(),
+                    MenuRecentFiles,
+                    OpenPdfFileAsync,
+                    ShowErrorDialogAsync);
                 AddInstalledNotoFonts();
                 WireChildControlEvents();
                 DocTabView.TabItemsSource = _tabs;
@@ -208,13 +256,12 @@ namespace PDF_simple_edit
                 SignatureColorIndicator.Background = new SolidColorBrush(ParseColor(_signatureColor));
                 TxtSignatureWidth.Text = $"{_signatureLineWidth:0.#} pt";
 
-                _recentFilesService.Load();
-                UpdateRecentFilesMenu();
+                _recentFilesController.Load();
                 InitializeZoomAccelerators();
 
                 Activated += MainWindow_Activated;
                 Closed += MainWindow_Closed;
-                _isInitializing = false;
+                _windowSettingsController.CompleteInitialization();
             }
             catch (Exception ex)
             {
@@ -511,8 +558,8 @@ namespace PDF_simple_edit
             {
                 // MovePage에서 이미 현재 썸네일 컬렉션을 같은 순서로 이동했으므로,
                 // 직후의 재로드가 컬렉션을 원래 순서로 덮어쓰지 않게 합니다.
-                bool preserveCurrentThumbnails = _preserveThumbnailsAfterPageReorder;
-                _preserveThumbnailsAfterPageReorder = false;
+                bool preserveCurrentThumbnails =
+                    _pageViewController.ConsumePreserveThumbnailsAfterReorder();
 
                 if (_pdfManager.IsLoaded && !preserveCurrentThumbnails)
                 {
@@ -773,115 +820,22 @@ namespace PDF_simple_edit
             await OpenPdfFileInNewTabAsync(file);
         }
 
-        private bool IsPageListDrag(DragEventArgs e)
-        {
-            if (_isPageReorderInProgress || _pageListPointerPressed)
-                return true;
+        private bool IsPageListDrag(DragEventArgs e) =>
+            _pageViewController.IsPageListDrag(e);
 
-            DependencyObject? source = e.OriginalSource as DependencyObject;
-            while (source != null)
-            {
-                if (ReferenceEquals(source, PageListView))
-                    return true;
+        private void PageListView_PointerPressed(object sender, PointerRoutedEventArgs e) =>
+            _pageViewController.PointerPressed(e);
 
-                source = VisualTreeHelper.GetParent(source);
-            }
+        private void PageListView_PointerReleased(object sender, PointerRoutedEventArgs e) =>
+            _pageViewController.PointerReleased();
 
-            return false;
-        }
-
-        private void PageListView_PointerPressed(object sender, PointerRoutedEventArgs e)
-        {
-            var point = e.GetCurrentPoint(PageListView);
-            if (point.Properties.IsRightButtonPressed)
-            {
-                if (FindPageListItem(e.OriginalSource as DependencyObject) is ListViewItem item &&
-                    item.Content is PageThumbnailData thumbnail &&
-                    !PageListView.SelectedItems.Contains(thumbnail))
-                {
-                    PageListView.SelectedItems.Clear();
-                    PageListView.SelectedItems.Add(thumbnail);
-                }
-
-                UpdateUIState();
-                return;
-            }
-
-            _pageListPointerPressed = true;
-        }
-
-        private static ListViewItem? FindPageListItem(DependencyObject? source)
-        {
-            while (source != null)
-            {
-                if (source is ListViewItem item)
-                    return item;
-                source = VisualTreeHelper.GetParent(source);
-            }
-
-            return null;
-        }
-
-        private void PageListView_PointerReleased(object sender, PointerRoutedEventArgs e)
-        {
-            _pageListPointerPressed = false;
-        }
-
-        private void PageListView_DragOver(object sender, DragEventArgs e)
-        {
-            if (!_isPageReorderInProgress)
-                return;
-
-            _pageDropIndex = GetPageDropIndex(e.GetPosition(PageListView));
-            UpdatePageDropVisual();
-            e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move;
-            e.Handled = true;
-        }
+        private void PageListView_DragOver(object sender, DragEventArgs e) =>
+            _pageViewController.DragOver(e);
 
         private void PageListView_DragLeave(object sender, DragEventArgs e)
         {
             // DragLeave가 Drop 직전에 발생할 수 있으므로 여기서 드롭 위치를
             // 초기화하지 않습니다. DragItemsCompleted에서 상태를 정리합니다.
-        }
-
-        private int GetPageDropIndex(Point position)
-        {
-            for (int i = 0; i < _pageThumbnails.Count; i++)
-            {
-                if (PageListView.ContainerFromIndex(i) is not FrameworkElement container)
-                    continue;
-
-                Point topLeft = container.TransformToVisual(PageListView)
-                    .TransformPoint(new Point(0, 0));
-                if (position.Y < topLeft.Y + container.ActualHeight / 2)
-                    return i;
-            }
-
-            return _pageThumbnails.Count;
-        }
-
-        private void UpdatePageDropVisual()
-        {
-            const double normalMargin = 8;
-            const double dropGap = 36;
-
-            for (int i = 0; i < _pageThumbnails.Count; i++)
-            {
-                double top = _pageDropIndex == i ? dropGap : 0;
-                double bottom = _pageDropIndex == _pageThumbnails.Count &&
-                                i == _pageThumbnails.Count - 1 ? dropGap : 0;
-                _pageThumbnails[i].DropMargin = new Thickness(
-                    normalMargin,
-                    normalMargin + top,
-                    normalMargin,
-                    normalMargin + bottom);
-            }
-        }
-
-        private void ClearPageDropVisual()
-        {
-            foreach (PageThumbnailData thumbnail in _pageThumbnails)
-                thumbnail.DropMargin = new Thickness(8);
         }
 
         private void Grid_DragOver(object sender, DragEventArgs e)
@@ -995,259 +949,39 @@ namespace PDF_simple_edit
 
         #region Page Rendering
 
-        private async Task RenderCurrentPageAsync()
-        {
-            if (!_pdfManager.IsLoaded) return;
+        private Task RenderCurrentPageAsync() =>
+            _pageViewController.RenderCurrentPageAsync();
 
-            string oldStatus = TxtStatus.Text;
-            try
-            {
-                TxtStatus.Text = "페이지 렌더링 중...";
-                RenderedPdfPage? page = await _pageRenderService.RenderPageAsync(
-                    _pdfManager, _currentPageIndex, _renderScale, _renderTempPath);
-                if (page == null) return;
-
-                _renderTempPath = page.RenderPath;
-                PdfPageImage.Source = page.Bitmap;
-                PdfPageImage.HorizontalAlignment = HorizontalAlignment.Left;
-                PdfPageImage.VerticalAlignment = VerticalAlignment.Top;
-                OverlayCanvas.HorizontalAlignment = HorizontalAlignment.Left;
-                OverlayCanvas.VerticalAlignment = VerticalAlignment.Top;
-                PdfPageImage.Margin = new Thickness(0);
-                OverlayCanvas.Margin = new Thickness(0);
-                PdfPageImage.Width = page.LogicalWidth;
-                PdfPageImage.Height = page.LogicalHeight;
-                OverlayCanvas.Width = page.LogicalWidth;
-                OverlayCanvas.Height = page.LogicalHeight;
-                PdfPageImage.Stretch = Stretch.Fill;
-                RenderAnnotationOverlays();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Render error: {ex.Message}");
-            }
-            finally
-            {
-                TxtStatus.Text = oldStatus == "페이지 렌더링 중..." ? "준비" : oldStatus;
-                UpdateUIState();
-                SyncPageListSelection();
-            }
-        }
-
-        private async Task LoadThumbnailsAsync()
-        {
-            _thumbnailCts?.Cancel();
-            _thumbnailCts = new System.Threading.CancellationTokenSource();
-            var token = _thumbnailCts.Token;
-
-            try
-            {
-                _pageThumbnails.Clear();
-                await foreach (PageThumbnailData thumbnail in _pageRenderService.RenderThumbnailsAsync(
-                    _pdfManager, _renderTempPath, token))
-                    _pageThumbnails.Add(thumbnail);
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"LoadThumbnails error: {ex.Message}");
-            }
-        }
+        private Task LoadThumbnailsAsync() =>
+            _pageViewController.LoadThumbnailsAsync();
 
         #endregion
 
         #region Page Navigation
 
-        private async void PrevPage_Click(object sender, RoutedEventArgs e)
-        {
-            if (_currentPageIndex > 0)
-            {
-                _currentPageIndex--;
-                await RenderCurrentPageAsync();
-                SyncPageListSelection();
-            }
-        }
+        private async void PrevPage_Click(object sender, RoutedEventArgs e) =>
+            await _pageViewController.MovePreviousAsync();
 
-        private async void NextPage_Click(object sender, RoutedEventArgs e)
-        {
-            if (_currentPageIndex < _pdfManager.PageCount - 1)
-            {
-                _currentPageIndex++;
-                await RenderCurrentPageAsync();
-                SyncPageListSelection();
-            }
-        }
+        private async void NextPage_Click(object sender, RoutedEventArgs e) =>
+            await _pageViewController.MoveNextAsync();
 
-        private async void GoToPage_KeyDown(object sender, KeyRoutedEventArgs e)
-        {
-            if (e.Key == Windows.System.VirtualKey.Enter)
-            {
-                if (int.TryParse(TxtGoToPage.Text, out int pageNum) &&
-                    pageNum >= 1 && pageNum <= _pdfManager.PageCount)
-                {
-                    _currentPageIndex = pageNum - 1;
-                    await RenderCurrentPageAsync();
-                    SyncPageListSelection();
-                    TxtGoToPage.Text = "";
-                }
-            }
-        }
+        private async void GoToPage_KeyDown(object sender, KeyRoutedEventArgs e) =>
+            await _pageViewController.HandleGoToPageKeyAsync(e);
 
-        private async void PageListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (_isPageReorderInProgress)
-                return;
+        private async void PageListView_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+            await _pageViewController.HandleSelectionChangedAsync();
 
-            if (PageListView.SelectedItem is PageThumbnailData thumb)
-            {
-                if (_currentPageIndex != thumb.PageIndex)
-                {
-                    _currentPageIndex = thumb.PageIndex;
-                    await RenderCurrentPageAsync();
-                }
-            }
-        }
+        private void PageListView_DragItemsStarting(object sender, DragItemsStartingEventArgs e) =>
+            _pageViewController.DragItemsStarting(e);
 
-        private void PageListView_DragItemsStarting(object sender, DragItemsStartingEventArgs e)
-        {
-            PageThumbnailData? thumbnail = e.Items.OfType<PageThumbnailData>().FirstOrDefault();
-            if (thumbnail == null)
-            {
-                e.Cancel = true;
-                return;
-            }
+        private void PageListView_DragItemsCompleted(object sender, DragItemsCompletedEventArgs e) =>
+            _pageViewController.DragItemsCompleted();
 
-            int originalIndex = _pageThumbnails.IndexOf(thumbnail);
-            if (originalIndex < 0)
-            {
-                e.Cancel = true;
-                return;
-            }
+        private void SyncPageListSelection() =>
+            _pageViewController.SyncSelection();
 
-            _draggedPageThumbnail = thumbnail;
-            _draggedPageOriginalIndex = originalIndex;
-            _pageIndexBeforeReorder = _currentPageIndex;
-            _pageDropIndex = -1;
-            ClearPageDropVisual();
-            _isPageReorderInProgress = true;
-        }
-
-        private void PageListView_DragItemsCompleted(object sender, DragItemsCompletedEventArgs e)
-        {
-            PageThumbnailData? draggedPage = _draggedPageThumbnail;
-            int originalIndex = _draggedPageOriginalIndex;
-            int dropIndex = _pageDropIndex;
-            int pageIndexBeforeReorder = _pageIndexBeforeReorder;
-
-            if (draggedPage == null || originalIndex < 0 ||
-                dropIndex < 0 || dropIndex > _pageThumbnails.Count)
-            {
-                ResetPageReorderState();
-                return;
-            }
-
-            // dropIndex is an insertion point before removing the dragged item.
-            int newIndex = dropIndex > originalIndex ? dropIndex - 1 : dropIndex;
-            newIndex = Math.Clamp(newIndex, 0, _pageThumbnails.Count - 1);
-
-            if (originalIndex == newIndex)
-            {
-                UpdatePageThumbnailNumbers();
-                ResetPageReorderState();
-                return;
-            }
-
-            try
-            {
-                _currentPageIndex = GetReorderedPageIndex(
-                    pageIndexBeforeReorder, originalIndex, newIndex);
-                _pageThumbnails.Move(originalIndex, newIndex);
-                UpdatePageThumbnailNumbers();
-                _renderTempPath = null;
-                _preserveThumbnailsAfterPageReorder = true;
-                _pdfManager.MovePage(originalIndex, newIndex);
-                UpdateAnnotationPageIndicesAfterReorder(originalIndex, newIndex);
-                TxtStatus.Text = "페이지 순서가 변경되었습니다";
-                SyncPageListSelection();
-            }
-            catch (Exception ex)
-            {
-                // Keep the visual list and the PDF in sync if the PDF edit fails.
-                _pageThumbnails.Move(newIndex, originalIndex);
-                UpdatePageThumbnailNumbers();
-                _preserveThumbnailsAfterPageReorder = false;
-                _currentPageIndex = pageIndexBeforeReorder;
-                TxtStatus.Text = "페이지 순서 변경에 실패했습니다";
-                System.Diagnostics.Debug.WriteLine($"Move page error: {ex.Message}");
-                SyncPageListSelection();
-            }
-            finally
-            {
-                ClearPageDropVisual();
-                ResetPageReorderState();
-            }
-        }
-
-        private static int GetReorderedPageIndex(int currentIndex, int oldIndex, int newIndex)
-        {
-            if (currentIndex == oldIndex)
-                return newIndex;
-            if (oldIndex < currentIndex && currentIndex <= newIndex)
-                return currentIndex - 1;
-            if (newIndex <= currentIndex && currentIndex < oldIndex)
-                return currentIndex + 1;
-            return currentIndex;
-        }
-
-        private void UpdateAnnotationPageIndicesAfterReorder(int oldIndex, int newIndex)
-        {
-            foreach (PdfAnnotation annotation in _annotations)
-            {
-                annotation.PageIndex = GetReorderedPageIndex(
-                    annotation.PageIndex, oldIndex, newIndex);
-            }
-        }
-
-        private void UpdatePageThumbnailNumbers()
-        {
-            for (int i = 0; i < _pageThumbnails.Count; i++)
-                _pageThumbnails[i].PageNumber = i + 1;
-        }
-
-        private void ResetPageReorderState()
-        {
-            _draggedPageThumbnail = null;
-            _draggedPageOriginalIndex = -1;
-            _pageIndexBeforeReorder = -1;
-            _pageDropIndex = -1;
-            _isPageReorderInProgress = false;
-            _pageListPointerPressed = false;
-        }
-
-        private void SyncPageListSelection()
-        {
-            if (_currentPageIndex < _pageThumbnails.Count)
-            {
-                PageThumbnailData current = _pageThumbnails[_currentPageIndex];
-                if (PageListView.SelectedItems.Count <= 1)
-                    PageListView.SelectedItem = current;
-
-                PageListView.ScrollIntoView(current);
-            }
-
-            UpdateUIState();
-        }
-
-        private List<int> GetSelectedPageIndices()
-        {
-            return PageListView.SelectedItems
-                .OfType<PageThumbnailData>()
-                .Select(thumbnail => thumbnail.PageIndex)
-                .Where(index => index >= 0 && index < _pdfManager.PageCount)
-                .Distinct()
-                .OrderBy(index => index)
-                .ToList();
-        }
+        private List<int> GetSelectedPageIndices() =>
+            _pageViewController.GetSelectedPageIndices();
 
         private void Undo_Click(object sender, RoutedEventArgs e)
         {
@@ -1271,62 +1005,19 @@ namespace PDF_simple_edit
 
         #region Zoom
 
-        private void ZoomIn_Click(object sender, RoutedEventArgs e)
-        {
-            _zoomLevel = Math.Min(_zoomLevel + 0.25, 5.0);
-            ApplyZoom();
-        }
+        private void ZoomIn_Click(object sender, RoutedEventArgs e) =>
+            _pageViewController.ZoomIn();
 
-        private void ZoomOut_Click(object sender, RoutedEventArgs e)
-        {
-            _zoomLevel = Math.Max(_zoomLevel - 0.25, 0.25);
-            ApplyZoom();
-        }
+        private void ZoomOut_Click(object sender, RoutedEventArgs e) =>
+            _pageViewController.ZoomOut();
 
-        private void FitToPage_Click(object sender, RoutedEventArgs e)
-        {
+        private void FitToPage_Click(object sender, RoutedEventArgs e) =>
             FitToPage();
-        }
 
-private void FitToPage()
-{
-    if (PdfScrollViewer == null || !_pdfManager.IsLoaded || OverlayCanvas.Width <= 0) return;
+        private void FitToPage() => _pageViewController.FitToPage();
 
-    double contentW = OverlayCanvas.Width;
-    double contentH = OverlayCanvas.Height;
-
-    double viewportW = PdfScrollViewer.ViewportWidth;
-    double viewportH = PdfScrollViewer.ViewportHeight;
-    
-    if (viewportW <= 0) viewportW = PdfScrollViewer.ActualWidth;
-    if (viewportH <= 0) viewportH = PdfScrollViewer.ActualHeight;
-
-    if (viewportW <= 0 || viewportH <= 0) return;
-
-    // 계산 여백을 20px로 줄여 화면에 최대한 꽉 차게 배율 계산
-    double zoomW = (viewportW - 20) / contentW;
-    double zoomH = (viewportH - 20) / contentH;
-    
-    _zoomLevel = Math.Min(zoomW, zoomH);
-    _zoomLevel = Math.Clamp(_zoomLevel, 0.1, 5.0);
-    
-    ApplyZoom();
-}
-
-        private void ApplyZoom()
-        {
-            PdfScrollViewer?.ChangeView(null, null, (float)_zoomLevel);
-            TxtZoom.Text = $"{(int)(_zoomLevel * 100)}%";
-        }
-
-        private void PdfScrollViewer_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)
-        {
-            if (PdfScrollViewer != null)
-            {
-                _zoomLevel = PdfScrollViewer.ZoomFactor;
-                TxtZoom.Text = $"{(int)(_zoomLevel * 100)}%";
-            }
-        }
+        private void PdfScrollViewer_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e) =>
+            _pageViewController.ViewChanged();
 
         private void InitializeZoomAccelerators()
         {
@@ -1380,8 +1071,7 @@ private void FitToPage()
             };
 
             UpdateCursor(mode);
-            _selectedAnnotation = null;
-            _selectedAnnotations.Clear();
+            _annotationCanvasController.ClearSelection();
             RenderAnnotationOverlays();
         }
 
@@ -1456,7 +1146,7 @@ private void FitToPage()
         {
             // Focus check to prevent tool activation while typing
             var focused = FocusManager.GetFocusedElement(this.Content.XamlRoot);
-            if (focused is TextBox || focused is NumberBox || focused is ComboBox || _inlineTextEditorController.IsEditing)
+            if (focused is TextBox || focused is NumberBox || focused is ComboBox || _annotationCanvasController.IsInlineEditing)
             {
                 args.Handled = true; // Consume the accelerator so it doesn't trigger the click, but let the key event continue if needed
                 return;
@@ -1506,9 +1196,7 @@ private void FitToPage()
                 // 이미지를 추가한 뒤 바로 핸들이 보이도록 선택 도구로 전환하고
                 // 새 이미지를 선택 상태로 둡니다.
                 SetToolMode(EditToolMode.Select);
-                _selectedAnnotations.Clear();
-                _selectedAnnotations.Add(imageAnnotation);
-                _selectedAnnotation = imageAnnotation;
+                _annotationCanvasController.SelectOnly(imageAnnotation);
                 TxtStatus.Text = "이미지가 추가되었습니다 (저장 시 반영)";
                 RenderAnnotationOverlays();
             }
@@ -1536,431 +1224,20 @@ private void FitToPage()
 
         #region Canvas Interaction
 
-private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEventArgs e)
-{
-    if (!_pdfManager.IsLoaded || _inlineTextEditorController.IsEditing) return;
+        private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEventArgs e) =>
+            await _annotationCanvasController.PointerPressedAsync(e);
 
-    // 안전장치: 캔버스 크기가 없을 경우 이미지 크기로 동기화
-    if (OverlayCanvas.Width == 0 || double.IsNaN(OverlayCanvas.Width))
-    {
-        if (PdfPageImage.ActualWidth > 0)
-        {
-            OverlayCanvas.Width = PdfPageImage.ActualWidth;
-            OverlayCanvas.Height = PdfPageImage.ActualHeight;
-        }
-    }
+        private void OverlayCanvas_PointerMoved(object sender, PointerRoutedEventArgs e) =>
+            _annotationCanvasController.PointerMoved(e);
 
-    var ptrPt = e.GetCurrentPoint(OverlayCanvas);
-    var pos = ptrPt.Position;
-    bool isLeft = ptrPt.Properties.IsLeftButtonPressed;
-    long selectPressSequence = _selectPointerPressSequence;
+        private async void OverlayCanvas_PointerReleased(object sender, PointerRoutedEventArgs e) =>
+            await _annotationCanvasController.PointerReleasedAsync(e);
 
-    double pdfX = pos.X / PdfToPixels;
-    double pdfY = pos.Y / PdfToPixels;
+        private void OverlayCanvas_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e) =>
+            _annotationCanvasController.DoubleTapped(e);
 
-    if (!isLeft && (_currentTool == EditToolMode.Select || _currentTool == EditToolMode.Signature)) return;
-    if (isLeft && _currentTool == EditToolMode.Select)
-    {
-        if (_annotationInteractionController.CancelMove())
-            OverlayCanvas.ReleasePointerCapture(e.Pointer);
-        _pendingSelectPointerId = e.Pointer.PointerId;
-        selectPressSequence = ++_selectPointerPressSequence;
-    }
-
-    switch (_currentTool)
-    {
-        case EditToolMode.Select:
-            // 리사이즈 핸들 클릭 확인
-            if (e.OriginalSource is Microsoft.UI.Xaml.Shapes.Rectangle handle && handle.Tag is string dir)
-            {
-                if (_selectedAnnotation != null)
-                    _annotationInteractionController.BeginResize(_selectedAnnotation, dir, pos);
-                OverlayCanvas.CapturePointer(e.Pointer);
-                TxtStatus.Text = "크기 조정 중...";
-                return;
-            }
-
-            var ctrlPressed = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
-            var selection = await _annotationSelectionController.SelectAtAsync(
-                _pdfManager,
-                _annotations,
-                _selectedAnnotations,
-                _selectedAnnotation,
-                _currentPageIndex,
-                pdfX,
-                pdfY,
-                ctrlPressed,
-                () => TxtStatus.Text = "페이지 콘텐츠 분석 중...");
-
-            _selectedAnnotation = selection.PrimarySelection;
-            if (selection.AddedFromPageContent is PdfAnnotation added)
-            {
-                TxtStatus.Text = added.IsOriginalTextReplacement
-                    ? "텍스트 편집 구역이 선택되었습니다. 두 번 클릭하여 편집하세요."
-                    : "이미지가 선택되었습니다. 드래그하여 이동하거나 핸들로 크기를 조정하세요.";
-            }
-
-            if (selection.SelectionChanged)
-            {
-                RenderAnnotationOverlays();
-            }
-
-            var currentPointerPoint = e.GetCurrentPoint(OverlayCanvas);
-            PdfAnnotation? moveTarget = _selectedAnnotation;
-            bool canStartMove = moveTarget != null &&
-                _currentTool == EditToolMode.Select &&
-                _pendingSelectPointerId == e.Pointer.PointerId &&
-                selectPressSequence == _selectPointerPressSequence &&
-                currentPointerPoint.Properties.IsLeftButtonPressed;
-            if (canStartMove && moveTarget != null)
-            {
-                _annotationInteractionController.BeginMove(_selectedAnnotations, pos);
-                OverlayCanvas.CapturePointer(e.Pointer);
-                if (!moveTarget.IsOriginalTextReplacement)
-                {
-                    TxtStatus.Text = _selectedAnnotations.Count > 1 ? $"{_selectedAnnotations.Count}개 객체 선택됨" : "객체 선택됨 (드래그하여 이동)";
-                }
-            }
-            else
-            {
-                if (_pendingSelectPointerId == e.Pointer.PointerId)
-                    _pendingSelectPointerId = null;
-                if (_selectedAnnotation == null)
-                    TxtStatus.Text = "준비";
-            }
-            break;
-
-        case EditToolMode.AddText:
-            AddInlineTextBox(pdfX, pdfY);
-            break;
-
-
-        case EditToolMode.Highlight:
-            _annotationInteractionController.BeginHighlight(
-                OverlayCanvas,
-                pos,
-                _fontSettings.HighlightColor,
-                _fontSettings.HighlightOpacity);
-            OverlayCanvas.CapturePointer(e.Pointer);
-            break;
-
-        case EditToolMode.Signature:
-            _signaturePoints.Clear();
-            _signaturePoints.Add(new PdfPathPoint { X = pdfX, Y = pdfY });
-            _signaturePreview = new Microsoft.UI.Xaml.Shapes.Polyline
-            {
-                Stroke = new SolidColorBrush(ParseColor(_signatureColor)),
-                StrokeThickness = Math.Max(_signatureLineWidth * PdfToPixels, 1),
-                StrokeLineJoin = Microsoft.UI.Xaml.Media.PenLineJoin.Round,
-                IsHitTestVisible = false
-            };
-            _signaturePreview.Points.Add(pos);
-            OverlayCanvas.Children.Add(_signaturePreview);
-            OverlayCanvas.CapturePointer(e.Pointer);
-            TxtStatus.Text = "서명을 그리는 중...";
-            break;
-
-        case EditToolMode.ColorPicker:
-            TxtStatus.Text = "색상 추출 중...";
-            var pickedColor = await _screenColorPickerService.PickAsync(
-                PdfPageImage, e.GetCurrentPoint(PdfPageImage).Position);
-            if (pickedColor.HasValue)
-            {
-                var color = pickedColor.Value;
-                _fontSettings.HighlightColor = color.ToString();
-                HighlightColorPicker.Color = color;
-                HighlightColorIndicator.Background = new SolidColorBrush(color);
-                TxtStatus.Text = $"색상이 추출되었습니다: {color}";
-                
-                // Automatically switch back to Highlight tool if desired, 
-                // or just stay in ColorPicker. User asked for "automatically selected", 
-                // so let's switch to Highlight tool to be helpful.
-                SetToolMode(EditToolMode.Highlight);
-            }
-            break;
-    }
-}
-
-        private void OverlayCanvas_PointerMoved(object sender, PointerRoutedEventArgs e)
-        {
-            var pointerPoint = e.GetCurrentPoint(OverlayCanvas);
-
-            if (_signaturePreview != null && _currentTool == EditToolMode.Signature)
-            {
-                if (!pointerPoint.Properties.IsLeftButtonPressed)
-                    return;
-
-                Point position = pointerPoint.Position;
-                PdfPathPoint last = _signaturePoints[^1];
-                double pdfX = position.X / PdfToPixels;
-                double pdfY = position.Y / PdfToPixels;
-                if (Math.Sqrt(Math.Pow(pdfX - last.X, 2) + Math.Pow(pdfY - last.Y, 2)) >= 0.75)
-                {
-                    _signaturePoints.Add(new PdfPathPoint { X = pdfX, Y = pdfY });
-                    _signaturePreview.Points.Add(position);
-                }
-                return;
-            }
-
-            if (_annotationInteractionController.IsMoving &&
-                !pointerPoint.Properties.IsLeftButtonPressed)
-            {
-                _pendingSelectPointerId = null;
-                _selectPointerPressSequence++;
-                if (_annotationInteractionController.CancelMove())
-                {
-                    OverlayCanvas.ReleasePointerCapture(e.Pointer);
-                    TxtStatus.Text = "객체 선택됨 (드래그하여 이동)";
-                    RenderAnnotationOverlays();
-                }
-                return;
-            }
-
-            var pos = pointerPoint.Position;
-            if (_annotationInteractionController.UpdatePointer(
-                OverlayCanvas,
-                pos,
-                _selectedAnnotation,
-                _selectedAnnotations))
-                RenderAnnotationOverlays();
-        }
-
-        private async void OverlayCanvas_PointerReleased(object sender, PointerRoutedEventArgs e)
-        {
-            if (_signaturePreview != null && _currentTool == EditToolMode.Signature)
-            {
-                OverlayCanvas.ReleasePointerCapture(e.Pointer);
-                OverlayCanvas.Children.Remove(_signaturePreview);
-                _signaturePreview = null;
-
-                if (_signaturePoints.Count >= 2)
-                {
-                    double minX = _signaturePoints.Min(point => point.X);
-                    double minY = _signaturePoints.Min(point => point.Y);
-                    double maxX = _signaturePoints.Max(point => point.X);
-                    double maxY = _signaturePoints.Max(point => point.Y);
-                    var signature = new PdfAnnotation
-                    {
-                        Type = AnnotationType.Signature,
-                        PageIndex = _currentPageIndex,
-                        X = minX,
-                        Y = minY,
-                        Width = Math.Max(maxX - minX, 1),
-                        Height = Math.Max(maxY - minY, 1),
-                        Color = _signatureColor,
-                        LineWidth = _signatureLineWidth,
-                        SignaturePoints = _signaturePoints.Select(point => point.Clone()).ToList()
-                    };
-                    _annotations.Add(signature);
-                    _pdfManager.MarkModified();
-                    TxtStatus.Text = "서명이 추가되었습니다 (저장 시 반영)";
-                    RenderAnnotationOverlays();
-                }
-                else
-                {
-                    TxtStatus.Text = "서명이 너무 짧습니다.";
-                }
-
-                _signaturePoints.Clear();
-                return;
-            }
-
-            if (_pendingSelectPointerId == e.Pointer.PointerId)
-            {
-                _pendingSelectPointerId = null;
-                _selectPointerPressSequence++;
-            }
-
-            AnnotationResizeResult resizeResult = await _annotationInteractionController.CompleteResizeAsync(
-                _pdfManager, _currentPageIndex);
-            if (resizeResult != AnnotationResizeResult.NotActive)
-            {
-                OverlayCanvas.ReleasePointerCapture(e.Pointer);
-                if (resizeResult == AnnotationResizeResult.OriginalTextRemovalFailed)
-                {
-                    TxtStatus.Text = "이 PDF의 텍스트는 배경을 보존한 상태로 크기를 조정할 수 없습니다.";
-                    RenderAnnotationOverlays();
-                    return;
-                }
-                if (resizeResult == AnnotationResizeResult.OriginalImageRemovalFailed)
-                {
-                    TxtStatus.Text = "이 PDF의 이미지는 원본을 보존한 상태로 크기를 조정할 수 없습니다.";
-                    RenderAnnotationOverlays();
-                    return;
-                }
-                _pdfManager.MarkModified();
-                TxtStatus.Text = "크기 조정됨 (저장 시 반영)";
-                if (!_inlineTextEditorController.IsEditing)
-                    await RenderCurrentPageAsync();
-                RenderAnnotationOverlays();
-            }
-            else if (_annotationInteractionController.IsMoving)
-            {
-                OverlayCanvas.ReleasePointerCapture(e.Pointer);
-                AnnotationMoveResult result = await _annotationInteractionController.CompleteMoveAsync(
-                    _pdfManager, _currentPageIndex, _selectedAnnotations);
-                if (result == AnnotationMoveResult.NotMoved)
-                {
-                    RenderAnnotationOverlays();
-                    return;
-                }
-                if (result == AnnotationMoveResult.OriginalTextRemovalFailed)
-                {
-                    TxtStatus.Text = "이 PDF의 텍스트는 배경을 보존한 상태로 이동할 수 없습니다.";
-                    RenderAnnotationOverlays();
-                    return;
-                }
-                if (result == AnnotationMoveResult.OriginalImageRemovalFailed)
-                {
-                    TxtStatus.Text = "이 PDF의 이미지는 원본을 보존한 상태로 이동할 수 없습니다.";
-                    RenderAnnotationOverlays();
-                    return;
-                }
-                if (result == AnnotationMoveResult.MixedOriginalContentRemovalFailed)
-                {
-                    TxtStatus.Text = "원본 텍스트와 이미지는 한 번에 함께 이동할 수 없습니다.";
-                    RenderAnnotationOverlays();
-                    return;
-                }
-
-                _pdfManager.MarkModified();
-                TxtStatus.Text = "위치 이동됨 (저장 시 반영)";
-                if (!_inlineTextEditorController.IsEditing)
-                {
-                    await RenderCurrentPageAsync();
-                    RenderAnnotationOverlays();
-                }
-            }
-            else if (_annotationInteractionController.IsDrawingHighlight &&
-                     _currentTool == EditToolMode.Highlight)
-            {
-                OverlayCanvas.ReleasePointerCapture(e.Pointer);
-                PdfAnnotation? highlight = _annotationInteractionController.CompleteHighlight(
-                    OverlayCanvas, _currentPageIndex, _fontSettings);
-                if (highlight != null)
-                {
-                    _annotations.Add(highlight);
-                    _pdfManager.MarkModified();
-                    TxtStatus.Text = "텍스트 강조가 추가되었습니다 (저장 시 반영)";
-                    RenderAnnotationOverlays();
-                }
-            }
-        }
-
-        private void OverlayCanvas_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
-        {
-            if (_inlineTextEditorController.IsEditing) return;
-
-            var pos = e.GetPosition(OverlayCanvas);
-            double pdfX = pos.X / PdfToPixels;
-            double pdfY = pos.Y / PdfToPixels;
-
-            var ann = _annotationContentService.FindAnnotationAt(
-                _annotations, _currentPageIndex, pdfX, pdfY);
-            if (ann != null)
-            {
-                EditAnnotationContent(ann);
-            }
-        }
-
-        private void SetElementCursor(UIElement element, Microsoft.UI.Input.InputCursor cursor)
-        {
-            try
-            {
-                var type = typeof(UIElement);
-                var property = type.GetProperty("ProtectedCursor", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-                property?.SetValue(element, cursor);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error setting cursor: {ex.Message}");
-            }
-        }
-
-        private void RenderAnnotationOverlays()
-        {
-            var activeBox = OverlayCanvas.Children.OfType<RichEditBox>().FirstOrDefault();
-            var editingAnn = activeBox?.Tag switch
-            {
-                InlineTextEditSession session => session.Annotation,
-                PdfAnnotation annotation => annotation,
-                _ => null
-            };
-            _annotationOverlayController.Render(
-                OverlayCanvas,
-                _annotations,
-                _currentPageIndex,
-                _selectedAnnotations,
-                _selectedAnnotation,
-                editingAnn,
-                ParseColor,
-                (direction, position) =>
-                {
-                    if (_selectedAnnotation != null)
-                        _annotationInteractionController.BeginResize(
-                            _selectedAnnotation, direction, position);
-                },
-                shape => SetElementCursor(
-                    OverlayCanvas,
-                    Microsoft.UI.Input.InputSystemCursor.Create(shape)));
-        }
-
-        private void EditAnnotationContent(PdfAnnotation ann)
-        {
-            if (ann.Type == AnnotationType.Text || ann.Type == AnnotationType.FreeText)
-            {
-                if (_inlineTextEditorController.Reserve())
-                {
-                    DispatcherQueue.TryEnqueue(() =>
-                    {
-                        AddInlineTextBox(ann.X, ann.Y, ann);
-                    });
-                }
-            }
-        }
-
-        #endregion
-
-        #region Text Input (Inline & Dialog)
-
-        private void AddInlineTextBox(double pdfX, double pdfY, PdfAnnotation? existingAnn = null)
-        {
-            _inlineTextEditorController.TryStart(
-                OverlayCanvas,
-                pdfX,
-                pdfY,
-                _fontSettings,
-                existingAnn,
-                _pdfManager,
-                _annotations,
-                _selectedAnnotations,
-                _currentPageIndex,
-                _annotationContentService.BuildEditableText,
-                async () =>
-                {
-                    _renderTempPath = null;
-                    await RenderCurrentPageAsync();
-                },
-                RenderAnnotationOverlays,
-                status => TxtStatus.Text = status,
-                removed =>
-                {
-                    if (_selectedAnnotation == removed)
-                        _selectedAnnotation = null;
-                },
-                cancelled => DispatcherQueue.TryEnqueue(() =>
-                {
-                    if (cancelled)
-                    {
-                        DocTabView.Focus(FocusState.Programmatic);
-                    }
-                    else
-                    {
-                        BtnSelect.Focus(FocusState.Programmatic);
-                        Content.Focus(FocusState.Programmatic);
-                    }
-                }));
-        }
+        private void RenderAnnotationOverlays() =>
+            _annotationCanvasController.Render();
 
         #endregion
 
@@ -2047,7 +1324,7 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
 
             // 편집기의 KeyDown에서 Ctrl 상태를 놓치는 경우에도 창 레벨에서
             // Enter를 먼저 소비하여 줄바꿈 대신 편집을 확정합니다.
-            if (_inlineTextEditorController.IsEditing &&
+            if (_annotationCanvasController.IsInlineEditing &&
                 e.Key == Windows.System.VirtualKey.Enter &&
                 (_controlKeyIsDown || KeyboardStateService.IsControlDown()))
             {
@@ -2057,12 +1334,14 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 {
                     e.Handled = true;
                     if (activeEditor != null)
-                        await _inlineTextEditorController.FinishActiveEditAsync();
+                        await _annotationCanvasController.FinishActiveInlineEditAsync();
                 }
                 return;
             }
 
-            if (e.Key == Windows.System.VirtualKey.Delete && _selectedAnnotation != null && !_inlineTextEditorController.IsEditing)
+            if (e.Key == Windows.System.VirtualKey.Delete &&
+                _annotationCanvasController.PrimarySelection != null &&
+                !_annotationCanvasController.IsInlineEditing)
             {
                 await DeleteSelectedAnnotationsAsync();
                 e.Handled = true;
@@ -2075,156 +1354,19 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
                 _controlKeyIsDown = false;
         }
 
-        private async Task<bool> DeleteSelectedAnnotationsAsync()
-        {
-            var targets = _selectedAnnotations.Count > 0
-                ? _selectedAnnotations.ToList()
-                : (_selectedAnnotation != null ? new List<PdfAnnotation> { _selectedAnnotation } : new List<PdfAnnotation>());
-            if (targets.Count == 0)
-                return false;
-
-            var originalTextTargets = targets
-                .Where(annotation => annotation.IsOriginalTextReplacement)
-                .ToList();
-            var appliedTextTargets = targets
-                .Where(annotation => annotation.IsApplied &&
-                    annotation.Type is AnnotationType.Text or AnnotationType.FreeText)
-                .ToList();
-            var originalImageTargets = targets
-                .Where(annotation => annotation.IsOriginalImageReplacement)
-                .ToList();
-            if (originalTextTargets.Count > 0 && originalImageTargets.Count > 0)
-            {
-                TxtStatus.Text = "원본 텍스트와 이미지는 한 번에 함께 삭제할 수 없습니다.";
-                return false;
-            }
-            if (originalTextTargets.Count > 0)
-            {
-                bool removed = await _pdfManager.RemoveOriginalTextAnnotationsAsync(
-                    _currentPageIndex, originalTextTargets);
-                if (!removed)
-                {
-                    TxtStatus.Text = "배경을 보존하면서 삭제할 수 없는 PDF 텍스트입니다.";
-                    return false;
-                }
-            }
-            foreach (PdfAnnotation annotation in appliedTextTargets)
-            {
-                bool removed = await _pdfManager.RemoveAppliedTextAnnotationAsync(
-                    _currentPageIndex,
-                    annotation,
-                    annotation.X,
-                    annotation.Y,
-                    annotation.Width,
-                    annotation.Height);
-                if (!removed)
-                {
-                    TxtStatus.Text = "저장된 텍스트를 안전하게 삭제할 수 없습니다.";
-                    return false;
-                }
-            }
-            if (originalImageTargets.Count > 0)
-            {
-                bool removed = await _pdfManager.RemoveOriginalImageAnnotationsAsync(
-                    _currentPageIndex, originalImageTargets);
-                if (!removed)
-                {
-                    TxtStatus.Text = "이 PDF의 이미지를 안전하게 삭제할 수 없습니다.";
-                    return false;
-                }
-            }
-
-            foreach (var annotation in targets)
-                _annotations.Remove(annotation);
-
-            _selectedAnnotations.Clear();
-            _selectedAnnotation = null;
-            _pdfManager.MarkModified();
-            if (originalTextTargets.Count > 0 || appliedTextTargets.Count > 0 ||
-                originalImageTargets.Count > 0)
-                await RenderCurrentPageAsync();
-            RenderAnnotationOverlays();
-            TxtStatus.Text = targets.Count > 1
-                ? $"{targets.Count}개 객체 삭제됨"
-                : targets[0].Type == AnnotationType.Image
-                    ? "이미지가 삭제되었습니다."
-                    : "텍스트가 삭제되었습니다.";
-            return true;
-        }
+        private Task<bool> DeleteSelectedAnnotationsAsync() =>
+            _annotationEditController.DeleteSelectionAsync();
         #endregion
 
         #region Font Settings
-
-        private async Task<bool> PrepareOriginalTextForReplacementAsync(PdfAnnotation annotation)
-        {
-            if (annotation.IsApplied)
-            {
-                bool removedAppliedText = await _pdfManager.RemoveAppliedTextAnnotationAsync(
-                    _currentPageIndex,
-                    annotation,
-                    annotation.X,
-                    annotation.Y,
-                    annotation.Width,
-                    annotation.Height);
-                if (!removedAppliedText)
-                {
-                    TxtStatus.Text = "저장된 텍스트를 안전하게 수정할 수 없습니다.";
-                    return false;
-                }
-
-                annotation.IsApplied = false;
-                annotation.IsOriginalTextReplacement = false;
-                _renderTempPath = null;
-                await RenderCurrentPageAsync();
-                return true;
-            }
-
-            if (!annotation.IsOriginalTextReplacement)
-                return true;
-
-            bool removed = await _pdfManager.RemoveOriginalTextAnnotationsAsync(
-                _currentPageIndex, new[] { annotation });
-            if (!removed)
-            {
-                TxtStatus.Text = "배경을 보존하면서 수정할 수 없는 PDF 텍스트입니다.";
-                return false;
-            }
-
-            annotation.IsOriginalTextReplacement = false;
-            annotation.IsApplied = false;
-            await RenderCurrentPageAsync();
-            return true;
-        }
 
         private async void FontFamily_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (CmbFontFamily.SelectedItem is ComboBoxItem item)
             {
                 string font = item.Content?.ToString() ?? "맑은 고딕";
-                _fontSettings.FontFamily = font;
+                await _annotationEditController.ApplyFontFamilyAsync(font);
                 SaveWindowPosition();
-                
-                if (_selectedAnnotation != null && (_selectedAnnotation.Type == AnnotationType.Text || _selectedAnnotation.Type == AnnotationType.FreeText))
-                {
-                    if (!await PrepareOriginalTextForReplacementAsync(_selectedAnnotation))
-                        return;
-                    _selectedAnnotation.FontFamily = font;
-                    _selectedAnnotation.OriginalFontObjectNumber = -1;
-                    foreach (PdfTextFragment fragment in _selectedAnnotation.TextFragments)
-                    {
-                        fragment.FontFamily = font;
-                        fragment.OriginalFontObjectNumber = -1;
-                    }
-                    if (_selectedAnnotation.TextFragments.Count < 2)
-                    {
-                        var size = AnnotationTextLayoutService.MeasureBounds(_selectedAnnotation.Content, font, _selectedAnnotation.FontSize, _selectedAnnotation.IsBold, _selectedAnnotation.IsItalic);
-                        _selectedAnnotation.Width = size.width;
-                        _selectedAnnotation.Height = size.height;
-                    }
-                    _selectedAnnotation.IsApplied = false;
-                    _pdfManager.MarkModified();
-                    RenderAnnotationOverlays();
-                }
             }
         }
 
@@ -2233,82 +1375,30 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             if (CmbFontSize.SelectedItem is ComboBoxItem item && 
                 double.TryParse(item.Content?.ToString(), out double sizeVal))
             {
-                _fontSettings.FontSize = sizeVal;
+                await _annotationEditController.ApplyFontSizeAsync(sizeVal);
                 SaveWindowPosition();
-                
-                if (_selectedAnnotation != null && (_selectedAnnotation.Type == AnnotationType.Text || _selectedAnnotation.Type == AnnotationType.FreeText))
-                {
-                    if (!await PrepareOriginalTextForReplacementAsync(_selectedAnnotation))
-                        return;
-                    _selectedAnnotation.FontSize = sizeVal;
-                    var size = AnnotationTextLayoutService.MeasureBounds(_selectedAnnotation.Content, _selectedAnnotation.FontFamily, sizeVal, _selectedAnnotation.IsBold, _selectedAnnotation.IsItalic);
-                    _selectedAnnotation.Width = size.width;
-                    _selectedAnnotation.Height = size.height;
-                    _selectedAnnotation.IsApplied = false;
-                    _pdfManager.MarkModified();
-                    RenderAnnotationOverlays();
-                }
             }
         }
 
         private async void FontBold_Click(object sender, RoutedEventArgs e)
         {
-            _fontSettings.IsBold = BtnBold.IsChecked == true;
+            await _annotationEditController.ApplyBoldAsync(BtnBold.IsChecked == true);
             SaveWindowPosition();
-            if (_selectedAnnotation != null && (_selectedAnnotation.Type == AnnotationType.Text || _selectedAnnotation.Type == AnnotationType.FreeText))
-            {
-                if (!await PrepareOriginalTextForReplacementAsync(_selectedAnnotation))
-                    return;
-                _selectedAnnotation.IsBold = _fontSettings.IsBold;
-                _selectedAnnotation.FontWeight = _fontSettings.IsBold ? 700 : 400;
-                _selectedAnnotation.OriginalFontObjectNumber = -1;
-                var size = AnnotationTextLayoutService.MeasureBounds(_selectedAnnotation.Content, _selectedAnnotation.FontFamily, _selectedAnnotation.FontSize, _selectedAnnotation.IsBold, _selectedAnnotation.IsItalic);
-                _selectedAnnotation.Width = size.width;
-                _selectedAnnotation.Height = size.height;
-                _selectedAnnotation.IsApplied = false;
-                _pdfManager.MarkModified();
-                RenderAnnotationOverlays();
-            }
         }
 
         private async void FontItalic_Click(object sender, RoutedEventArgs e)
         {
-            _fontSettings.IsItalic = BtnItalic.IsChecked == true;
+            await _annotationEditController.ApplyItalicAsync(BtnItalic.IsChecked == true);
             SaveWindowPosition();
-            if (_selectedAnnotation != null && (_selectedAnnotation.Type == AnnotationType.Text || _selectedAnnotation.Type == AnnotationType.FreeText))
-            {
-                if (!await PrepareOriginalTextForReplacementAsync(_selectedAnnotation))
-                    return;
-                _selectedAnnotation.IsItalic = _fontSettings.IsItalic;
-                _selectedAnnotation.OriginalFontObjectNumber = -1;
-                var size = AnnotationTextLayoutService.MeasureBounds(_selectedAnnotation.Content, _selectedAnnotation.FontFamily, _selectedAnnotation.FontSize, _selectedAnnotation.IsBold, _selectedAnnotation.IsItalic);
-                _selectedAnnotation.Width = size.width;
-                _selectedAnnotation.Height = size.height;
-                _selectedAnnotation.IsApplied = false;
-                _pdfManager.MarkModified();
-                RenderAnnotationOverlays();
-            }
         }
 
         private async void FontColor_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (ColorPalette.SelectedItem is Border border && border.Tag is string color)
             {
-                _fontSettings.Color = color;
                 FontColorIndicator.Background = new SolidColorBrush(ParseColor(color));
+                await _annotationEditController.ApplyColorAsync(color);
                 SaveWindowPosition();
-
-                if (_selectedAnnotation != null)
-                {
-                    if ((_selectedAnnotation.Type == AnnotationType.Text || _selectedAnnotation.Type == AnnotationType.FreeText) &&
-                        !await PrepareOriginalTextForReplacementAsync(_selectedAnnotation))
-                        return;
-                    _selectedAnnotation.Color = color;
-                    if (_selectedAnnotation.Type is AnnotationType.Text or AnnotationType.FreeText)
-                        _selectedAnnotation.IsApplied = false;
-                    _pdfManager.MarkModified();
-                    RenderAnnotationOverlays();
-                }
             }
         }
 
@@ -2554,8 +1644,8 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             try
             {
                 // 저장 버튼을 누르는 순간 아직 인라인 편집 중인 텍스트도 먼저 확정합니다.
-                if (_inlineTextEditorController.IsEditing)
-                    await _inlineTextEditorController.FinishActiveEditAsync();
+                if (_annotationCanvasController.IsInlineEditing)
+                    await _annotationCanvasController.FinishActiveInlineEditAsync();
 
                 await _pdfSaveService.SaveAsync(
                     _pdfManager,
@@ -2603,167 +1693,28 @@ private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEven
             await _dialogService.ShowErrorAsync(Content.XamlRoot, title, message);
         }
 
-        private void SaveWindowPosition()
-        {
-            if (_isInitializing || _isRestoringSettings)
-                return;
+        private void SaveWindowPosition() => _windowSettingsController.Save();
 
-            AppWindow? appWindow = GetAppWindow();
-            bool isMaximized = appWindow?.Presenter is OverlappedPresenter presenter &&
-                               presenter.State == OverlappedPresenterState.Maximized;
-            WindowPlacement? placement = appWindow != null && !isMaximized
-                ? new WindowPlacement(
-                    appWindow.Position.X,
-                    appWindow.Position.Y,
-                    appWindow.Size.Width,
-                    appWindow.Size.Height)
-                : null;
-            _settingsService.Save(placement, _fontSettings);
-        }
+        private void LoadWindowPosition() => _windowSettingsController.Load();
 
-        private void LoadWindowPosition()
-        {
-            _isRestoringSettings = true;
-            try
-            {
-                WindowPlacement? placement = _settingsService.Load(_fontSettings);
-                AppWindow? appWindow = GetAppWindow();
-                if (appWindow != null && placement != null)
-                    appWindow.MoveAndResize(new Windows.Graphics.RectInt32(
-                        placement.X, placement.Y, placement.Width, placement.Height));
-                else
-                    appWindow?.Resize(new Windows.Graphics.SizeInt32(1400, 900));
-                ApplyFontSettingsToControls();
-            }
-            finally
-            {
-                _isRestoringSettings = false;
-            }
-        }
-
-        private AppWindow? GetAppWindow()
-        {
-            IntPtr hwnd = WindowNative.GetWindowHandle(this);
-            return AppWindow.GetFromWindowId(Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd));
-        }
-
-        private void AddToRecentFiles(string filePath)
-        {
-            _recentFilesService.Add(filePath);
-            UpdateRecentFilesMenu();
-        }
-
-        private void UpdateRecentFilesMenu()
-        {
-            if (MenuRecentFiles == null) return;
-
-            MenuRecentFiles.Items.Clear();
-
-            if (_recentFilesService.Files.Count == 0)
-            {
-                MenuRecentFiles.Items.Add(new MenuFlyoutItem { Text = "최근 파일 없음", IsEnabled = false });
-                return;
-            }
-
-            foreach (var filePath in _recentFilesService.Files)
-            {
-                var item = new MenuFlyoutItem
-                {
-                    Text = Path.GetFileName(filePath),
-                    Tag = filePath
-                };
-                ToolTipService.SetToolTip(item, filePath);
-                item.Click += RecentFileItem_Click;
-                MenuRecentFiles.Items.Add(item);
-            }
-
-            MenuRecentFiles.Items.Add(new MenuFlyoutSeparator());
-            var clearItem = new MenuFlyoutItem { Text = "최근 파일 목록 지우기" };
-            clearItem.Click += (s, e) =>
-            {
-                _recentFilesService.Clear();
-                UpdateRecentFilesMenu();
-            };
-            MenuRecentFiles.Items.Add(clearItem);
-        }
-
-        private async void RecentFileItem_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is MenuFlyoutItem item && item.Tag is string filePath)
-            {
-                if (File.Exists(filePath))
-                {
-                    try
-                    {
-                        var storageFile = await StorageFile.GetFileFromPathAsync(filePath);
-                        await OpenPdfFileAsync(storageFile);
-                    }
-                    catch (Exception ex)
-                    {
-                        await ShowErrorDialogAsync("오류", $"파일을 여는 중 오류가 발생했습니다: {ex.Message}");
-                        _recentFilesService.Remove(filePath);
-                        UpdateRecentFilesMenu();
-                    }
-                }
-                else
-                {
-                    await ShowErrorDialogAsync("오류", "파일을 찾을 수 없습니다.");
-                    _recentFilesService.Remove(filePath);
-                    UpdateRecentFilesMenu();
-                }
-            }
-        }
+        private void AddToRecentFiles(string filePath) =>
+            _recentFilesController.Add(filePath);
 
         #endregion
 
         #region Alignment & Editing
 
         private async void AlignLeft_Click(object sender, RoutedEventArgs e) =>
-            await AlignSelectedAnnotationsAsync(AnnotationAlignment.Left);
+            await _annotationEditController.AlignSelectionAsync(AnnotationAlignment.Left);
 
         private async void AlignRight_Click(object sender, RoutedEventArgs e) =>
-            await AlignSelectedAnnotationsAsync(AnnotationAlignment.Right);
+            await _annotationEditController.AlignSelectionAsync(AnnotationAlignment.Right);
 
         private async void AlignTop_Click(object sender, RoutedEventArgs e) =>
-            await AlignSelectedAnnotationsAsync(AnnotationAlignment.Top);
+            await _annotationEditController.AlignSelectionAsync(AnnotationAlignment.Top);
 
         private async void AlignBottom_Click(object sender, RoutedEventArgs e) =>
-            await AlignSelectedAnnotationsAsync(AnnotationAlignment.Bottom);
-
-        private async Task AlignSelectedAnnotationsAsync(AnnotationAlignment alignment)
-        {
-            if (_selectedAnnotations.Count < 2 ||
-                !await HandleOriginalContentRemovalForSelectedAsync())
-                return;
-
-            _annotationAlignmentService.Align(_selectedAnnotations, alignment);
-            _pdfManager.MarkModified();
-            RenderAnnotationOverlays();
-        }
-
-        private async Task<bool> HandleOriginalContentRemovalForSelectedAsync()
-        {
-            var targets = _selectedAnnotations
-                .Where(annotation => annotation.IsOriginalTextReplacement)
-                .ToList();
-
-            if (targets.Count == 0) return true;
-
-            bool success = await _pdfManager.RemoveOriginalTextAnnotationsAsync(_currentPageIndex, targets);
-            
-            if (!success)
-            {
-                TxtStatus.Text = "배경을 보존하면서 이동할 수 없는 PDF 텍스트입니다.";
-                return false;
-            }
-
-            foreach (var ann in targets)
-                ann.IsOriginalTextReplacement = false;
-
-            _renderTempPath = null;
-            await RenderCurrentPageAsync();
-            return true;
-        }
+            await _annotationEditController.AlignSelectionAsync(AnnotationAlignment.Bottom);
 
         private async void DeleteAnnotation_Click(object sender, RoutedEventArgs e)
         {
