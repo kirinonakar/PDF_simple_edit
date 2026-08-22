@@ -36,6 +36,9 @@ namespace PDF_simple_edit.Models
         public int FontWeight { get; set; } = 400;
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
+        // WinUI character spacing in 1/1000-em units. A nullable value lets text
+        // imported from a PDF derive its initial spacing from the source bounds.
+        public int? CharacterSpacing { get; set; }
         public double Opacity { get; set; } = 1.0;
         public double LineWidth { get; set; } = 2.0;
         public List<PdfPathPoint> SignaturePoints { get; set; } = new();
@@ -81,6 +84,7 @@ namespace PDF_simple_edit.Models
                 FontWeight = this.FontWeight,
                 IsBold = this.IsBold,
                 IsItalic = this.IsItalic,
+                CharacterSpacing = this.CharacterSpacing,
                 Opacity = this.Opacity,
                 LineWidth = this.LineWidth,
                 SignaturePoints = this.SignaturePoints.Select(point => point.Clone()).ToList(),

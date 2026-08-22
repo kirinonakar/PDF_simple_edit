@@ -27,6 +27,9 @@ public static class AnnotationTextLayoutService
 
     public static int GetDisplayCharacterSpacing(PdfAnnotation annotation, string? text)
     {
+        if (annotation.CharacterSpacing is int preservedSpacing)
+            return preservedSpacing;
+
         if (annotation.TextFragments.Count < 2 ||
             annotation.Width <= 0.1 ||
             annotation.FontSize <= 0.1 ||
@@ -75,6 +78,38 @@ public static class AnnotationTextLayoutService
         catch
         {
             return 0;
+        }
+    }
+
+    public static double GetRequiredTextBoxWidth(
+        PdfAnnotation annotation,
+        string? text,
+        int characterSpacing)
+    {
+        try
+        {
+            double widestLine = 0;
+            foreach (string line in SplitLines(text))
+            {
+                TextBlock sample = CreateTextBlock(
+                    line,
+                    annotation.FontFamily,
+                    annotation.FontSize,
+                    annotation.IsBold,
+                    annotation.IsItalic,
+                    annotation.FontWeight);
+                sample.CharacterSpacing = characterSpacing;
+                sample.Measure(new Windows.Foundation.Size(
+                    double.PositiveInfinity,
+                    double.PositiveInfinity));
+                widestLine = Math.Max(widestLine, sample.DesiredSize.Width);
+            }
+
+            return Math.Max((widestLine + 2.0) / PdfToPixels, 1.0 / PdfToPixels);
+        }
+        catch
+        {
+            return Math.Max(annotation.Width, 1.0 / PdfToPixels);
         }
     }
 

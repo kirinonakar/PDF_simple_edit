@@ -27,6 +27,8 @@ public sealed class InlineTextEditSession
     public Task<bool>? RemovalTask { get; set; }
     public bool WasApplied { get; init; }
     public bool WasOriginalTextReplacement { get; init; }
+    public double OriginalWidth { get; init; }
+    public int PreservedCharacterSpacing { get; init; }
 }
 
 public sealed class InlineTextEditorController
@@ -106,6 +108,9 @@ public sealed class InlineTextEditorController
         double width = existingAnnotation != null
             ? Math.Max(existingAnnotation.Width * PdfToPixels, 1)
             : double.NaN;
+        int characterSpacing = existingAnnotation != null
+            ? AnnotationTextLayoutService.GetDisplayCharacterSpacing(existingAnnotation, initialText)
+            : 0;
         double displayFontSize = existingAnnotation != null
             ? AnnotationTextLayoutService.GetDisplayFontSize(existingAnnotation, initialText)
             : fontSize;
@@ -138,9 +143,7 @@ public sealed class InlineTextEditorController
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
             BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
             FontSize = displayFontSize * PdfToPixels,
-            CharacterSpacing = existingAnnotation != null
-                ? AnnotationTextLayoutService.GetDisplayCharacterSpacing(existingAnnotation, initialText)
-                : 0,
+            CharacterSpacing = characterSpacing,
             FontFamily = new FontFamily(fontFamily),
             Foreground = new SolidColorBrush(EditorColorService.Parse(color)),
             FontWeight = AnnotationTextLayoutService.ResolveFontWeight(fontWeight, isBold),
@@ -152,7 +155,9 @@ public sealed class InlineTextEditorController
                     OriginalContent = initialText,
                     LastEditorText = initialText,
                     WasApplied = existingAnnotation.IsApplied,
-                    WasOriginalTextReplacement = existingAnnotation.IsOriginalTextReplacement
+                    WasOriginalTextReplacement = existingAnnotation.IsOriginalTextReplacement,
+                    OriginalWidth = existingAnnotation.Width,
+                    PreservedCharacterSpacing = characterSpacing
                 }
                 : new Point(pdfX, pdfY),
             VerticalAlignment = VerticalAlignment.Top,
@@ -246,24 +251,26 @@ public sealed class InlineTextEditorController
         long changeVersion = ++session.TextChangeVersion;
         session.HasLiveChanges = true;
 
-        double displayFontSize = session.Annotation.TextFragments.Count > 1
-            ? AnnotationTextLayoutService.GetDisplayFontSize(session.Annotation, changedText)
-            : session.Annotation.FontSize;
+        double displayFontSize = AnnotationTextLayoutService.GetDisplayFontSize(
+            session.Annotation,
+            changedText);
         bool wasSuppressed = session.SuppressTextChanged;
         session.SuppressTextChanged = true;
         try
         {
-            if (session.Annotation.TextFragments.Count > 1)
-            {
-                editor.FontSize = displayFontSize * PdfToPixels;
-                editor.CharacterSpacing = AnnotationTextLayoutService.GetDisplayCharacterSpacing(
-                    session.Annotation,
-                    changedText);
-                Canvas.SetTop(
-                    editor,
-                    session.Annotation.Y * PdfToPixels +
-                    AnnotationTextLayoutService.GetTopOffset(session.Annotation, displayFontSize));
-            }
+            editor.FontSize = displayFontSize * PdfToPixels;
+            editor.CharacterSpacing = session.PreservedCharacterSpacing;
+            double requiredWidth = AnnotationTextLayoutService.GetRequiredTextBoxWidth(
+                session.Annotation,
+                changedText,
+                session.PreservedCharacterSpacing) * PdfToPixels;
+            editor.Width = Math.Min(
+                editor.MaxWidth,
+                Math.Max(session.OriginalWidth * PdfToPixels, requiredWidth));
+            Canvas.SetTop(
+                editor,
+                session.Annotation.Y * PdfToPixels +
+                AnnotationTextLayoutService.GetTopOffset(session.Annotation, displayFontSize));
             editor.Height = AnnotationTextLayoutService.GetInlineEditorHeight(
                 changedText,
                 session.Annotation.FontFamily,
@@ -293,9 +300,8 @@ public sealed class InlineTextEditorController
                 session.Annotation.Content = session.OriginalContent;
                 session.LastEditorText = session.OriginalContent;
                 SetEditorText(editor, session.OriginalContent);
-                editor.CharacterSpacing = AnnotationTextLayoutService.GetDisplayCharacterSpacing(
-                    session.Annotation,
-                    session.OriginalContent);
+                editor.CharacterSpacing = session.PreservedCharacterSpacing;
+                editor.Width = Math.Max(session.OriginalWidth * PdfToPixels, 1);
                 editor.Height = AnnotationTextLayoutService.GetInlineEditorHeight(
                     session.OriginalContent,
                     session.Annotation.FontFamily,
@@ -456,6 +462,7 @@ public sealed class InlineTextEditorController
             return;
 
         string text = GetEditorText(editor);
+        double editedWidth = editor.Width;
         object tag = editor.Tag;
         bool textWasRemoved = false;
         var editSession = tag as InlineTextEditSession;
@@ -526,6 +533,10 @@ public sealed class InlineTextEditorController
                     }
 
                     existingAnnotation.Content = text;
+                    if (double.IsFinite(editedWidth) && editedWidth > 0)
+                        existingAnnotation.Width = editedWidth / PdfToPixels;
+                    if (editSession != null)
+                        existingAnnotation.CharacterSpacing = editSession.PreservedCharacterSpacing;
                     if (existingAnnotation.TextFragments.Count == 0)
                     {
                         var size = AnnotationTextLayoutService.MeasureBounds(
@@ -535,14 +546,14 @@ public sealed class InlineTextEditorController
                             existingAnnotation.IsBold,
                             existingAnnotation.IsItalic,
                             existingAnnotation.FontWeight);
-                        existingAnnotation.Width = size.width;
                         existingAnnotation.Height = size.height;
                     }
                     else
                     {
                         // Original PDF glyph bounds can be shorter than WinUI's
-                        // text layout box. Keep the original width, but grow the
-                        // lower edge so the committed preview cannot clip text.
+                        // text layout box. Grow the lower edge so the committed
+                        // preview cannot clip text; the right edge was already
+                        // expanded above to fit the replacement text.
                         existingAnnotation.Height =
                             AnnotationTextLayoutService.GetRequiredTextBoxHeight(
                                 existingAnnotation,
