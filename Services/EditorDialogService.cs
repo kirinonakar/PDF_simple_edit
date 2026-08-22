@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Imaging;
 using PDF_simple_edit.Models;
 using System;
 using System.Linq;
@@ -84,7 +85,16 @@ public sealed class EditorDialogService
 
     public async Task ShowAboutAsync(XamlRoot xamlRoot)
     {
-        var panel = new StackPanel { Spacing = 8 };
+        var panel = new StackPanel { Spacing = 8, MinWidth = 360 };
+        panel.Children.Add(new Image
+        {
+            Source = new BitmapImage(new Uri("ms-appx:///Assets/pdf_edit.png")),
+            Width = 96,
+            Height = 96,
+            Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 4)
+        });
         panel.Children.Add(new TextBlock
         {
             Text = "PDF Simple Editor",
@@ -93,7 +103,6 @@ public sealed class EditorDialogService
         });
         panel.Children.Add(new TextBlock { Text = "버전 1.0.0" });
         panel.Children.Add(new TextBlock { Text = "WinUI 3 + iText 9 기반 PDF 편집기", Opacity = 0.7 });
-        panel.Children.Add(new TextBlock { Text = "한글 폰트 지원", Opacity = 0.7 });
         panel.Children.Add(new HyperlinkButton
         {
             Content = "GitHub: kirinonakar/PDF_simple_edit",
@@ -102,15 +111,21 @@ public sealed class EditorDialogService
         });
         panel.Children.Add(new TextBlock
         {
-            Text = "\n기능:\n• PDF 열기/저장/인쇄\n• 텍스트 추가/편집/바꾸기\n• 텍스트 강조 표시\n• 이미지 삽입\n• PDF 합치기/나누기\n• 찾기 및 바꾸기\n• 한글 폰트 지원",
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.8
+            Text = "Third-party libraries",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Margin = new Thickness(0, 12, 0, 0)
         });
         panel.Children.Add(new TextBlock
         {
-            Text = "\nLibraries: iText 9 Core & pdfSweep (AGPL v3, © iText Group NV)",
+            Text = "iText 9 Core 9.5.0 — GNU AGPL v3 (© iText Group NV)\n"
+                + "iText Bouncy Castle adapter 9.5.0 — GNU AGPL v3 (© iText Group NV)\n"
+                + "iText pdfSweep 5.0.5 — GNU AGPL v3 (© iText Group NV)\n"
+                + "Bouncy Castle Cryptography 2.6.2 — MIT License\n"
+                + "Newtonsoft.Json 13.0.4 — MIT License\n"
+                + "Windows App SDK 1.8.260209005 — Microsoft Software License Terms",
+            TextWrapping = TextWrapping.Wrap,
             FontSize = 11,
-            Opacity = 0.6
+            Opacity = 0.7
         });
 
         await new ContentDialog

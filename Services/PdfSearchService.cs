@@ -57,7 +57,7 @@ public sealed class PdfSearchService
     {
         private readonly string _query;
         private readonly StringComparison _comparison;
-        private readonly List<TextRenderInfo> _renderInfos = new();
+        private readonly List<TextRenderInfo> _characterRenderInfos = new();
 
         public TextLocationStrategy(string query, bool matchCase)
         {
@@ -72,7 +72,19 @@ public sealed class PdfSearchService
 
             var textInfo = (TextRenderInfo)data;
             textInfo.PreserveGraphicsState();
-            _renderInfos.Add(textInfo);
+
+            // A single PDF text operation can contain an entire line or sentence.
+            // Keep glyph-level render information so a search highlight only covers
+            // the matched characters instead of the whole text operation.
+            var characterInfos = textInfo.GetCharacterRenderInfos();
+            if (characterInfos.Count == 0)
+            {
+                _characterRenderInfos.Add(textInfo);
+                return;
+            }
+
+            foreach (TextRenderInfo characterInfo in characterInfos)
+                _characterRenderInfos.Add(characterInfo);
         }
 
         public ICollection<EventType> GetSupportedEvents() => new[] { EventType.RENDER_TEXT };
@@ -87,9 +99,9 @@ public sealed class PdfSearchService
 
             var fullText = new StringBuilder();
             var characterToRenderInfo = new List<int>();
-            for (int i = 0; i < _renderInfos.Count; i++)
+            for (int i = 0; i < _characterRenderInfos.Count; i++)
             {
-                string text = _renderInfos[i].GetText()?.Normalize(NormalizationForm.FormC) ?? string.Empty;
+                string text = _characterRenderInfos[i].GetText()?.Normalize(NormalizationForm.FormC) ?? string.Empty;
                 foreach (char character in text)
                 {
                     fullText.Append(character);
@@ -124,7 +136,7 @@ public sealed class PdfSearchService
 
             for (int i = startInfo; i <= endInfo; i++)
             {
-                TextRenderInfo info = _renderInfos[i];
+                TextRenderInfo info = _characterRenderInfos[i];
                 var baseline = info.GetBaseline();
                 var ascent = info.GetAscentLine();
                 var descent = info.GetDescentLine();

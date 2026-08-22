@@ -13,6 +13,8 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 - **Text Addition**: Add new text with full control over font family, size, color, bold, and italic styles.
 - **Smart Text Extraction**: Automatically groups fragmented characters into logical sentences for easier selection and editing.
 - **Image Insertion**: Easily place images into your PDF pages.
+- **Image Extraction**: Extract all embedded images from a PDF to a selected folder.
+- **Image Saving**: Save a selected image as a standalone image file.
 
 ### 🖋️ Annotation & Highlighting
 - **Smooth Highlighting**: Add semi-transparent highlights to text blocks.
