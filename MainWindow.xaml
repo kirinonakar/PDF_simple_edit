@@ -138,6 +138,9 @@
                 <MenuFlyoutItem Text="이미지 추가" x:Name="MenuAddImage" Click="AddImageTool_Click" IsEnabled="False">
                     <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B9;"/></MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
+                <MenuFlyoutItem Text="모든 이미지 추출..." x:Name="MenuExtractImages" Click="ExtractAllImages_Click" IsEnabled="False">
+                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE91B;"/></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
                 <MenuFlyoutSeparator/>
                 <MenuFlyoutItem Text="PDF 합치기..." Click="MergePdf_Click">
                     <MenuFlyoutItem.Icon><FontIcon Glyph="&#xEB4E;"/></MenuFlyoutItem.Icon>

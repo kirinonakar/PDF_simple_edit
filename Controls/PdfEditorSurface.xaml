@@ -21,7 +21,7 @@
                 <Image x:Name="PageImage" x:FieldModifier="public" Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Top"/>
                 <Canvas x:Name="AnnotationCanvas" x:FieldModifier="public" HorizontalAlignment="Center" VerticalAlignment="Top" Background="Transparent">
                     <Canvas.ContextFlyout>
-                        <MenuFlyout>
+                        <MenuFlyout x:Name="AnnotationContextMenu" x:FieldModifier="public">
                             <MenuFlyoutItem x:Name="AlignLeftItem" x:FieldModifier="public" Text="왼쪽 맞춤">
                                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E4;"/></MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>
@@ -33,6 +33,10 @@
                             </MenuFlyoutItem>
                             <MenuFlyoutItem x:Name="AlignBottomItem" x:FieldModifier="public" Text="아래쪽 맞춤">
                                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E1;"/></MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                            <MenuFlyoutSeparator/>
+                            <MenuFlyoutItem x:Name="SaveImageItem" x:FieldModifier="public" Text="이미지 저장..." IsEnabled="False">
+                                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74E;"/></MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>
                             <MenuFlyoutSeparator/>
                             <MenuFlyoutItem x:Name="DeleteItem" x:FieldModifier="public" Text="삭제">

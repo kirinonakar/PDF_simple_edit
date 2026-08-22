@@ -59,6 +59,7 @@ namespace PDF_simple_edit
         private readonly DocumentSearchController _documentSearchController = new(new PdfSearchService());
         private readonly PdfPageRenderService _pageRenderService = new();
         private readonly PdfOperationService _pdfOperationService = new();
+        private readonly PdfImageExtractionService _pdfImageExtractionService = new();
         private readonly EditorDialogService _dialogService = new();
         private readonly PdfSaveService _pdfSaveService;
         private bool _isSaveInProgress;
@@ -452,6 +453,8 @@ namespace PDF_simple_edit
             PdfSurface.AlignRightItem.Click += AlignRight_Click;
             PdfSurface.AlignTopItem.Click += AlignTop_Click;
             PdfSurface.AlignBottomItem.Click += AlignBottom_Click;
+            PdfSurface.AnnotationContextMenu.Opening += AnnotationContextMenu_Opening;
+            PdfSurface.SaveImageItem.Click += SaveSelectedImage_Click;
             PdfSurface.DeleteItem.Click += DeleteAnnotation_Click;
 
             FindPanel.CloseButton.Click += CloseFindPanel_Click;
@@ -625,6 +628,7 @@ namespace PDF_simple_edit
             MenuHighlight.IsEnabled = hasDoc;
             MenuSignature.IsEnabled = hasDoc;
             MenuAddImage.IsEnabled = hasDoc;
+            MenuExtractImages.IsEnabled = hasDoc;
             MenuSplitPdf.IsEnabled = hasDoc;
             MenuDeletePage.IsEnabled = hasDoc;
 
@@ -1201,6 +1205,130 @@ namespace PDF_simple_edit
                 RenderAnnotationOverlays();
             }
         }
+
+        private async void ExtractAllImages_Click(object sender, RoutedEventArgs e)
+        {
+            byte[]? pdfBytes = _pdfManager.GetPdfBytes();
+            if (pdfBytes == null)
+                return;
+
+            var picker = new FolderPicker
+            {
+                SuggestedStartLocation = PickerLocationId.PicturesLibrary
+            };
+            picker.FileTypeFilter.Add("*");
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+
+            StorageFolder? folder = await picker.PickSingleFolderAsync();
+            if (folder == null)
+                return;
+
+            string documentName = !string.IsNullOrWhiteSpace(_pdfManager.FilePath)
+                ? Path.GetFileNameWithoutExtension(_pdfManager.FilePath)
+                : "document";
+
+            TxtStatus.Text = "이미지 추출 중...";
+            LoadingRing.IsActive = true;
+            try
+            {
+                PdfImageExtractionResult result = await _pdfImageExtractionService.ExtractAllAsync(
+                    pdfBytes,
+                    folder.Path,
+                    documentName);
+
+                TxtStatus.Text = result switch
+                {
+                    { SavedCount: 0, FailedCount: 0 } => "추출할 이미지가 없습니다.",
+                    { FailedCount: 0 } => $"이미지 추출 완료: {result.SavedCount}개",
+                    _ => $"이미지 {result.SavedCount}개 추출, {result.FailedCount}개 실패"
+                };
+            }
+            catch (Exception ex)
+            {
+                await ShowErrorDialogAsync(
+                    "이미지 추출 오류",
+                    $"이미지 추출 중 오류가 발생했습니다: {ex.Message}");
+                TxtStatus.Text = "이미지 추출에 실패했습니다.";
+            }
+            finally
+            {
+                LoadingRing.IsActive = false;
+            }
+        }
+
+        private void AnnotationContextMenu_Opening(object? sender, object e)
+        {
+            PdfAnnotation? selectedImage = _annotationCanvasController.SelectedAnnotations.Count == 1
+                ? _annotationCanvasController.SelectedAnnotations[0]
+                : null;
+            PdfSurface.SaveImageItem.IsEnabled = selectedImage?.Type == AnnotationType.Image &&
+                !string.IsNullOrWhiteSpace(selectedImage.ImagePath) &&
+                File.Exists(selectedImage.ImagePath);
+        }
+
+        private async void SaveSelectedImage_Click(object sender, RoutedEventArgs e)
+        {
+            PdfAnnotation? selectedImage = _annotationCanvasController.SelectedAnnotations.Count == 1
+                ? _annotationCanvasController.SelectedAnnotations[0]
+                : null;
+            string? sourcePath = selectedImage?.Type == AnnotationType.Image
+                ? selectedImage.ImagePath
+                : null;
+            if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+            {
+                TxtStatus.Text = "저장할 이미지 파일을 찾을 수 없습니다.";
+                return;
+            }
+
+            string extension = Path.GetExtension(sourcePath).ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(extension))
+                extension = ".png";
+
+            string documentName = !string.IsNullOrWhiteSpace(_pdfManager.FilePath)
+                ? Path.GetFileNameWithoutExtension(_pdfManager.FilePath)
+                : "document";
+            var picker = new FileSavePicker
+            {
+                SuggestedStartLocation = PickerLocationId.PicturesLibrary,
+                SuggestedFileName = $"{documentName}_page_{selectedImage!.PageIndex + 1}_image{extension}"
+            };
+            picker.FileTypeChoices.Add(
+                GetImageFileTypeDescription(extension),
+                new List<string> { extension });
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+
+            StorageFile? targetFile = await picker.PickSaveFileAsync();
+            if (targetFile == null)
+                return;
+
+            try
+            {
+                string sourceFullPath = Path.GetFullPath(sourcePath);
+                string targetFullPath = Path.GetFullPath(targetFile.Path);
+                if (!string.Equals(sourceFullPath, targetFullPath, StringComparison.OrdinalIgnoreCase))
+                    await Task.Run(() => File.Copy(sourceFullPath, targetFullPath, true));
+                TxtStatus.Text = $"이미지 저장 완료: {targetFile.Name}";
+            }
+            catch (Exception ex)
+            {
+                await ShowErrorDialogAsync(
+                    "이미지 저장 오류",
+                    $"이미지를 저장하는 중 오류가 발생했습니다: {ex.Message}");
+                TxtStatus.Text = "이미지 저장에 실패했습니다.";
+            }
+        }
+
+        private static string GetImageFileTypeDescription(string extension) =>
+            extension switch
+            {
+                ".jpg" or ".jpeg" => "JPEG 이미지",
+                ".tif" or ".tiff" => "TIFF 이미지",
+                ".jp2" => "JPEG 2000 이미지",
+                ".bmp" => "BMP 이미지",
+                ".gif" => "GIF 이미지",
+                ".jbig2" => "JBIG2 이미지",
+                _ => "PNG 이미지"
+            };
 
         private static (double width, double height) CalculateInitialImageSize(
             uint pixelWidth,
