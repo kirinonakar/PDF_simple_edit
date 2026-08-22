@@ -25,6 +25,9 @@
                             <MenuFlyoutItem x:Name="CopyItem" x:FieldModifier="public" Text="복사" Visibility="Collapsed">
                                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C8;"/></MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>
+                            <MenuFlyoutItem x:Name="CutItem" x:FieldModifier="public" Text="잘라내기" Visibility="Collapsed">
+                                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C6;"/></MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
                             <MenuFlyoutItem x:Name="PasteItem" x:FieldModifier="public" Text="붙여넣기">
                                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE77F;"/></MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>

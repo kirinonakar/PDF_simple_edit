@@ -461,6 +461,7 @@ namespace PDF_simple_edit
             PdfSurface.AlignBottomItem.Click += AlignBottom_Click;
             PdfSurface.AnnotationContextMenu.Opening += AnnotationContextMenu_Opening;
             PdfSurface.CopyItem.Click += CopySelectedObjects_Click;
+            PdfSurface.CutItem.Click += CutSelectedObjects_Click;
             PdfSurface.PasteItem.Click += Paste_Click;
             PdfSurface.SaveImageItem.Click += SaveSelectedImage_Click;
             PdfSurface.DeleteItem.Click += DeleteAnnotation_Click;
@@ -1266,8 +1267,13 @@ namespace PDF_simple_edit
 
         private void AnnotationContextMenu_Opening(object? sender, object e)
         {
-            bool hasCopyableSelection = GetCopyableSelection().Count > 0;
+            int selectedCount = _annotationCanvasController.SelectedAnnotations.Count;
+            int copyableCount = GetCopyableSelection().Count;
+            bool hasCopyableSelection = copyableCount > 0;
             PdfSurface.CopyItem.Visibility = hasCopyableSelection
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            PdfSurface.CutItem.Visibility = hasCopyableSelection && copyableCount == selectedCount
                 ? Visibility.Visible
                 : Visibility.Collapsed;
             PdfSurface.PasteItem.IsEnabled = CanPasteClipboardContent();
@@ -1282,6 +1288,32 @@ namespace PDF_simple_edit
 
         private async void CopySelectedObjects_Click(object sender, RoutedEventArgs e) =>
             await CopySelectedObjectsAsync();
+
+        private async void CutSelectedObjects_Click(object sender, RoutedEventArgs e) =>
+            await CutSelectedObjectsAsync();
+
+        private async Task<bool> CutSelectedObjectsAsync()
+        {
+            List<PdfAnnotation> selectedObjects = GetCopyableSelection();
+            if (selectedObjects.Count == 0 ||
+                selectedObjects.Count != _annotationCanvasController.SelectedAnnotations.Count)
+            {
+                return false;
+            }
+
+            if (!await CopySelectedObjectsAsync())
+                return false;
+
+            if (!await DeleteSelectedAnnotationsAsync())
+                return false;
+
+            TxtStatus.Text = selectedObjects.Count > 1
+                ? $"{selectedObjects.Count}개 객체를 잘라냈습니다."
+                : selectedObjects[0].Type == AnnotationType.Image
+                    ? "이미지를 잘라냈습니다."
+                    : "텍스트를 잘라냈습니다.";
+            return true;
+        }
 
         private async Task<bool> CopySelectedObjectsAsync()
         {
@@ -1793,6 +1825,16 @@ namespace PDF_simple_edit
                 {
                     e.Handled = true;
                     await CopySelectedObjectsAsync();
+                    return;
+                }
+
+                if (e.Key == Windows.System.VirtualKey.X &&
+                    GetCopyableSelection().Count ==
+                        _annotationCanvasController.SelectedAnnotations.Count &&
+                    _annotationCanvasController.SelectedAnnotations.Count > 0)
+                {
+                    e.Handled = true;
+                    await CutSelectedObjectsAsync();
                     return;
                 }
 
