@@ -24,7 +24,11 @@ public sealed class PdfSaveService
         string filePath,
         bool isUserSave)
     {
-        byte[] editedBytes = manager.CreatePdfBytesWithEdits(document =>
+        bool needsAnnotationWrite = annotations.Any(a => a.NativeText == null &&
+            (!a.IsApplied && !a.IsOriginalTextReplacement || a.Type == AnnotationType.Signature));
+        byte[] editedBytes = !needsAnnotationWrite
+            ? manager.GetPdfBytes() ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.")
+            : manager.CreatePdfBytesWithEdits(document =>
         {
             manager.RemoveSavedSignatureAnnotations(document);
             foreach (PdfAnnotation annotation in annotations)

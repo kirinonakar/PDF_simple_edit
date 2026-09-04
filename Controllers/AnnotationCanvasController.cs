@@ -13,6 +13,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using System.Threading;
+using System.IO;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Foundation;
 
 namespace PDF_simple_edit.Controllers;
@@ -54,6 +57,10 @@ public sealed class AnnotationCanvasController
     private long _selectPointerPressSequence;
     private readonly List<PdfPathPoint> _signaturePoints = new();
     private Polyline? _signaturePreview;
+    private int _movePreviewVersion;
+    private ImageSource? _moveOriginalImage;
+    private readonly SemaphoreSlim _movePreviewGate = new(1, 1);
+    private PdfTextPoint? _pendingInlineCaret;
 
     public AnnotationCanvasController(
         Canvas canvas,
@@ -198,6 +205,7 @@ public sealed class AnnotationCanvasController
             _selectPointerPressSequence++;
             if (_interactionController.CancelMove())
             {
+                CancelNativeMovePreview();
                 _canvas.ReleasePointerCapture(e.Pointer);
                 _statusText.Text = "객체 선택됨 (드래그하여 이동)";
                 Render();
@@ -212,6 +220,8 @@ public sealed class AnnotationCanvasController
             SelectedAnnotations))
         {
             Render();
+            if (_interactionController.IsMoving && SelectedAnnotations.Any(a => a.NativeText != null))
+                _ = PreviewNativeMoveAsync(++_movePreviewVersion);
         }
     }
 
@@ -273,7 +283,10 @@ public sealed class AnnotationCanvasController
             position.X / PdfToPixels,
             position.Y / PdfToPixels);
         if (annotation != null)
+        {
+            _pendingInlineCaret = new(position.X / PdfToPixels, position.Y / PdfToPixels);
             EditAnnotationContent(annotation);
+        }
     }
 
     public void Render()
@@ -282,6 +295,7 @@ public sealed class AnnotationCanvasController
         PdfAnnotation? editingAnnotation = activeBox?.Tag switch
         {
             InlineTextEditSession session => session.Annotation,
+            NativeInlineTextSession session => session.Annotation,
             PdfAnnotation annotation => annotation,
             _ => null
         };
@@ -501,6 +515,7 @@ public sealed class AnnotationCanvasController
         PdfDocumentManager manager,
         int pageIndex)
     {
+        ++_movePreviewVersion;
         _canvas.ReleasePointerCapture(e.Pointer);
         AnnotationMoveResult result = await _interactionController.CompleteMoveAsync(
             manager, pageIndex, SelectedAnnotations);
@@ -517,6 +532,7 @@ public sealed class AnnotationCanvasController
 
         if (result == AnnotationMoveResult.NotMoved || failureMessage != null)
         {
+            CancelNativeMovePreview();
             if (failureMessage != null)
                 _statusText.Text = failureMessage;
             Render();
@@ -524,12 +540,65 @@ public sealed class AnnotationCanvasController
         }
 
         manager.MarkModified();
+        _moveOriginalImage = null;
+        if (SelectedAnnotations.Any(a => a.NativeText != null))
+            await RefreshNativeSelectionAsync(pageIndex);
+        _invalidateRenderPath();
         _statusText.Text = "위치 이동됨 (저장 시 반영)";
         if (!IsInlineEditing)
         {
             await _renderCurrentPageAsync();
             Render();
         }
+    }
+
+    private void CancelNativeMovePreview()
+    {
+        ++_movePreviewVersion;
+        if (_moveOriginalImage != null) _pageImage.Source = _moveOriginalImage;
+        _moveOriginalImage = null;
+    }
+
+    private async Task PreviewNativeMoveAsync(int version)
+    {
+        _moveOriginalImage ??= _pageImage.Source;
+        await Task.Delay(25);
+        if (version != _movePreviewVersion) return;
+        await _movePreviewGate.WaitAsync();
+        try
+        {
+            if (version != _movePreviewVersion || !_interactionController.IsMoving) return;
+            byte[]? bytes = _getManager().GetPdfBytes();
+            if (bytes == null) return;
+            int pageIndex = _getPageIndex();
+            var edits = SelectedAnnotations.Where(a => a.NativeText != null).Select(a =>
+                new NativePdfTextEdit(a.NativeText!, a.NativeText!.Text, a.X - a.NativeText.Bounds.X, a.Y - a.NativeText.Bounds.Y)).ToList();
+            var result = await Task.Run(() => new NativePdfTextService().EditMany(bytes, pageIndex, edits));
+            if (version != _movePreviewVersion) return;
+            using var input = new MemoryStream(result.Bytes);
+            using var rendered = await PdfRenderHelper.RenderPageWithWindowsPdfStreamAsync(input.AsRandomAccessStream(), pageIndex, 2);
+            if (rendered == null || version != _movePreviewVersion) return;
+            var bitmap = new BitmapImage(); await bitmap.SetSourceAsync(rendered.AsRandomAccessStream());
+            if (version == _movePreviewVersion && _interactionController.IsMoving) _pageImage.Source = bitmap;
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
+        finally { _movePreviewGate.Release(); }
+    }
+
+    private async Task RefreshNativeSelectionAsync(int pageIndex)
+    {
+        var native = SelectedAnnotations.Where(a => a.NativeText != null).ToList();
+        var contents = await _getManager().ExtractPageContentsAsync(pageIndex);
+        foreach (var annotation in native)
+        {
+            var found = contents.Where(c => c.NativeText != null).OrderBy(c =>
+                Math.Pow(c.X - annotation.X, 2) + Math.Pow(c.Y - annotation.Y, 2)).FirstOrDefault();
+            if (found?.NativeText == null) continue;
+            annotation.NativeText = found.NativeText; annotation.Content = found.NativeText.Text;
+            annotation.X = found.X; annotation.Y = found.Y; annotation.Width = found.Width; annotation.Height = found.Height;
+            annotation.IsOriginalTextReplacement = true; annotation.IsApplied = false;
+        }
+        _getAnnotations().RemoveAll(a => a.PageIndex == pageIndex && a.NativeText != null && !native.Contains(a));
     }
 
     private void EditAnnotationContent(PdfAnnotation annotation)
@@ -576,7 +645,9 @@ public sealed class AnnotationCanvasController
                     PrimarySelection = null;
             },
             cancelled => _dispatcherQueue.TryEnqueue(() =>
-                _focusAfterInlineEdit(cancelled)));
+                _focusAfterInlineEdit(cancelled)),
+            _pageImage, _pendingInlineCaret);
+        _pendingInlineCaret = null;
     }
 
     private static void SetElementCursor(UIElement element, InputCursor cursor)

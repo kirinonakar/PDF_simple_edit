@@ -22,6 +22,7 @@ namespace PDF_simple_edit.Models
     /// </summary>
     public class PdfAnnotation
     {
+        public NativePdfTextBlock? NativeText { get; set; }
         public string Id { get; set; } = Guid.NewGuid().ToString();
         public AnnotationType Type { get; set; }
         public int PageIndex { get; set; }
@@ -70,6 +71,7 @@ namespace PDF_simple_edit.Models
         {
             return new PdfAnnotation
             {
+                NativeText = NativeText,
                 Id = this.Id, // Keep same ID for matching if needed, or Guid.NewGuid() if new object
                 Type = this.Type,
                 PageIndex = this.PageIndex,
@@ -302,6 +304,7 @@ namespace PDF_simple_edit.Models
     /// </summary>
     public class PdfPageContent
     {
+        public NativePdfTextBlock? NativeText { get; set; }
         public PageContentType Type { get; set; }
         public double X { get; set; } // UI coordinates (Top-Left)
         public double Y { get; set; } // UI coordinates (Top-Left)

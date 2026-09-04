@@ -19,6 +19,14 @@ public sealed class AnnotationContentService
             if (annotation.PageIndex != pageIndex)
                 continue;
 
+            if (annotation.NativeText != null)
+            {
+                double dx = annotation.X - annotation.NativeText.Bounds.X;
+                double dy = annotation.Y - annotation.NativeText.Bounds.Y;
+                if (annotation.NativeText.Lines.Any(line => line.Contains(x - dx, y - dy, 1))) return annotation;
+                continue;
+            }
+
             if (annotation.Type is AnnotationType.Text or AnnotationType.FreeText)
             {
                 double width = annotation.Width > 0
@@ -76,6 +84,7 @@ public sealed class AnnotationContentService
         if (match.Type != PageContentType.Text)
             return match;
 
+        if (match.NativeText != null) return match;
         PdfPageContent expanded = Clone(match);
         int startIndex = matchIndex;
         while (startIndex > 0 && CanJoin(contents[startIndex - 1], expanded, out bool prependNewLine))
@@ -96,6 +105,10 @@ public sealed class AnnotationContentService
 
     private static double GetTextHitDistance(PdfPageContent content, double x, double y)
     {
+        if (content.NativeText != null)
+            return content.NativeText.Lines.Min(line =>
+                Math.Pow(Math.Max(Math.Max(line.X - x, x - line.Right), 0), 2) +
+                Math.Pow(y - (line.Y + line.Height / 2), 2));
         if (content.TextFragments.Count == 0)
         {
             double centerX = content.X + content.Width / 2.0;
@@ -124,6 +137,7 @@ public sealed class AnnotationContentService
         string editableText = isText ? BuildEditableText(content) : content.Text ?? string.Empty;
         return new PdfAnnotation
         {
+            NativeText = content.NativeText,
             Type = isText ? AnnotationType.Text : AnnotationType.Image,
             PageIndex = pageIndex,
             X = content.X,
@@ -174,6 +188,7 @@ public sealed class AnnotationContentService
 
     private static PdfPageContent Clone(PdfPageContent source) => new()
     {
+        NativeText = source.NativeText,
         Type = source.Type,
         X = source.X,
         Y = source.Y,

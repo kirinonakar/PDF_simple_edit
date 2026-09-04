@@ -218,6 +218,25 @@ public sealed class AnnotationInteractionController
             return AnnotationMoveResult.NotMoved;
         }
 
+        var native = selectedAnnotations.Where(a => a.NativeText != null).ToList();
+        if (native.Count > 0)
+        {
+            if (selectedAnnotations.Any(a => a.NativeText == null && (a.IsOriginalImageReplacement || a.IsOriginalTextReplacement || a.IsApplied)))
+            { RestoreMoveStartPositions(); return AnnotationMoveResult.MixedOriginalContentRemovalFailed; }
+            try
+            {
+                await manager.ApplyNativeTextEditsAsync(pageIndex, native.Select(a => new NativePdfTextEdit(a.NativeText!,
+                    a.NativeText!.Text, a.X - a.NativeText.Bounds.X, a.Y - a.NativeText.Bounds.Y)).ToList());
+                _moveStartPositions.Clear(); _moveStartAppliedStates.Clear();
+                return AnnotationMoveResult.Completed;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex); RestoreMoveStartPositions();
+                return AnnotationMoveResult.OriginalTextRemovalFailed;
+            }
+        }
+
         var appliedText = selectedAnnotations
             .Where(annotation =>
                 _moveStartAppliedStates.TryGetValue(annotation, out bool wasApplied) &&

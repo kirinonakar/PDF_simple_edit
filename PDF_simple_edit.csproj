@@ -32,6 +32,7 @@
   <ItemGroup>
     <!-- Keep local diagnostic probes out of the application compilation. -->
     <Compile Remove="tmp\**" />
+    <Compile Remove="tests\**" />
     <None Remove="tmp\**" />
   </ItemGroup>
 
@@ -58,6 +59,7 @@
 
   <ItemGroup>
     <PackageReference Include="itext" Version="9.5.0" />
+    <PackageReference Include="PDFiumCore" Version="154.0.8035" />
     <PackageReference Include="itext.bouncy-castle-adapter" Version="9.5.0" />
     <PackageReference Include="itext.pdfsweep" Version="5.0.5" NoWarn="NU1701" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />

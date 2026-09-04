@@ -69,8 +69,11 @@ namespace PDF_simple_edit.Services
                     shadingOperator.InnerOperator = processor.RegisterContentOperator("sh", shadingOperator);
                     processor.ProcessPageContent(page);
                     
-                    extractedContents = GroupTextIntoEditRegions(
-                        listener.Contents.Where(content => content.Type == PageContentType.Text));
+                    // The native model owns text geometry and editing identity. The
+                    // legacy listener remains responsible for image/vector selection.
+                    extractedContents = new NativePdfTextService().Extract(pdfSnapshot, pageIndex)
+                        .Where(block => !string.IsNullOrWhiteSpace(block.Text))
+                        .Select(NativePdfTextService.ToPageContent).ToList();
                     extractedContents.AddRange(listener.Contents.Where(content => content.Type == PageContentType.Image));
                     extractedContents.AddRange(GroupVectorPathsIntoGraphics(
                         listener.VectorPaths, pageSize.GetHeight()));

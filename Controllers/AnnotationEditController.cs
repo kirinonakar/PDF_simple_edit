@@ -61,7 +61,7 @@ public sealed class AnnotationEditController
             .Where(annotation => annotation.IsOriginalTextReplacement)
             .ToList();
         List<PdfAnnotation> appliedTextTargets = targets
-            .Where(annotation => annotation.IsApplied &&
+            .Where(annotation => annotation.NativeText == null && annotation.IsApplied &&
                 annotation.Type is AnnotationType.Text or AnnotationType.FreeText)
             .ToList();
         List<PdfAnnotation> originalImageTargets = targets
@@ -108,6 +108,9 @@ public sealed class AnnotationEditController
 
         foreach (PdfAnnotation annotation in targets)
             _getAnnotations().Remove(annotation);
+
+        if (targets.Any(a => a.NativeText != null))
+            _getAnnotations().RemoveAll(a => a.PageIndex == pageIndex && a.NativeText != null);
 
         _canvasController.ClearSelection();
         manager.MarkModified();
@@ -206,6 +209,24 @@ public sealed class AnnotationEditController
     public async Task AlignSelectionAsync(AnnotationAlignment alignment)
     {
         List<PdfAnnotation> selection = _canvasController.SelectedAnnotations;
+        if (selection.Any(a => a.NativeText != null))
+        {
+            if (selection.Count < 2) return;
+            if (selection.Any(a => a.NativeText == null))
+            { _statusText.Text = "원본 텍스트끼리 선택하여 정렬해 주세요."; return; }
+            var aligned = selection.Select(a => a.Clone()).ToList();
+            _alignmentService.Align(aligned, alignment);
+            try
+            {
+                await _getManager().ApplyNativeTextEditsAsync(_getCurrentPageIndex(), aligned.Select(a =>
+                    new NativePdfTextEdit(a.NativeText!, a.NativeText!.Text, a.X - a.NativeText.Bounds.X, a.Y - a.NativeText.Bounds.Y)).ToList());
+                _getAnnotations().RemoveAll(a => a.PageIndex == _getCurrentPageIndex() && a.NativeText != null);
+                _canvasController.ClearSelection(); _invalidateRenderPath(); await _renderCurrentPageAsync();
+                _canvasController.Render(); _statusText.Text = "원본 텍스트가 정렬되었습니다.";
+            }
+            catch (Exception error) { _statusText.Text = error.Message; }
+            return;
+        }
         if (selection.Count < 2 || !await RemoveOriginalTextForSelectionAsync(selection))
             return;
 
@@ -224,6 +245,11 @@ public sealed class AnnotationEditController
 
     private async Task<bool> PrepareTextReplacementAsync(PdfAnnotation annotation)
     {
+        if (annotation.NativeText != null)
+        {
+            _statusText.Text = "원본 텍스트는 PDF 글꼴과 배치를 유지합니다. 더블 클릭하여 내용을 편집하거나 드래그하여 이동하세요.";
+            return false;
+        }
         PdfDocumentManager manager = _getManager();
         int pageIndex = _getCurrentPageIndex();
         if (annotation.IsApplied)

@@ -60,6 +60,34 @@ namespace PDF_simple_edit.Helpers
         public bool IsLoaded => _pdfBytes != null;
         public byte[]? GetPdfBytes() => _pdfBytes;
 
+        // One native inline session is one undo entry. Previews are detached byte
+        // snapshots and never modify document state or pollute undo history.
+        public void CommitNativeTextEdit(byte[] expectedBytes, byte[] editedBytes)
+        {
+            lock (_docLock)
+            {
+                if (!ReferenceEquals(_pdfBytes, expectedBytes))
+                    throw new InvalidOperationException("편집 중 문서가 변경되었습니다. 텍스트를 다시 선택해 주세요.");
+                if (ReferenceEquals(expectedBytes, editedBytes) || expectedBytes.AsSpan().SequenceEqual(editedBytes)) return;
+                _undoStack.Push((_pdfBytes!, GetUIStateFunc?.Invoke()));
+                if (_undoStack.Count > MaxUndoSteps)
+                {
+                    var keep = _undoStack.Take(MaxUndoSteps).Reverse().ToArray();
+                    _undoStack.Clear(); foreach (var item in keep) _undoStack.Push(item);
+                }
+                _redoStack.Clear(); _pdfBytes = editedBytes; _isModified = true; _contentCache.Clear();
+            }
+            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+            DocumentChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public async Task ApplyNativeTextEditsAsync(int pageIndex, IReadOnlyList<NativePdfTextEdit> edits)
+        {
+            byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+            var result = await Task.Run(() => new NativePdfTextService().EditMany(snapshot, pageIndex, edits));
+            CommitNativeTextEdit(snapshot, result.Bytes);
+        }
+
         public event EventHandler? DocumentChanged;
         public event EventHandler? PageStructureChanged;
         public event EventHandler? ModifiedStateChanged;
@@ -667,6 +695,16 @@ namespace PDF_simple_edit.Helpers
             int pageIndex,
             IReadOnlyCollection<PdfAnnotation> annotations)
         {
+            if (annotations.Any(a => a.NativeText != null))
+            {
+                if (annotations.Any(a => a.NativeText == null)) return false;
+                try
+                {
+                    await ApplyNativeTextEditsAsync(pageIndex, annotations.Select(a => new NativePdfTextEdit(a.NativeText!, "")).ToList());
+                    return true;
+                }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); return false; }
+            }
             if (annotations == null || annotations.Count == 0)
                 return true;
 

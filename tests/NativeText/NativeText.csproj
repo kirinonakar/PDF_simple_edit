@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="itext" Version="9.5.0" />
+    <PackageReference Include="PDFiumCore" Version="154.0.8035" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="itext.bouncy-castle-adapter" Version="9.5.0" />
+    <Compile Include="../../Models/PdfAnnotation.cs" Link="Models/PdfAnnotation.cs" />
+    <Compile Include="../../Models/NativePdfText.cs" Link="Models/NativePdfText.cs" />
+    <Compile Include="../../Services/NativePdfTextService.cs" Link="Services/NativePdfTextService.cs" />
+    <Compile Include="../../Services/NativePdfGlyphGeometry.cs" Link="Services/NativePdfGlyphGeometry.cs" />
+  </ItemGroup>
+</Project>

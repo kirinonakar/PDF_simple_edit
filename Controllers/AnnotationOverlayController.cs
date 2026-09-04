@@ -28,7 +28,8 @@ public sealed class AnnotationOverlayController
         Action<string, Point> resizeStarted,
         Action<InputSystemCursorShape> cursorChanged)
     {
-        foreach (UIElement child in canvas.Children.Where(child => child is not RichEditBox).ToList())
+        foreach (UIElement child in canvas.Children.Where(child => child is not RichEditBox &&
+            (child is not FrameworkElement element || element.Tag != NativeInlineTextEditorController.OverlayTag)).ToList())
             canvas.Children.Remove(child);
 
         RichEditBox? activeEditor = canvas.Children.OfType<RichEditBox>().FirstOrDefault();
@@ -37,11 +38,28 @@ public sealed class AnnotationOverlayController
         {
             if (annotation == editingAnnotation)
             {
+                if (annotation.NativeText != null) continue;
                 AddSelectionBorder(canvas, annotation, ref insertIndex, activeEditor);
                 continue;
             }
             if (annotation.IsOriginalTextReplacement && !selectedAnnotations.Contains(annotation))
                 continue;
+
+            if (annotation.NativeText != null)
+            {
+                if (!selectedAnnotations.Contains(annotation)) continue;
+                double dx = annotation.X - annotation.NativeText.Bounds.X;
+                double dy = annotation.Y - annotation.NativeText.Bounds.Y;
+                foreach (var line in annotation.NativeText.Lines)
+                {
+                    var outline = new Border { Width = Math.Max(line.Width * PdfToPixels, 1),
+                        Height = Math.Max(line.Height * PdfToPixels, 1), BorderThickness = new(0.75),
+                        BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue), IsHitTestVisible = false };
+                    Canvas.SetLeft(outline, (line.X + dx) * PdfToPixels); Canvas.SetTop(outline, (line.Y + dy) * PdfToPixels);
+                    canvas.Children.Insert(insertIndex++, outline);
+                }
+                continue;
+            }
 
             // A user-saved text annotation is already part of the PDF page image.
             // Drawing its TextBlock again would make the text appear twice after

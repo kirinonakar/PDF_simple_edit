@@ -1548,6 +1548,9 @@ namespace PDF_simple_edit
 
         private void PreparePastedAnnotation(PdfAnnotation annotation)
         {
+            // A clipboard copy is a new text object, never a handle to another
+            // document's content stream operators.
+            annotation.NativeText = null;
             annotation.Id = Guid.NewGuid().ToString();
             annotation.PageIndex = _currentPageIndex;
             annotation.CreatedAt = DateTime.Now;

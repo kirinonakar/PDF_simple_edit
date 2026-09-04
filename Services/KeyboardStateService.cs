@@ -35,4 +35,7 @@ public static class KeyboardStateService
 
     public static bool IsControlKey(VirtualKey key) =>
         key is VirtualKey.Control or VirtualKey.LeftControl or VirtualKey.RightControl;
+
+    public static bool IsShiftDown() => InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift)
+        .HasFlag(CoreVirtualKeyStates.Down);
 }

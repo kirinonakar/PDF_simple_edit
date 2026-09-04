@@ -10,6 +10,7 @@ public sealed class PdfAnnotationDocumentService
 {
     public void Apply(PdfDocumentManager manager, PdfDocument document, PdfAnnotation annotation)
     {
+        if (annotation.NativeText != null) return;
         Color color = ParseColor(annotation.Color);
         switch (annotation.Type)
         {

@@ -48,8 +48,10 @@ public sealed class InlineTextEditorController
     private Action<PdfAnnotation>? _annotationRemoved;
     private Action<bool>? _restoreFocus;
     private Task? _finishingTask;
+    private readonly NativeInlineTextEditorController _nativeEditor = new();
+    private bool _isEditing;
 
-    public bool IsEditing { get; private set; }
+    public bool IsEditing { get => _isEditing || _nativeEditor.IsEditing; private set => _isEditing = value; }
 
     public bool Reserve()
     {
@@ -75,8 +77,16 @@ public sealed class InlineTextEditorController
         Action renderOverlays,
         Action<string> setStatus,
         Action<PdfAnnotation> annotationRemoved,
-        Action<bool> restoreFocus)
+        Action<bool> restoreFocus,
+        Image pageImage,
+        PdfTextPoint? initialCaret = null)
     {
+        if (existingAnnotation?.NativeText != null)
+        {
+            _isEditing = false;
+            return _nativeEditor.Start(canvas, pageImage, existingAnnotation, manager, annotations,
+                selectedAnnotations, pageIndex, renderPage, renderOverlays, setStatus, annotationRemoved, restoreFocus, initialCaret);
+        }
         if (canvas.Children.OfType<RichEditBox>().Any())
         {
             IsEditing = _activeEditor != null;
@@ -203,6 +213,7 @@ public sealed class InlineTextEditorController
 
     public Task FinishActiveEditAsync()
     {
+        if (_nativeEditor.IsEditing) return _nativeEditor.FinishAsync();
         if (_activeEditor != null)
             return StartApplyAsync(_activeEditor);
 
