@@ -7,10 +7,15 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 ## 🚀 Features
 
 ### 📝 Precision Editing
-- **Select & Move**: Click or drag to select text, `Alt+Drag` to move it. Fragmented characters are automatically grouped into sentences.
-- **Edit in Place**: Double-click a text block to edit. Confirm with `Enter` (single-line) or `Ctrl+Enter` (multi-line); `Esc` or right-click also confirms.
+- **Text Edit**
+  - **Original Mode**: After activating the Select tool, click or drag to select, double-click to edit, and `Alt+Drag` to move.
+    - `Ctrl+Enter` or right-click confirms, `Esc` cancels.
+    - If an overlap warning appears, drag to select only the overlapping fragment and edit it.
+    - Single-line selections expand to the right; multi-line selections wrap to the line below.
+  - **Replace Mode**: After activating the Select tool, click to select and drag to move.
+    - `Ctrl+Enter` or right-click confirms, `Esc` cancels.
+    - If characters are clipped or letter spacing looks too tight after editing, select the box and enlarge it.
 - **Add Text**: Press `A` to switch to the Add Text tool, then add text with custom font family, size, color, bold, and italic.
-- **Edit Modes**: Preserve the original text or replace it.
 - **Images**: Insert images, save a selected image as a file, or extract all embedded images to a folder.
 
 ### 🖋️ Annotation & Highlighting
