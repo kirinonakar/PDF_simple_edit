@@ -119,6 +119,9 @@ internal static class NativePdfParagraphLayout
         var anchors = originalLines.Select(line => line[0].Origin).ToList();
         double left = anchors.Min(p => p.X), firstLeft = anchors[0].X;
         double right = Math.Max(block.Bounds.Right, block.Glyphs.Max(g => g.End.X));
+        // A selected single line grows horizontally. Only an original multiline
+        // selection reflows at its right edge; explicit newlines still work below.
+        bool wrap = block.Lines.Count > 1;
         double leading = Math.Max(block.LineHeight, block.Runs.Max(r => r.DisplayFontSize) * .9);
         double Baseline(int i) => i < anchors.Count ? anchors[i].Y : anchors[^1].Y + (i - anchors.Count + 1) * leading;
         bool White(NativePdfGlyph glyph) => string.IsNullOrWhiteSpace(glyph.Text);
@@ -137,7 +140,7 @@ internal static class NativePdfParagraphLayout
             {
                 if (tokens[i].Text == "\n") { end = i + 1; hard = true; break; }
                 double kern = i > start ? kerning(tokens[i - 1], tokens[i]) : 0;
-                if (!White(tokens[i]) && x + kern + widths[i] - trailingSpacing(tokens[i]) > right + .5)
+                if (wrap && !White(tokens[i]) && x + kern + widths[i] - trailingSpacing(tokens[i]) > right + .5)
                 {
                     end = lastBreak > start ? lastBreak : Math.Max(i, start + 1);
                     break;

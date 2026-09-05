@@ -47,6 +47,27 @@ Check(flowDelete.Layout.Lines.Count < leftParagraph.Lines.Count, "Deletion did n
 await WindowsRenderingProbe.Render(flowInsert.Bytes, "paragraph-insert", flowInsert.Layout);
 await WindowsRenderingProbe.Render(flowDelete.Bytes, "paragraph-delete", flowDelete.Layout);
 var lineGlyphs = leftParagraph.Glyphs.Where(g => !g.IsVirtual && Math.Abs(g.Origin.Y - leftParagraph.Glyphs[0].Origin.Y) < .1).ToList();
+var singleLine = NativePdfTextService.SelectRegion(paragraphs, leftParagraph.Lines[0]).Single();
+Check(singleLine.Lines.Count == 1, "Single-line marquee included other lines");
+var singleLineCodes = singleLine.Glyphs.Where(g => !g.IsVirtual).Select(g => g.Code).ToHashSet();
+var singleLineOutside = paragraphs.SelectMany(b => b.Glyphs).Where(g => !g.IsVirtual && !singleLineCodes.Contains(g.Code)).ToList();
+foreach (var replacement in new[] { singleLine.Text + " extra words", singleLine.Text.Insert(6, "longwordlongword ") })
+{
+    var expanded = service.Edit(paragraphBytes, 0, new(singleLine, replacement));
+    Check(expanded.Layout.Lines.Count == 1 && expanded.Layout.Bounds.Right > singleLine.Bounds.Right + 10,
+        "Single-line insertion must expand right without wrapping");
+    Check(Math.Abs(expanded.Layout.Bounds.X - singleLine.Bounds.X) < .003 &&
+        expanded.Layout.Glyphs.Where(g => !g.IsVirtual).All(g => Math.Abs(g.Origin.Y - lineGlyphs[0].Origin.Y) < .003),
+        "Single-line expansion moved the left edge or baseline");
+    SameGlyphs(singleLineOutside.Concat(expanded.Layout.Glyphs.Where(g => !g.IsVirtual)), Glyphs(expanded.Bytes, 0));
+}
+var shortenedLine = service.Edit(paragraphBytes, 0, new(singleLine, "Alpha"));
+Check(shortenedLine.Layout.Lines.Count == 1 && shortenedLine.Layout.Bounds.Right < singleLine.Bounds.Right,
+    "Single-line deletion must shrink the layout");
+var explicitBreak = service.Edit(paragraphBytes, 0, new(singleLine, singleLine.Text + "\n"));
+Check(explicitBreak.Layout.Glyphs[^1].Text == "\n" && explicitBreak.Layout.Glyphs[^1].End.Y > lineGlyphs[0].Origin.Y,
+    "Single-line editing must retain explicit newlines");
+Console.WriteLine("PASS: single-line right expansion, saved glyph positions, outside text preservation, deletion and explicit newline");
 var selectedBox = PdfTextBox.Union(lineGlyphs.Skip(6).Take(4).Select(g => g.Bounds));
 var partial = NativePdfTextService.SelectRegion(paragraphs, selectedBox).Single();
 Check(partial.Text == "beta", $"Marquee expanded outside requested glyphs: {partial.Text}");

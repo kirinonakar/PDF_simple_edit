@@ -152,7 +152,9 @@ public sealed class NativeInlineTextEditorController
             var bounds = _layout.Bounds;
             _input.Width = Math.Max((_session!.Annotation.Width + Math.Max(0, bounds.Right - _session.Annotation.NativeText!.Bounds.Right)) * Scale, 20);
             _input.Height = Math.Max((_session.Annotation.Height + Math.Max(0, bounds.Bottom - _session.Annotation.NativeText!.Bounds.Bottom)) * Scale, 20);
-            _status?.Invoke("원본 글꼴로 문단 자동 줄바꿈 중 · Ctrl+Enter 완료 · Esc 취소");
+            _status?.Invoke(source.Lines.Count > 1
+                ? "원본 글꼴로 문단 자동 줄바꿈 중 · Ctrl+Enter 완료 · Esc 취소"
+                : "원본 글꼴로 한 줄 오른쪽 확장 중 · Ctrl+Enter 완료 · Esc 취소");
             DrawSelection();
         }
         catch (Exception error)
