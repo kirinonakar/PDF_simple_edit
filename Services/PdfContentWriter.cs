@@ -687,6 +687,10 @@ namespace PDF_simple_edit.Services
                 $"NotoSerifCJKkr-Bold.otf|NotoSerifCJKkr-Bold.ttf|{notoSerifKr}";
             string notoSerifCjkKrExtraBold =
                 $"NotoSerifCJKkr-Black.otf|NotoSerifCJKkr-Black.ttf|{notoSerifKr}";
+            string notoSansCjkJp =
+                "NotoSansCJKjp-VF.ttf|NotoSansCJKjp-Regular.otf|NotoSansCJKjp-Regular.ttf";
+            string notoSerifCjkJp =
+                "NotoSerifCJKjp-VF.ttf|NotoSerifCJKjp-Regular.otf|NotoSerifCJKjp-Regular.ttf";
 
             // 핵심: 굴림/돋움은 gulim.ttc에, 바탕/궁서는 batang.ttc에 묶여 있습니다. 인덱스를 지정해야 합니다.
             var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -714,6 +718,8 @@ namespace PDF_simple_edit.Services
                     : fontWeight >= 600
                         ? notoSerifCjkKrBold
                         : notoSerifCjkKrRegular },
+                { "Noto Sans CJK JP", notoSansCjkJp },
+                { "Noto Serif CJK JP", notoSerifCjkJp },
                 { "Noto Sans", SelectFace("NotoSans-Regular.ttf", "NotoSans-Bold.ttf") },
                 { "Noto Serif", SelectFace("NotoSerif-Regular.ttf", "NotoSerif-Bold.ttf") },
                 { "Noto Sans JP", "NotoSansJP-VF.ttf" },

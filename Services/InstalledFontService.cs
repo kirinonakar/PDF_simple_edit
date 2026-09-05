@@ -14,6 +14,8 @@ public static class InstalledFontService
     {
         ("Noto Sans CJK KR", new[] { "NotoSansCJKkr-Regular.otf", "NotoSansCJKkr-Regular.ttf" }),
         ("Noto Serif CJK KR", new[] { "NotoSerifCJKkr-Regular.otf", "NotoSerifCJKkr-Regular.ttf" }),
+        ("Noto Sans CJK JP", new[] { "NotoSansCJKjp-VF.ttf", "NotoSansCJKjp-Regular.otf", "NotoSansCJKjp-Regular.ttf" }),
+        ("Noto Serif CJK JP", new[] { "NotoSerifCJKjp-VF.ttf", "NotoSerifCJKjp-Regular.otf", "NotoSerifCJKjp-Regular.ttf" }),
         ("Noto Sans KR", new[] { "NotoSansKR-VF.ttf", "NotoSansKR-Regular.ttf" }),
         ("Noto Serif KR", new[] { "NotoSerifKR-VF.ttf", "NotoSerifKR-Regular.ttf" }),
         ("Noto Sans", new[] { "NotoSans-Regular.ttf" }),

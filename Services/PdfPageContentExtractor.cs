@@ -276,6 +276,8 @@ namespace PDF_simple_edit.Services
             // font build and can have visibly different Latin and Korean glyphs.
             if (lowerFont.Contains("notosanscjkkr")) return "Noto Sans CJK KR";
             if (lowerFont.Contains("notoserifcjkkr")) return "Noto Serif CJK KR";
+            if (lowerFont.Contains("notosanscjkjp") || lowerFont.Contains("noto sans cjk jp")) return "Noto Sans CJK JP";
+            if (lowerFont.Contains("notoserifcjkjp") || lowerFont.Contains("noto serif cjk jp")) return "Noto Serif CJK JP";
             if (lowerFont.Contains("notosanskr")) return "Noto Sans KR";
             if (lowerFont.Contains("notoserifkr")) return "Noto Serif KR";
             if (lowerFont.Contains("cambriamath")) return "Cambria Math";
