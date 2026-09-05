@@ -17,4 +17,9 @@ The C# runner compiles the production text engines. It checks glyph identity and
 
 The suite does not automate the WinUI window, focus, mouse capture or IME interaction. It validates the PDF model, saving and actual rendering backend.
 
+Selection regression checks also cover both editing modes, page-sized vector
+decoration exclusion, text selection through previously selected original images,
+and retention of actual images and local vector figures. Run only those checks with
+`dotnet run --project tests/NativeText -- "D:/ASUNA/3D knee.pdf" --selection-only`.
+
 In original-preservation mode, click selects an inferred paragraph; drag selects only glyphs whose centers lie in the rectangle. Columns remain separate, including columns encoded inside one TJ operand. Explicit selection joins selected pieces within a column without including surrounding text. Double-click edits the selection; Alt+drag moves it. Paragraph edits use original font advances for wrapping. Overflow into unselected text is rejected. The legacy mode remains available.

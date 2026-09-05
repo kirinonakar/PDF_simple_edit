@@ -172,6 +172,20 @@ public sealed class AnnotationCanvasController
                 bool alt = InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Menu)
                     .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
                 var hit = _contentService.FindAnnotationAt(_getAnnotations(), _getPageIndex(), pdfX, pdfY);
+                if (hit?.IsOriginalImageReplacement == true && !alt)
+                {
+                    int page = _getPageIndex();
+                    var contents = await manager.ExtractPageContentsAsync(page);
+                    if (selectPressSequence != _selectPointerPressSequence ||
+                        manager != _getManager() || page != _getPageIndex()) return;
+                    if (_contentService.ShouldPreferPageContent(hit,
+                        _contentService.FindEditableContent(contents, pdfX, pdfY))) hit = null;
+                    if (!e.GetCurrentPoint(_canvas).Properties.IsLeftButtonPressed)
+                    {
+                        await BeginSelectionAsync(e, position, pdfX, pdfY, selectPressSequence);
+                        return;
+                    }
+                }
                 if (_fontSettings.TextEditingMode == TextEditingMode.PreserveOriginal && !alt &&
                     !(e.OriginalSource is Rectangle { Tag: string }) && (hit == null || hit.NativeText != null))
                 {
@@ -424,7 +438,9 @@ public sealed class AnnotationCanvasController
         if (selection.AddedFromPageContent is PdfAnnotation added)
         {
             _statusText.Text = added.IsOriginalTextReplacement
-                ? "텍스트 편집 구역 선택됨 (더블클릭: 편집, Alt+드래그: 이동)"
+                ? _fontSettings.TextEditingMode == TextEditingMode.Legacy
+                    ? "대체 텍스트 편집 구역 선택됨 (더블클릭: 편집, 드래그: 이동)"
+                    : "텍스트 편집 구역 선택됨 (더블클릭: 편집, Alt+드래그: 이동)"
                 : "이미지가 선택되었습니다. 드래그하여 이동하거나 핸들로 크기를 조정하세요.";
         }
 

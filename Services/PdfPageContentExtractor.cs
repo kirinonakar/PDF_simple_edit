@@ -79,7 +79,7 @@ namespace PDF_simple_edit.Services
                         .Select(NativePdfTextService.ToPageContent).ToList();
                     extractedContents.AddRange(listener.Contents.Where(content => content.Type == PageContentType.Image));
                     extractedContents.AddRange(GroupVectorPathsIntoGraphics(
-                        listener.VectorPaths, pageSize.GetHeight()));
+                        listener.VectorPaths, pageSize.GetWidth(), pageSize.GetHeight()));
                 }
                 catch (Exception ex)
                 {
@@ -805,6 +805,7 @@ namespace PDF_simple_edit.Services
 
         private static List<PdfPageContent> GroupVectorPathsIntoGraphics(
             IReadOnlyCollection<VectorPathFragment> rawPaths,
+            double pageWidth,
             double pageHeight)
         {
             var duplicateTargets = rawPaths
@@ -843,6 +844,14 @@ namespace PDF_simple_edit.Services
                 double width = right - left;
                 double height = bottom - top;
                 if (component.Sum(path => path.ShapeCount) < 3 || width < 8 || height < 5)
+                    continue;
+
+                // Page furniture (borders, crop marks and rules) can connect
+                // through their bounding boxes into a page-sized component.
+                // Its raster preview would include unrelated text and images.
+                // Keep these paths in the PDF, but never expose that whole-page
+                // crop as an editable graphic. Real image XObjects are unaffected.
+                if (width >= pageWidth * 0.8 && height >= pageHeight * 0.8)
                     continue;
 
                 // Connected table borders can span most of a page. Exposing their

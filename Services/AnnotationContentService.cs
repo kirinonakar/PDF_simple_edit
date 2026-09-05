@@ -13,6 +13,7 @@ public sealed class AnnotationContentService
         double x,
         double y)
     {
+        PdfAnnotation? originalImage = null;
         for (int i = annotations.Count - 1; i >= 0; i--)
         {
             PdfAnnotation annotation = annotations[i];
@@ -49,12 +50,21 @@ public sealed class AnnotationContentService
             else if (x >= annotation.X && x <= annotation.X + annotation.Width &&
                      y >= annotation.Y && y <= annotation.Y + annotation.Height)
             {
+                if (annotation.IsOriginalImageReplacement)
+                {
+                    originalImage ??= annotation;
+                    continue;
+                }
                 return annotation;
             }
         }
 
-        return null;
+        return originalImage;
     }
+
+    public bool ShouldPreferPageContent(PdfAnnotation? annotation, PdfPageContent? content) =>
+        content != null && (annotation == null ||
+            (annotation.IsOriginalImageReplacement && content.Type == PageContentType.Text));
 
     public PdfPageContent? FindEditableContent(List<PdfPageContent> contents, double x, double y)
     {

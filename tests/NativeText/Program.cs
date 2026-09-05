@@ -7,6 +7,11 @@ var path = args.FirstOrDefault() ?? "D:/ASUNA/test/3D knee.pdf";
 var bytes = File.ReadAllBytes(path);
 var service = new NativePdfTextService();
 var pageExtractor = new PdfPageContentExtractor();
+await SelectionChecks.Run(bytes);
+if (args.Contains("--selection-only"))
+{
+    return;
+}
 Directory.CreateDirectory("tmp/pdfs");
 int checks = 0;
 void Check(bool condition, string message) { if (!condition) throw new Exception(message); checks++; }

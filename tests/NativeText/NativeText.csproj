@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../Services/AnnotationContentService.cs" Link="Services/AnnotationContentService.cs" />
     <PackageReference Include="itext" Version="9.5.0" />
     <PackageReference Include="itext.pdfsweep" Version="5.0.5" NoWarn="NU1701" />
     <PackageReference Include="PDFiumCore" Version="154.0.8035" />

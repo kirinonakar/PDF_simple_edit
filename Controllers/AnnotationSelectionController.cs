@@ -36,12 +36,12 @@ public sealed class AnnotationSelectionController
         PdfAnnotation? found = _contentService.FindAnnotationAt(
             annotations, pageIndex, x, y);
         PdfAnnotation? addedFromPageContent = null;
-        if (found == null)
+        if (found == null || found.IsOriginalImageReplacement)
         {
             analysisStarted();
             List<PdfPageContent> pageContents = await manager.ExtractPageContentsAsync(pageIndex);
             PdfPageContent? content = _contentService.FindEditableContent(pageContents, x, y);
-            if (content != null)
+            if (_contentService.ShouldPreferPageContent(found, content) && content != null)
             {
                 PdfAnnotation? converted = _contentService.ConvertToAnnotation(content, pageIndex);
                 if (converted != null)
