@@ -201,7 +201,10 @@ public sealed class InlineTextEditorController
         editor.DoubleTapped += (_, args) => args.Handled = true;
         if (existingAnnotation != null)
             editor.TextChanged += InlineEditor_TextChanged;
-        editor.KeyDown += async (_, args) =>
+        // RichEditBox handles Enter during its normal KeyDown processing. Use
+        // the preview event so Ctrl+Enter confirms before RichEdit inserts a
+        // paragraph break into the replacement text.
+        editor.PreviewKeyDown += async (_, args) =>
         {
             if (args.Key == Windows.System.VirtualKey.Enter &&
                 (!editor.AcceptsReturn || KeyboardStateService.IsControlDown()))
