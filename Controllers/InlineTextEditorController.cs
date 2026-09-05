@@ -2,12 +2,14 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using PDF_simple_edit.Helpers;
 using PDF_simple_edit.Models;
 using PDF_simple_edit.Services;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Windows.Foundation;
@@ -29,6 +31,9 @@ public sealed class InlineTextEditSession
     public bool WasOriginalTextReplacement { get; init; }
     public double OriginalWidth { get; init; }
     public int PreservedCharacterSpacing { get; init; }
+    public Task<bool>? PreparationTask { get; set; }
+    public Image? PageImage { get; set; }
+    public ImageSource? OriginalPageImage { get; set; }
 }
 
 public sealed class InlineTextEditorController
@@ -116,7 +121,9 @@ public sealed class InlineTextEditorController
             ? buildEditableText(existingAnnotation)
             : string.Empty;
         double width = existingAnnotation != null
-            ? Math.Max(existingAnnotation.Width * PdfToPixels, 1)
+            ? Math.Max(existingAnnotation.Width * PdfToPixels,
+                AnnotationTextLayoutService.GetRequiredTextBoxWidth(existingAnnotation, initialText,
+                    AnnotationTextLayoutService.GetDisplayCharacterSpacing(existingAnnotation, initialText)) * PdfToPixels)
             : double.NaN;
         int characterSpacing = existingAnnotation != null
             ? AnnotationTextLayoutService.GetDisplayCharacterSpacing(existingAnnotation, initialText)
@@ -124,6 +131,8 @@ public sealed class InlineTextEditorController
         double displayFontSize = existingAnnotation != null
             ? AnnotationTextLayoutService.GetDisplayFontSize(existingAnnotation, initialText)
             : fontSize;
+        double displayLineHeight = existingAnnotation == null ? 0 :
+            AnnotationTextLayoutService.GetDisplayLineHeight(existingAnnotation, initialText);
         double editorHeight = AnnotationTextLayoutService.GetInlineEditorHeight(
             initialText,
             fontFamily,
@@ -131,7 +140,7 @@ public sealed class InlineTextEditorController
             isBold,
             isItalic,
             fontWeight,
-            existingAnnotation?.LineHeight ?? 0);
+            displayLineHeight);
         double topOffset = existingAnnotation != null
             ? AnnotationTextLayoutService.GetTopOffset(existingAnnotation, displayFontSize)
             : 0;
@@ -177,13 +186,15 @@ public sealed class InlineTextEditorController
             IsSpellCheckEnabled = false
         };
         SetEditorText(editor, initialText);
-        ApplyEditorLineSpacing(editor, existingAnnotation?.LineHeight ?? 0);
+        ApplyEditorLineSpacing(editor, displayLineHeight);
         Canvas.SetLeft(editor, pdfX * PdfToPixels);
         Canvas.SetTop(editor, pdfY * PdfToPixels + topOffset);
 
-        editor.Loaded += (_, _) =>
+        editor.Loaded += async (_, _) =>
         {
-            editor.Focus(FocusState.Programmatic);
+            if (editor.Tag is InlineTextEditSession { PreparationTask: not null } session && !await session.PreparationTask)
+            { await CancelAsync(editor); return; }
+            if (_activeEditor == editor) editor.Focus(FocusState.Programmatic);
         };
         editor.PointerPressed += (_, args) => args.Handled = true;
         editor.PointerReleased += (_, args) => args.Handled = true;
@@ -205,10 +216,35 @@ public sealed class InlineTextEditorController
             }
         };
         editor.LostFocus += async (_, _) => await StartApplyAsync(editor);
+        bool prepareBackground = existingAnnotation?.IsOriginalTextReplacement == true || existingAnnotation?.IsApplied == true;
+        if (prepareBackground) { editor.Opacity = 0; editor.IsReadOnly = true; }
         canvas.Children.Add(editor);
         _activeEditor = editor;
+        if (prepareBackground && editor.Tag is InlineTextEditSession previewSession)
+        {
+            previewSession.PageImage = pageImage;
+            previewSession.OriginalPageImage = pageImage.Source;
+            previewSession.PreparationTask = PrepareBackgroundAsync(editor, previewSession, manager.GetPdfBytes()!, pageIndex);
+        }
         _renderOverlays?.Invoke();
         return true;
+    }
+
+    private async Task<bool> PrepareBackgroundAsync(RichEditBox editor, InlineTextEditSession session, byte[] source, int pageIndex)
+    {
+        try
+        {
+            byte[] preview = await new LegacyTextPreviewService().CreateAsync(source, pageIndex, session.Annotation);
+            using var stream = new MemoryStream(preview);
+            using var rendered = await PdfRenderHelper.RenderPageWithWindowsPdfStreamAsync(stream.AsRandomAccessStream(), pageIndex, 2);
+            if (rendered == null) throw new InvalidOperationException("편집 배경을 렌더링할 수 없습니다.");
+            var bitmap = new BitmapImage(); await bitmap.SetSourceAsync(rendered.AsRandomAccessStream());
+            if (_activeEditor != editor || session.IsFinishing) return true;
+            session.PageImage!.Source = bitmap;
+            editor.Opacity = 1; editor.IsReadOnly = false;
+            return true;
+        }
+        catch (Exception error) { _setStatus?.Invoke(error.Message); return false; }
     }
 
     public Task FinishActiveEditAsync()
@@ -289,8 +325,8 @@ public sealed class InlineTextEditorController
                 session.Annotation.IsBold,
                 session.Annotation.IsItalic,
                 session.Annotation.FontWeight,
-                session.Annotation.LineHeight);
-            ApplyEditorLineSpacing(editor, session.Annotation.LineHeight);
+                AnnotationTextLayoutService.GetDisplayLineHeight(session.Annotation, changedText));
+            ApplyEditorLineSpacing(editor, AnnotationTextLayoutService.GetDisplayLineHeight(session.Annotation, changedText));
         }
         finally
         {
@@ -320,8 +356,8 @@ public sealed class InlineTextEditorController
                     session.Annotation.IsBold,
                     session.Annotation.IsItalic,
                     session.Annotation.FontWeight,
-                    session.Annotation.LineHeight);
-                ApplyEditorLineSpacing(editor, session.Annotation.LineHeight);
+                    AnnotationTextLayoutService.GetDisplayLineHeight(session.Annotation, session.OriginalContent));
+                ApplyEditorLineSpacing(editor, AnnotationTextLayoutService.GetDisplayLineHeight(session.Annotation, session.OriginalContent));
                 MoveCaretToEnd(editor);
                 session.SuppressTextChanged = false;
                 session.HasLiveChanges = false;
@@ -441,6 +477,8 @@ public sealed class InlineTextEditorController
 
         if (editor.Tag is InlineTextEditSession session)
         {
+            if (session.PreparationTask != null) await session.PreparationTask;
+            if (session.PageImage != null) session.PageImage.Source = session.OriginalPageImage;
             if (session.RemovalTask != null)
                 await session.RemovalTask;
 
@@ -471,6 +509,9 @@ public sealed class InlineTextEditorController
             return;
         if (editor.Tag is InlineTextEditSession { IsFinishing: true })
             return;
+        if (editor.Tag is InlineTextEditSession { PreparationTask: not null } preparing && !await preparing.PreparationTask)
+        { await CancelAsync(editor); return; }
+        if (_activeEditor != editor) return;
 
         string text = GetEditorText(editor);
         double editedWidth = editor.Width;
@@ -480,6 +521,8 @@ public sealed class InlineTextEditorController
 
         if (editSession != null)
         {
+            if (editSession.PageImage != null && !editSession.OriginalRemovalCommitted)
+                editSession.PageImage.Source = editSession.OriginalPageImage;
             editSession.IsFinishing = true;
             editSession.TextChangeVersion++;
             editSession.SuppressTextChanged = true;

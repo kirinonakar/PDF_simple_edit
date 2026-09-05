@@ -37,8 +37,7 @@ namespace PDF_simple_edit.Models
         public int FontWeight { get; set; } = 400;
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
-        // WinUI character spacing in 1/1000-em units. A nullable value lets text
-        // imported from a PDF derive its initial spacing from the source bounds.
+        // Explicit WinUI tracking in 1/1000-em units; null uses natural advances.
         public int? CharacterSpacing { get; set; }
         public double Opacity { get; set; } = 1.0;
         public double LineWidth { get; set; } = 2.0;
@@ -344,6 +343,7 @@ namespace PDF_simple_edit.Models
     /// </summary>
     public class TextFontSettings
     {
+        public TextEditingMode TextEditingMode { get; set; } = TextEditingMode.PreserveOriginal;
         public string FontFamily { get; set; } = "맑은 고딕";
         public double FontSize { get; set; } = 12;
         public string Color { get; set; } = "#000000";
@@ -358,6 +358,7 @@ namespace PDF_simple_edit.Models
         {
             return new TextFontSettings
             {
+                TextEditingMode = TextEditingMode,
                 FontFamily = FontFamily,
                 FontSize = FontSize,
                 Color = Color,
@@ -368,5 +369,7 @@ namespace PDF_simple_edit.Models
             };
         }
     }
+
+    public enum TextEditingMode { Legacy, PreserveOriginal }
 
 }

@@ -198,10 +198,7 @@ public sealed class NativePdfTextService
                     RunId = id, Origin = origin, End = endPoint, Bounds = bounds, Advance = character.GetUnscaledWidth() });
             }
             var vertical = new Vector(0, (float)size, 0).Cross(matrix);
-            var color = info.GetFillColor()?.GetColorValue();
-            string hex = "#000000";
-            if (color?.Length == 1) { int gray = Math.Clamp((int)Math.Round(color[0] * 255), 0, 255); hex = $"#{gray:X2}{gray:X2}{gray:X2}"; }
-            if (color?.Length == 3) hex = "#" + string.Concat(color.Select(c => Math.Clamp((int)Math.Round(c * 255), 0, 255).ToString("X2")));
+            string hex = PdfDisplayColorService.ToHex(info.GetFillColor());
             Runs.Add(new NativePdfRun { Id = id, SourcePath = Current.Source.Path, OperationIndex = Current.Operation.TextIndex,
                 OperandIndex = operand, FontObjectNumber = font.GetPdfObject().GetIndirectReference()?.GetObjNumber() ?? -1,
                 FontName = font.GetFontProgram().GetFontNames().GetFontName(), Color = hex, FontSize = size,
@@ -259,7 +256,7 @@ public sealed class NativePdfTextService
                 double dy = glyph.Origin.Y - previous.Origin.Y;
                 double gap = glyph.Origin.X - previous.End.X;
                 bool newLine = previous.RunId != glyph.RunId && dy > run.DisplayFontSize * 0.6;
-                string separator = newLine ? (previous.Text.EndsWith('-') ? "" : " ") :
+                string separator = newLine ? "\n" :
                     previous.RunId != glyph.RunId && gap > run.DisplayFontSize * 0.12 && !previous.Text.EndsWith(' ') && !glyph.Text.StartsWith(' ') ? " " : "";
                 if (separator.Length > 0)
                 {
@@ -284,6 +281,8 @@ public sealed class NativePdfTextService
 
     public NativePdfTextResult EditMany(byte[] bytes, int pageIndex, IReadOnlyList<NativePdfTextEdit> edits)
     {
+        ArgumentNullException.ThrowIfNull(bytes);
+        if (edits.Count == 0) throw new ArgumentException("편집할 텍스트가 없습니다.", nameof(edits));
         if (edits.All(e => e.Text == e.Block.Text && e.DeltaX == 0 && e.DeltaY == 0))
             return new(bytes, edits[0].Block);
         using var input = new MemoryStream(bytes);
@@ -332,7 +331,10 @@ public sealed class NativePdfTextService
             }
             pageResources.Put(PdfName.XObject, pageXObjects);
             page.GetPdfObject().Put(PdfName.Resources, pageResources);
-            if (!modified) throw new InvalidOperationException("수정할 원본 텍스트 연산자를 찾을 수 없습니다.");
+            // A trailing line break/space changes the live caret layout without
+            // painting any glyph. Keep that edit buffer and the exact source
+            // bytes until a subsequent input actually changes painted content.
+            if (!modified) return new(bytes, layout!);
             page.GetPdfObject().Put(PdfName.Contents, contents);
             page.SetModified();
         }
@@ -341,6 +343,17 @@ public sealed class NativePdfTextService
         var finalPage = finalDoc.GetPage(pageIndex + 1); var finalBox = finalPage.GetCropBox();
         var finalMap = new PageMap(finalBox.GetX(), finalBox.GetY(), finalBox.GetWidth(), finalBox.GetHeight(), ((finalPage.GetRotation() % 360) + 360) % 360);
         layout = ApplyInkBounds(resultBytes, pageIndex, new() { layout! }, finalMap)[0];
+        if (edits.Count == 1 && edits[0].Text != edits[0].Block.Text && layout.Bounds.Bottom > edits[0].Block.Bounds.Bottom + .5)
+        {
+            var original = edits[0].Block;
+            var ids = original.Runs.Select(r => r.Id).ToHashSet();
+            var other = new NativePdfTextService().Extract(bytes, pageIndex).SelectMany(b => b.Glyphs)
+                .Where(g => !g.IsVirtual && !ids.Contains(g.RunId)).ToList();
+            foreach (var glyph in layout.Glyphs.Where(g => !g.IsVirtual && g.Bounds.Bottom > original.Bounds.Bottom + .5))
+                if (other.Any(g => Math.Min(g.Bounds.Right, glyph.Bounds.Right) - Math.Max(g.Bounds.X, glyph.Bounds.X) > .25 &&
+                    Math.Min(g.Bounds.Bottom, glyph.Bounds.Bottom) - Math.Max(g.Bounds.Y, glyph.Bounds.Y) > .25))
+                    throw new InvalidOperationException("추가한 줄이 다른 원본 텍스트와 겹칩니다. 내용을 줄이거나 텍스트 영역을 먼저 이동해 주세요.");
+        }
         return new(resultBytes, layout);
     }
 
@@ -389,19 +402,20 @@ public sealed class NativePdfTextService
                 fonts[run.Id] = f = PdfFontFactory.CreateFont((PdfDictionary)doc.GetPdfObject(run.FontObjectNumber));
             return f;
         }
-        int prefix = 0, suffix = 0;
-        while (prefix < block.Text.Length && prefix < text.Length && block.Text[prefix] == text[prefix]) prefix++;
-        while (suffix < block.Text.Length - prefix && suffix < text.Length - prefix && block.Text[^(suffix + 1)] == text[^(suffix + 1)]) suffix++;
         var matches = MatchCharacters(block.Text, text);
         var tokens = new List<NativePdfGlyph>();
+        int precedingSourceIndex = -1;
         for (int index = 0; index < text.Length;)
         {
             int sourceIndex = matches.GetValueOrDefault(index, -1);
             var existing = sourceIndex < 0 ? null : original.FirstOrDefault(g => g.TextIndex == sourceIndex &&
                 index + g.Text.Length <= text.Length && text.AsSpan(index, g.Text.Length).SequenceEqual(g.Text));
-            if (existing != null) { tokens.Add(existing with { TextIndex = index }); index += existing.Text.Length; continue; }
+            if (existing != null)
+            {
+                tokens.Add(existing with { TextIndex = index }); precedingSourceIndex = existing.TextIndex + existing.Text.Length - 1;
+                index += existing.Text.Length; continue;
+            }
             string value = char.IsHighSurrogate(text[index]) && index + 1 < text.Length ? text.Substring(index, 2) : text.Substring(index, 1);
-            int precedingSourceIndex = Enumerable.Range(0, index).Reverse().Select(i => matches.GetValueOrDefault(i, -1)).FirstOrDefault(i => i >= 0, -1);
             var near = original.LastOrDefault(g => g.TextIndex <= precedingSourceIndex && !g.IsVirtual) ?? original.First(g => !g.IsVirtual);
             var run = runs[near.RunId];
             if (value == "\n")
@@ -409,6 +423,17 @@ public sealed class NativePdfTextService
             else
             {
                 var font = Font(run);
+                if (value == " ")
+                {
+                    // PDF word gaps need no painted glyph. Many CFF subsets omit
+                    // the space outline entirely but retain its advance in Widths.
+                    double spaceAdvance = (font.GetWidth(' ') * run.FontSize / 1000 + run.CharacterSpacing + run.WordSpacing) * run.HorizontalScale;
+                    double spaceWidth = DisplayAdvance(run, spaceAdvance, data.Map);
+                    tokens.Add(near with { Text = value, Code = Array.Empty<byte>(), Advance = spaceAdvance,
+                        IsVirtual = true, IsSoftBreak = false, TextIndex = index,
+                        End = new(near.Origin.X + spaceWidth, near.Origin.Y) });
+                    index++; continue;
+                }
                 int unicode = char.ConvertToUtf32(value, 0);
                 if (!font.ContainsGlyph(unicode)) throw new InvalidOperationException($"원본 글꼴 '{run.FontName}'에 '{value}' 글리프가 없습니다. 이 글꼴로는 해당 문자를 보존하여 입력할 수 없습니다.");
                 byte[] code = font.ConvertToBytes(value);
@@ -439,8 +464,16 @@ public sealed class NativePdfTextService
         if (tokens.Count == 0) return block with { Text = "", Glyphs = new(), Lines = new(), Bounds = default };
         bool horizontal = original.Where(g => !g.IsVirtual).All(g => Math.Abs(g.End.Y - g.Origin.Y) < 0.1 && g.End.X >= g.Origin.X);
         if (!horizontal) throw new InvalidOperationException("회전되거나 오른쪽에서 왼쪽으로 배치된 텍스트는 현재 이동과 전체 삭제만 지원합니다.");
-        double left = original.First(g => !g.IsVirtual).Origin.X, x = left;
-        double baseline = original.First(g => !g.IsVirtual).Origin.Y;
+        var anchors = new List<PdfTextPoint>();
+        bool startOfLine = true;
+        foreach (var glyph in original)
+        {
+            if (glyph.Text == "\n") { startOfLine = true; continue; }
+            if (startOfLine && !glyph.IsVirtual) { anchors.Add(glyph.Origin); startOfLine = false; }
+        }
+        int lineIndex = 0;
+        double left = anchors[0].X, x = left;
+        double baseline = anchors[0].Y;
         double right = Math.Max(block.Bounds.Right, original.Max(g => g.End.X));
         var placed = new List<NativePdfGlyph>();
         NativePdfGlyph? previous = null;
@@ -448,11 +481,6 @@ public sealed class NativePdfTextService
         {
             var run = runs[token.RunId];
             if (token.Text == "\n") return 0;
-            if (token.IsSoftBreak)
-            {
-                var font = Font(run);
-                return DisplayAdvance(run, (font.GetWidth(' ') * run.FontSize / 1000 + run.CharacterSpacing + run.WordSpacing) * run.HorizontalScale, data.Map);
-            }
             return token.IsVirtual ? Math.Max(token.End.X - token.Origin.X, 0) : DisplayAdvance(run, token.Advance, data.Map);
         }
         for (int tokenIndex = 0; tokenIndex < tokens.Count; tokenIndex++)
@@ -461,35 +489,39 @@ public sealed class NativePdfTextService
             var run = runs[token.RunId];
             if (token.Text == "\n")
             {
-                placed.Add(token with { Origin = new(x + edit.DeltaX, baseline + edit.DeltaY), End = new(left + edit.DeltaX, baseline + block.LineHeight + edit.DeltaY) });
-                x = left; baseline += block.LineHeight; previous = null; continue;
+                lineIndex++;
+                var next = lineIndex < anchors.Count ? anchors[lineIndex] : new PdfTextPoint(anchors[0].X,
+                    baseline + Math.Max(block.LineHeight, runs.Values.Max(r => r.DisplayFontSize) * 1.1));
+                placed.Add(token with { Origin = new(x + edit.DeltaX, baseline + edit.DeltaY), End = new(next.X + edit.DeltaX, next.Y + edit.DeltaY) });
+                left = next.X; x = left; baseline = next.Y; previous = null; continue;
             }
             double advance = Width(token);
-            // Wrap whole words within the source paragraph width. Existing PDF
-            // physical line endings are soft; a newly entered newline is hard.
-            if (!string.IsNullOrWhiteSpace(token.Text) && (tokenIndex == 0 ||
-                string.IsNullOrWhiteSpace(tokens[tokenIndex - 1].Text) || tokens[tokenIndex - 1].Text.EndsWith('-')))
-            {
-                double wordWidth = 0;
-                for (int j = tokenIndex; j < tokens.Count && !string.IsNullOrWhiteSpace(tokens[j].Text); j++)
-                { wordWidth += Width(tokens[j]); if (tokens[j].Text.EndsWith('-')) break; }
-                if (x > left + .01 && x + wordWidth > right + .5)
-                { x = left; baseline += block.LineHeight; previous = null; }
-            }
             // Preserve explicit PDF kerning between adjacent unchanged glyphs.
             double kern = previous != null && !previous.IsVirtual && !token.IsVirtual &&
                 originalOrder.TryGetValue(previous.Code, out int previousIndex) && originalOrder.TryGetValue(token.Code, out int nextIndex) &&
                 nextIndex == previousIndex + 1 &&
                 Math.Abs(previous.Origin.Y - token.Origin.Y) < 0.1 ? token.Origin.X - previous.Origin.X - Width(previous) : 0;
             if (Math.Abs(kern) < run.DisplayFontSize * 0.5) x += kern;
-            if (x > left + 0.01 && x + advance > right + 0.5 && !string.IsNullOrWhiteSpace(token.Text))
-            { x = left; baseline += block.LineHeight; previous = null; }
+            // Preserve line origins; never collapse/reflow a whole PDF paragraph
+            // after a single keystroke. Overflow is explicit instead of silently
+            // painting into the next line or adjacent column.
+            double trailingSpacing = token.IsVirtual ? 0 : DisplayAdvance(run, run.CharacterSpacing * run.HorizontalScale, data.Map);
+            if (x + advance - trailingSpacing > right + .5 && !string.IsNullOrWhiteSpace(token.Text))
+                throw new InvalidOperationException("원래 텍스트 영역의 줄 폭을 넘었습니다. 줄바꿈을 추가하거나 '기존 방식'으로 전환해 주세요.");
             double dx = x - token.Origin.X + edit.DeltaX, dy = baseline - token.Origin.Y + edit.DeltaY;
             placed.Add(Translate(token, dx, dy) with { End = new(x + advance + edit.DeltaX, baseline + edit.DeltaY) });
             x += advance; previous = token;
         }
         var lineBoxes = placed.Where(g => g.Text != "\n").GroupBy(g => Math.Round(g.Origin.Y, 2))
             .Select(g => PdfTextBox.Union(g.Select(c => c.Bounds))).ToList();
+        if (text.StartsWith(block.Text, StringComparison.Ordinal) && text[block.Text.Length..].All(char.IsWhiteSpace))
+        {
+            // Extending the insertion area with blank lines/spaces must preserve
+            // the original prefix, including sub-pixel advances and kerning.
+            var prefix = original.ToDictionary(g => g.TextIndex);
+            placed = placed.Select(g => prefix.TryGetValue(g.TextIndex, out var source)
+                ? Translate(source, edit.DeltaX, edit.DeltaY) : g).ToList();
+        }
         return block with { Text = text, Glyphs = placed, Lines = lineBoxes, Bounds = PdfTextBox.Union(lineBoxes) };
     }
 

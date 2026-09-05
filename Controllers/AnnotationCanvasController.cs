@@ -139,6 +139,7 @@ public sealed class AnnotationCanvasController
     public async Task PointerPressedAsync(PointerRoutedEventArgs e)
     {
         PdfDocumentManager manager = _getManager();
+        manager.TextEditingMode = _fontSettings.TextEditingMode;
         if (!manager.IsLoaded || IsInlineEditing)
             return;
 

@@ -178,12 +178,12 @@ public sealed class NativeInlineTextEditorController
         foreach (var glyph in _layout.Glyphs.Where(g => g.TextIndex < end && g.TextIndex + g.Text.Length > start && g.Text != "\n"))
             AddBox(glyph.Bounds with { Width = Math.Max(glyph.Bounds.Width, Math.Abs(glyph.End.X - glyph.Origin.X)) }, true);
         if (start != end || !_caretVisible) return;
-        var next = _layout.Glyphs.FirstOrDefault(g => g.TextIndex >= start && g.Text != "\n");
-        var last = _layout.Glyphs.LastOrDefault(g => g.Text != "\n");
-        var source = next ?? last ?? _session!.Annotation.NativeText!.Glyphs.First(g => !g.IsVirtual);
+        var next = _layout.Glyphs.FirstOrDefault(g => g.TextIndex >= start);
+        var last = _layout.Glyphs.LastOrDefault();
+        var source = next is { Text: not "\n" } ? next :
+            _layout.Glyphs.LastOrDefault(g => g.Text != "\n" && g.TextIndex < start)
+            ?? _session!.Annotation.NativeText!.Glyphs.First(g => !g.IsVirtual);
         var point = next?.Origin ?? last?.End ?? source.Origin;
-        if (_previewText.EndsWith('\n') && start >= _previewText.Length)
-            point = new(_session!.Annotation.NativeText!.Glyphs[0].Origin.X, source.Origin.Y + _layout.LineHeight);
         var lineBounds = _layout.Lines.OrderBy(line => Math.Abs(line.Y + line.Height / 2 - source.Bounds.Y - source.Bounds.Height / 2)).FirstOrDefault();
         double top = lineBounds.Height > 0 ? lineBounds.Y + point.Y - source.Origin.Y : point.Y + source.Bounds.Y - source.Origin.Y;
         var caret = new Microsoft.UI.Xaml.Shapes.Rectangle

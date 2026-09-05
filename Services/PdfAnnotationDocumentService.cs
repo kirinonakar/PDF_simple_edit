@@ -43,7 +43,7 @@ public sealed class PdfAnnotationDocumentService
                     annotation,
                     annotation.Content);
                 double baselineOffset = AnnotationTextLayoutService.GetVisualBaselineOffset(annotation);
-                var displayLineWidths = AnnotationTextLayoutService.GetDisplayLineWidths(
+                int characterSpacing = AnnotationTextLayoutService.GetDisplayCharacterSpacing(
                     annotation,
                     annotation.Content);
                 manager.AddTextInternal(
@@ -63,7 +63,7 @@ public sealed class PdfAnnotationDocumentService
                     fontObjectNumbers,
                     null,
                     null,
-                    displayLineWidths,
+                    characterSpacing,
                     annotation.FontWeight,
                     originalLines);
                 break;

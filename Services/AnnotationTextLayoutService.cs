@@ -27,58 +27,9 @@ public static class AnnotationTextLayoutService
 
     public static int GetDisplayCharacterSpacing(PdfAnnotation annotation, string? text)
     {
-        if (annotation.CharacterSpacing is int preservedSpacing)
-            return preservedSpacing;
-
-        if (annotation.TextFragments.Count < 2 ||
-            annotation.Width <= 0.1 ||
-            annotation.FontSize <= 0.1 ||
-            string.IsNullOrEmpty(text))
-        {
-            return 0;
-        }
-
-        try
-        {
-            double availableWidth = Math.Max(annotation.Width * PdfToPixels - 2.0, 1.0);
-            double fontSizePixels = annotation.FontSize * PdfToPixels;
-            int requiredSpacing = 0;
-            string[] lines = text
-                .Replace("\r\n", "\n", StringComparison.Ordinal)
-                .Replace('\r', '\n')
-                .Split('\n');
-
-            foreach (string line in lines.Where(line => line.Length > 1))
-            {
-                TextBlock sample = CreateTextBlock(
-                    line,
-                    annotation.FontFamily,
-                    annotation.FontSize,
-                    annotation.IsBold,
-                    annotation.IsItalic,
-                    annotation.FontWeight);
-                sample.Measure(new Windows.Foundation.Size(
-                    double.PositiveInfinity,
-                    double.PositiveInfinity));
-
-                double overflow = sample.DesiredSize.Width - availableWidth;
-                if (overflow <= 0)
-                    continue;
-
-                int lineSpacing = (int)Math.Floor(
-                    -overflow * 1000.0 /
-                    (fontSizePixels * Math.Max(line.Length - 1, 1)));
-                requiredSpacing = Math.Min(requiredSpacing, lineSpacing);
-            }
-
-            // Keep glyph shapes and point size intact. The lower bound prevents
-            // unusually long replacement text from becoming unreadably compressed.
-            return Math.Clamp(requiredSpacing, -250, 0);
-        }
-        catch
-        {
-            return 0;
-        }
+        // A fallback font must use its own advances. Compressing it to the PDF
+        // width with negative tracking makes narrow glyphs overlap.
+        return Math.Max(annotation.CharacterSpacing ?? 0, 0);
     }
 
     public static double GetRequiredTextBoxWidth(
@@ -113,50 +64,8 @@ public static class AnnotationTextLayoutService
         }
     }
 
-    public static IReadOnlyList<double> GetDisplayLineWidths(
-        PdfAnnotation annotation,
-        string? text)
-    {
-        string[] lines = SplitLines(text);
-        int characterSpacing = GetDisplayCharacterSpacing(annotation, text);
-        var widths = new List<double>(lines.Length);
-
-        foreach (string line in lines)
-        {
-            try
-            {
-                TextBlock sample = CreateTextBlock(
-                    line,
-                    annotation.FontFamily,
-                    annotation.FontSize,
-                    annotation.IsBold,
-                    annotation.IsItalic,
-                    annotation.FontWeight);
-                sample.CharacterSpacing = characterSpacing;
-                sample.Measure(new Windows.Foundation.Size(
-                    double.PositiveInfinity,
-                    double.PositiveInfinity));
-                double measuredWidth = sample.DesiredSize.Width / PdfToPixels;
-                if (annotation.TextFragments.Count > 1 && annotation.Width > 0.1)
-                    measuredWidth = Math.Min(measuredWidth, annotation.Width);
-                widths.Add(Math.Max(measuredWidth, 0));
-            }
-            catch
-            {
-                // A missing UI text-measurement context must not stretch a short
-                // line to the full annotation width during PDF serialization.
-                widths.Add(0);
-            }
-        }
-
-        return widths;
-    }
-
     public static double GetDisplayLineHeight(PdfAnnotation annotation, string? text)
     {
-        if (annotation.TextFragments.Count > 1 && annotation.LineHeight > 0.1)
-            return annotation.LineHeight;
-
         string[] lines = SplitLines(text);
         try
         {
@@ -171,13 +80,11 @@ public static class AnnotationTextLayoutService
             sample.Measure(new Windows.Foundation.Size(
                 double.PositiveInfinity,
                 double.PositiveInfinity));
-            return Math.Max(sample.DesiredSize.Height / lines.Length / PdfToPixels, 1);
+            return Math.Max(sample.DesiredSize.Height / lines.Length / PdfToPixels, Math.Max(annotation.LineHeight, 1));
         }
         catch
         {
-            return annotation.LineHeight > 0.1
-                ? annotation.LineHeight
-                : Math.Max(annotation.FontSize * 1.2, 1);
+            return Math.Max(annotation.LineHeight, Math.Max(annotation.FontSize * 1.2, 1));
         }
     }
 
@@ -303,7 +210,7 @@ public static class AnnotationTextLayoutService
             annotation.IsBold,
             annotation.IsItalic,
             annotation.FontWeight,
-            annotation.LineHeight);
+            GetDisplayLineHeight(annotation, text));
         double topOffset = Math.Max(GetTopOffset(annotation, displayFontSize), 0);
 
         // Return PDF points so the persisted annotation and its selection box use

@@ -6,6 +6,20 @@ using System.Text;
 
 internal static class Fixtures
 {
+    public static byte[] CreateCollision()
+    {
+        using var output = new MemoryStream();
+        using (var document = new PdfDocument(new PdfWriter(output)))
+        {
+            var page = document.AddNewPage(new PageSize(300, 300));
+            var font = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
+            var canvas = new iText.Kernel.Pdf.Canvas.PdfCanvas(page);
+            canvas.BeginText().SetFontAndSize(font, 16).MoveText(40, 240).ShowText("Editable text.").EndText();
+            canvas.BeginText().SetFontAndSize(font, 16).MoveText(40, 218).ShowText("BLOCKER").EndText();
+        }
+        return output.ToArray();
+    }
+
     public static byte[] Create()
     {
         using var output = new MemoryStream();

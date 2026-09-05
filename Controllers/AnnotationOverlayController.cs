@@ -252,6 +252,8 @@ public sealed class AnnotationOverlayController
         double displayFontSize = hasOriginalLineLayout
             ? AnnotationTextLayoutService.GetDisplayFontSize(annotation, annotation.Content)
             : annotation.FontSize;
+        double displayLineHeight = hasOriginalLineLayout
+            ? AnnotationTextLayoutService.GetDisplayLineHeight(annotation, annotation.Content) : 0;
         return new TextBlock
         {
             Text = annotation.Content,
@@ -273,10 +275,10 @@ public sealed class AnnotationOverlayController
                     : double.NaN,
             FontFamily = new FontFamily(annotation.FontFamily),
             FontSize = displayFontSize * PdfToPixels,
-            LineHeight = hasOriginalLineLayout && annotation.LineHeight > 0.1
-                ? annotation.LineHeight * PdfToPixels
+            LineHeight = hasOriginalLineLayout && displayLineHeight > 0.1
+                ? displayLineHeight * PdfToPixels
                 : 0,
-            LineStackingStrategy = hasOriginalLineLayout && annotation.LineHeight > 0.1
+            LineStackingStrategy = hasOriginalLineLayout && displayLineHeight > 0.1
                 ? LineStackingStrategy.BaselineToBaseline
                 : LineStackingStrategy.MaxHeight,
             CharacterSpacing = hasOriginalLineLayout

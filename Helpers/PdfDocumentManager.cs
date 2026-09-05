@@ -19,6 +19,12 @@ namespace PDF_simple_edit.Helpers
         private bool _isModified;
         private readonly object _docLock = new();
         private readonly Dictionary<int, List<PdfPageContent>> _contentCache = new();
+        private TextEditingMode _textEditingMode = TextEditingMode.PreserveOriginal;
+        public TextEditingMode TextEditingMode
+        {
+            get => _textEditingMode;
+            set { lock (_docLock) { if (_textEditingMode != value) { _textEditingMode = value; _contentCache.Clear(); } } }
+        }
 
         private readonly Stack<(byte[] Bytes, object? UIState)> _undoStack = new();
         private readonly Stack<(byte[] Bytes, object? UIState)> _redoStack = new();
@@ -388,7 +394,7 @@ namespace PDF_simple_edit.Helpers
             IReadOnlyList<int>? originalFontObjectNumbersByLine = null,
             IReadOnlyList<double>? lineXOffsets = null,
             IReadOnlyList<double>? lineBaselineOffsets = null,
-            IReadOnlyList<double>? displayLineWidths = null,
+            int characterSpacing = 0,
             int fontWeight = 400,
             IReadOnlyList<string>? originalLines = null)
         {
@@ -409,7 +415,7 @@ namespace PDF_simple_edit.Helpers
                 originalFontObjectNumbersByLine,
                 lineXOffsets,
                 lineBaselineOffsets,
-                displayLineWidths,
+                characterSpacing,
                 fontWeight,
                 originalLines);
         }
@@ -618,6 +624,8 @@ namespace PDF_simple_edit.Helpers
         public async Task<List<PdfPageContent>> ExtractPageContentsAsync(int pageIndex)
         {
             byte[] pdfSnapshot;
+            byte[] sourceVersion;
+            TextEditingMode mode;
             lock (_docLock)
             {
                 if (_pdfBytes == null)
@@ -625,13 +633,16 @@ namespace PDF_simple_edit.Helpers
                 if (_contentCache.TryGetValue(pageIndex, out List<PdfPageContent>? cached))
                     return cached;
                 pdfSnapshot = (byte[])_pdfBytes.Clone();
+                sourceVersion = _pdfBytes;
+                mode = TextEditingMode;
             }
 
             List<PdfPageContent> contents =
-                await _contentExtractor.ExtractAsync(pdfSnapshot, pageIndex);
+                await _contentExtractor.ExtractAsync(pdfSnapshot, pageIndex, mode);
 
             lock (_docLock)
-                _contentCache[pageIndex] = contents;
+                if (ReferenceEquals(_pdfBytes, sourceVersion) && TextEditingMode == mode)
+                    _contentCache[pageIndex] = contents;
             return contents;
         }
 
@@ -710,7 +721,8 @@ namespace PDF_simple_edit.Helpers
 
             // Operation indexes can become stale after an earlier stream rewrite.
             // Resolve the current fragments before asking the stream editor to remove them.
-            List<PdfPageContent> pageContents = await ExtractPageContentsAsync(pageIndex);
+            List<PdfPageContent> pageContents = await _contentExtractor.ExtractAsync(
+                _pdfBytes!, pageIndex, TextEditingMode.Legacy);
             List<PdfAnnotation>? currentAnnotations =
                 _annotationTargetResolver.ResolveText(annotations, pageContents);
             if (currentAnnotations == null)

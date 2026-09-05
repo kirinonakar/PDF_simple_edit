@@ -403,6 +403,7 @@ namespace PDF_simple_edit
 
         private void WireChildControlEvents()
         {
+            EditorToolbar.TextEditingModeComboBox.SelectionChanged += TextEditingMode_Changed;
             BtnOpen.Click += OpenFile_Click;
             BtnSave.Click += SaveFile_Click;
             BtnSaveAs.Click += SaveAsFile_Click;
@@ -497,12 +498,52 @@ namespace PDF_simple_edit
 
         private void ApplyFontSettingsToControls()
         {
+            if (!_changingTextMode)
+                EditorToolbar.TextEditingModeComboBox.SelectedIndex = (int)_fontSettings.TextEditingMode;
+            _pdfManager.TextEditingMode = _fontSettings.TextEditingMode;
             ApplyFontValuesToControls(
                 _fontSettings.FontFamily,
                 _fontSettings.FontSize,
                 _fontSettings.IsBold,
                 _fontSettings.IsItalic,
                 _fontSettings.Color);
+        }
+
+        private bool _changingTextMode;
+        private async void TextEditingMode_Changed(object sender, SelectionChangedEventArgs e)
+        {
+            if (_changingTextMode) return;
+            var mode = (TextEditingMode)EditorToolbar.TextEditingModeComboBox.SelectedIndex;
+            if (!Enum.IsDefined(mode)) return;
+            EditorToolbar.TextEditingModeDescription.Text = mode == TextEditingMode.PreserveOriginal
+                ? "원래 글꼴과 줄 위치를 유지하여 편집"
+                : "글꼴·크기 변경 가능 · 원본 텍스트를 교체하여 편집";
+            if (_fontSettings.TextEditingMode == mode) return;
+            _changingTextMode = true;
+            EditorToolbar.TextEditingModeComboBox.IsEnabled = false;
+            try
+            {
+                if (_annotationCanvasController != null)
+                    await _annotationCanvasController.FinishActiveInlineEditAsync();
+                _fontSettings.TextEditingMode = mode;
+                _pdfManager.TextEditingMode = mode;
+                // Selection handles describe one extraction mode. Pending rewritten
+                // annotations are edits and must survive a mode change.
+                _annotations.RemoveAll(a => a.IsOriginalTextReplacement);
+                _annotationCanvasController?.ClearSelection();
+                _annotationCanvasController?.Render();
+                _windowSettingsController?.Save();
+                TxtStatus.Text = mode == TextEditingMode.PreserveOriginal
+                    ? "원본 보존 방식으로 전환했습니다. 텍스트를 다시 선택해 주세요."
+                    : "기존 방식으로 전환했습니다. 텍스트를 다시 선택해 주세요.";
+            }
+            catch (Exception error) { TxtStatus.Text = error.Message; }
+            finally
+            {
+                _changingTextMode = false;
+                EditorToolbar.TextEditingModeComboBox.SelectedIndex = (int)_fontSettings.TextEditingMode;
+                EditorToolbar.TextEditingModeComboBox.IsEnabled = true;
+            }
         }
 
         private void SyncFontControlsWithSelection(PdfAnnotation? annotation)

@@ -14,12 +14,12 @@ public sealed class EditorSettingsService
 {
     private readonly string _settingsPath;
 
-    public EditorSettingsService()
+    public EditorSettingsService(string? settingsPath = null)
     {
         string folder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "PDF_simple_edit");
-        _settingsPath = Path.Combine(folder, "window_settings.txt");
+        _settingsPath = settingsPath ?? Path.Combine(folder, "window_settings.txt");
     }
 
     public WindowPlacement? Load(TextFontSettings fontSettings)
@@ -66,6 +66,7 @@ public sealed class EditorSettingsService
             }
 
             SetValue(lines, "FontFamily", fontSettings.FontFamily);
+            SetValue(lines, "TextEditingMode", fontSettings.TextEditingMode.ToString());
             SetValue(lines, "FontSize", fontSettings.FontSize.ToString("0.##", CultureInfo.InvariantCulture));
             SetValue(lines, "FontColor", fontSettings.Color);
             SetValue(lines, "IsBold", fontSettings.IsBold.ToString(CultureInfo.InvariantCulture));
@@ -92,6 +93,8 @@ public sealed class EditorSettingsService
 
     private static void ApplyFontSettings(IReadOnlyDictionary<string, string> values, TextFontSettings settings)
     {
+        if (values.TryGetValue("TextEditingMode", out string? mode) && Enum.TryParse<TextEditingMode>(mode, out var parsed) && Enum.IsDefined(parsed))
+            settings.TextEditingMode = parsed;
         if (values.TryGetValue("FontFamily", out string? family) && !string.IsNullOrWhiteSpace(family))
             settings.FontFamily = family;
         if (values.TryGetValue("FontSize", out string? sizeText) &&

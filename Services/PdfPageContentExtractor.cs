@@ -22,7 +22,7 @@ namespace PDF_simple_edit.Services
 {
     internal sealed class PdfPageContentExtractor
     {
-        public async Task<List<PdfPageContent>> ExtractAsync(byte[] pdfBytes, int pageIndex)
+        public async Task<List<PdfPageContent>> ExtractAsync(byte[] pdfBytes, int pageIndex, TextEditingMode mode = TextEditingMode.PreserveOriginal)
         {
             ArgumentNullException.ThrowIfNull(pdfBytes);
             byte[] pdfSnapshot = (byte[])pdfBytes.Clone();
@@ -47,6 +47,7 @@ namespace PDF_simple_edit.Services
                     var listener = new ContentExtractionListener(
                         pageSize.GetHeight(), imageTargets);
                     PdfCanvasProcessor processor = new PdfCanvasProcessor(listener);
+                    listener.Processor = processor;
                     var tracker = new TextOperationTracker(operationTargets);
                     foreach (string operatorName in new[] { "Tj", "TJ", "'", "\"" })
                     {
@@ -71,7 +72,9 @@ namespace PDF_simple_edit.Services
                     
                     // The native model owns text geometry and editing identity. The
                     // legacy listener remains responsible for image/vector selection.
-                    extractedContents = new NativePdfTextService().Extract(pdfSnapshot, pageIndex)
+                    extractedContents = mode == TextEditingMode.Legacy
+                        ? GroupTextIntoEditRegions(listener.Contents.Where(content => content.Type == PageContentType.Text))
+                        : new NativePdfTextService().Extract(pdfSnapshot, pageIndex)
                         .Where(block => !string.IsNullOrWhiteSpace(block.Text))
                         .Select(NativePdfTextService.ToPageContent).ToList();
                     extractedContents.AddRange(listener.Contents.Where(content => content.Type == PageContentType.Image));
@@ -299,42 +302,7 @@ namespace PDF_simple_edit.Services
 
         private static string ColorToHex(Color? color)
         {
-            if (color == null)
-                return "#000000";
-
-            // DeviceCmyk stores four values (C, M, Y, K). It must be converted
-            // before the generic RGB/gray handling below; treating the first
-            // three CMYK channels as RGB changes colors such as the red title
-            // in the supplied AJCC PDF into cyan.
-            if (color is DeviceCmyk cmyk)
-            {
-                var rgb = Color.ConvertCmykToRgb(cmyk);
-                float[] rgbValues = rgb.GetColorValue();
-                if (rgbValues.Length >= 3)
-                {
-                    byte r = (byte)Math.Clamp((int)Math.Round(rgbValues[0] * 255), 0, 255);
-                    byte g = (byte)Math.Clamp((int)Math.Round(rgbValues[1] * 255), 0, 255);
-                    byte b = (byte)Math.Clamp((int)Math.Round(rgbValues[2] * 255), 0, 255);
-                    return $"#{r:X2}{g:X2}{b:X2}";
-                }
-            }
-
-            float[] values = color.GetColorValue();
-            if (values.Length >= 3)
-            {
-                byte r = (byte)Math.Clamp((int)Math.Round(values[0] * 255), 0, 255);
-                byte g = (byte)Math.Clamp((int)Math.Round(values[1] * 255), 0, 255);
-                byte b = (byte)Math.Clamp((int)Math.Round(values[2] * 255), 0, 255);
-                return $"#{r:X2}{g:X2}{b:X2}";
-            }
-
-            if (values.Length == 1)
-            {
-                byte gray = (byte)Math.Clamp((int)Math.Round(values[0] * 255), 0, 255);
-                return $"#{gray:X2}{gray:X2}{gray:X2}";
-            }
-
-            return "#000000";
+            return PdfDisplayColorService.ToHex(color);
         }
 
         private sealed class TextOperationDescriptor
@@ -724,7 +692,7 @@ namespace PDF_simple_edit.Services
         private static bool CanMergeIntoEditRegion(PdfPageContent region, PdfPageContent next, out bool startsNewLine)
         {
             startsNewLine = false;
-            if (region.TextFragments.Count == 0 || next.TextFragments.Count == 0 || !HasSameEditableStyle(region, next))
+            if (region.TextFragments.Count == 0 || next.TextFragments.Count == 0)
                 return false;
 
             var previous = region.TextFragments[^1];
@@ -736,6 +704,17 @@ namespace PDF_simple_edit.Services
             // 위치는 실제 줄 배치를 반영하므로 줄 판정에는 Y를 사용합니다.
             double lineTopDelta = Math.Abs(previous.Y - current.Y);
             bool sameLine = lineTopDelta <= Math.Max(1.25, fontSize * 0.35);
+
+            if (!HasSameEditableStyle(region, next))
+            {
+                // A style change inside the same physical line is part of the
+                // same replacement area. Leaving its suffix outside the edit
+                // makes a fallback font grow directly into that original text.
+                double baselineDelta = Math.Abs(previous.Y + previous.BaselineOffset - current.Y - current.BaselineOffset);
+                double styleGap = current.X - (previous.X + previous.Width);
+                return baselineDelta <= fontSize * .4 && styleGap >= -fontSize * .2 && styleGap <= fontSize * .65 &&
+                    Math.Min(previous.FontSize, current.FontSize) >= fontSize * .4;
+            }
 
             if (sameLine)
             {
@@ -1098,6 +1077,7 @@ namespace PDF_simple_edit.Services
 
         private class ContentExtractionListener : IEventListener
         {
+            public PdfCanvasProcessor Processor { get; set; } = null!;
             public List<PdfPageContent> Contents { get; } = new();
             public List<VectorPathFragment> VectorPaths { get; } = new();
             private readonly float _pageHeight;
@@ -1203,7 +1183,9 @@ namespace PDF_simple_edit.Services
                     return;
 
                 var bounds = GetTextBounds(textInfo, _pageHeight);
-                float fontSize = ResolveFontSize(textInfo, bounds.height);
+                var fontVector = new Vector(0, textInfo.GetFontSize(), 0).Cross(
+                    textInfo.GetTextMatrix().Multiply(Processor.GetGraphicsState().GetCtm()));
+                float fontSize = (float)Math.Sqrt(fontVector.Get(0) * fontVector.Get(0) + fontVector.Get(1) * fontVector.Get(1));
                 bounds = NormalizePathologicalTextBounds(
                     textInfo, bounds, _pageHeight, fontSize);
                 var baseline = textInfo.GetBaseline().GetStartPoint();

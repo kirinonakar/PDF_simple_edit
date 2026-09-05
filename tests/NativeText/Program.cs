@@ -6,6 +6,7 @@ using System.Text.Json;
 var path = args.FirstOrDefault() ?? "D:/ASUNA/test/3D knee.pdf";
 var bytes = File.ReadAllBytes(path);
 var service = new NativePdfTextService();
+var pageExtractor = new PdfPageContentExtractor();
 Directory.CreateDirectory("tmp/pdfs");
 int checks = 0;
 void Check(bool condition, string message) { if (!condition) throw new Exception(message); checks++; }
@@ -46,6 +47,10 @@ var first = service.Extract(bytes, 0);
 File.WriteAllText("tmp/pdfs/native-original.json", JsonSerializer.Serialize(first, new JsonSerializerOptions { WriteIndented = true }));
 var title = first.First(b => b.Text.Contains("Internal Knee"));
 var originalTitleGlyphs = title.Glyphs.Where(g => !g.IsVirtual).ToList();
+var blankLine = service.Edit(bytes, 0, new(title, title.Text + "\n\n"));
+Check(ReferenceEquals(blankLine.Bytes, bytes), "Blank-line input must not rewrite unchanged painted content");
+Check(blankLine.Layout.Text.EndsWith("\n\n") && blankLine.Layout.Glyphs[^1].End.Y > title.Glyphs[^1].Origin.Y + title.LineHeight,
+    "Blank-line caret positions were not retained in the live edit buffer");
 var moved = service.Edit(bytes, 0, new(title, title.Text, 10, 5));
 SameGlyphs(originalTitleGlyphs, Glyphs(moved.Bytes, 0).Take(originalTitleGlyphs.Count), 10, 5);
 File.WriteAllBytes("tmp/pdfs/native-move.pdf", moved.Bytes);
@@ -93,16 +98,21 @@ foreach (var glyph in spacingEdit.Layout.Glyphs.Where(g => !g.IsVirtual))
 File.WriteAllBytes("tmp/pdfs/fixture-spacing.pdf", spacingEdit.Bytes);
 
 // Separate modifications must not restyle untouched spans between them.
-var multi = service.Edit(bytes, 0, new(title, title.Text.Replace("Knee", "Keen").Replace("Study", "Study Study")));
+var multi = service.Edit(bytes, 0, new(title, title.Text.Replace("Knee", "Keen").Replace("Study", "Stud")));
 foreach (var glyph in multi.Layout.Glyphs.Where(g => !g.IsVirtual && g.TextIndex > 30 && g.TextIndex < 80))
     Check(title.Runs.Any(r => r.Id == glyph.RunId), "Original run style was lost");
 Check(multi.Layout.Glyphs.Any(g => g.RunId == title.Runs.Last().Id), "Mixed final font was lost");
-File.WriteAllBytes("tmp/pdfs/native-reflow.pdf", multi.Bytes);
+File.WriteAllBytes("tmp/pdfs/native-fixed-layout.pdf", multi.Bytes);
+try { service.Edit(bytes, 0, new(title, title.Text.Replace("Study", "Study Study Study Study"))); throw new Exception("Overflow was accepted"); }
+catch (InvalidOperationException) { checks++; }
+var sourceLines = title.Glyphs.Where(g => !g.IsVirtual && g.Origin.Y > title.Glyphs[0].Origin.Y + 1).ToList();
+var editedLines = edited.Layout.Glyphs.Where(g => !g.IsVirtual && g.Origin.Y > title.Glyphs[0].Origin.Y + 1).ToList();
+SameGlyphs(sourceLines, editedLines);
 using (var originalDoc = new PdfDocument(new PdfReader(new MemoryStream(bytes))))
 using (var editedDoc = new PdfDocument(new PdfReader(new MemoryStream(multi.Bytes))))
 {
     for (int i = 1; i < originalDoc.GetNumberOfPdfObjects(); i++)
-        if (originalDoc.GetPdfObject(i) is PdfStream stream)
+        if (originalDoc.GetPdfObject(i) is PdfStream stream && !PdfName.Metadata.Equals(stream.GetAsName(PdfName.Type)))
             Check(editedDoc.GetPdfObject(i) is PdfStream copy && stream.GetBytes().SequenceEqual(copy.GetBytes()),
                 $"Original stream {i} was changed (font/image/content)");
 }
@@ -114,5 +124,73 @@ var oneBlock = new NativePdfTextBlock { Runs = new() { oneRun }, Glyphs = runGly
     Lines = new() { PdfTextBox.Union(runGlyphs.Select(g => g.Bounds)) }, LineHeight = operandBlock.LineHeight };
 var oneDeleted = service.Edit(fixture, 0, new(oneBlock, ""));
 SameGlyphs(allBefore.Where(g => g.RunId != oneRun.Id), Glyphs(oneDeleted.Bytes, 0));
-Console.WriteLine("PASS: character/word spacing, horizontal scaling, mixed-font reflow, partial TJ, original font/image stream bytes");
+Console.WriteLine("PASS: spacing/scaling, mixed fonts, fixed line origins, overflow rejection, partial TJ, original font/image stream bytes");
+foreach (var mode in new[] { TextEditingMode.Legacy, TextEditingMode.PreserveOriginal })
+{
+    var contents = await pageExtractor.ExtractAsync(bytes, 0, mode);
+    var content = contents.First(c => c.Type == PageContentType.Text && c.Text.Contains("Internal Knee"));
+    Check((content.NativeText != null) == (mode == TextEditingMode.PreserveOriginal), "Mode dispatch returned the wrong edit model");
+    if (mode == TextEditingMode.Legacy)
+    {
+        Check(content.TextFragments.Count > 0, "Legacy operator targets are missing");
+        Check(content.Color != "#FFFFFF" && content.Color != "#000000", "Spot color tint was treated as gray");
+        Check(content.Text.Contains("Preliminary"), "Legacy selection must include the mixed-style line suffix to avoid overlap");
+        Check(Math.Abs(content.FontSize - 26) < .01, "Legacy font size must come from the PDF transform");
+        using var buffer = new MemoryStream();
+        using (var document = new PdfDocument(new PdfReader(new MemoryStream(bytes)), new PdfWriter(buffer)))
+        {
+            var target = new PdfAnnotation { TextFragments = content.TextFragments, IsOriginalTextReplacement = true };
+            Check(new PdfContentStreamEditor().RemoveTextAnnotations(document, 0, new[] { target }), "Legacy removal failed after mode switch");
+            var lineGroups = content.TextFragments.GroupBy(f => f.LineIndex).OrderBy(g => g.Key).ToList();
+            new PdfContentWriter().AddText(document, 0, content.X, content.Y,
+                content.Text.Replace("Knee", "Keen"), content.FontFamily, content.FontSize,
+                new iText.Kernel.Colors.DeviceRgb(Convert.ToInt32(content.Color[1..3], 16), Convert.ToInt32(content.Color[3..5], 16), Convert.ToInt32(content.Color[5..7], 16)),
+                lineHeight: Math.Max(content.LineHeight, content.FontSize * 1.2),
+                baselineOffset: content.BaselineOffset, originalFontObjectNumber: content.OriginalFontObjectNumber,
+                originalFontObjectNumbersByLine: lineGroups.Select(g => g.First().OriginalFontObjectNumber).ToList(),
+                originalLines: lineGroups.Select(g => string.Concat(g.Select(f => f.Text))).ToList());
+        }
+        var legacyBytes = buffer.ToArray();
+        File.WriteAllBytes("tmp/pdfs/legacy-edit.pdf", legacyBytes);
+        Check(service.Extract(legacyBytes, 0).Any(b => b.Text.Contains("Keen")), "Legacy redraw did not save the edit");
+        // Legacy grouping includes the title's superscript footnote; the native
+        // engine keeps that raised run as a separate object. Compare precisely
+        // the operators selected by the legacy model, not the native block.
+        Check(content.TextFragments.All(f => f.ContentStreamIndex == 0), "Sample title fixture changed content streams");
+        var legacyTargets = content.TextFragments.Select(f => $"p0:{f.OperationIndex}:{f.TextOperandIndex}").ToHashSet();
+        var untouched = first.SelectMany(b => b.Glyphs).Where(g => !g.IsVirtual && !legacyTargets.Contains(g.RunId)).ToList();
+        var sourceCopy = (byte[])bytes.Clone();
+        var background = await new LegacyTextPreviewService().CreateAsync(bytes, 0,
+            new() { TextFragments = content.TextFragments, IsOriginalTextReplacement = true });
+        Check(bytes.SequenceEqual(sourceCopy), "Opening legacy preview mutated the source PDF");
+        SameGlyphs(untouched, Glyphs(background, 0));
+        File.WriteAllBytes("tmp/pdfs/legacy-background.pdf", background);
+        SameGlyphs(untouched, Glyphs(legacyBytes, 0).Take(untouched.Count));
+        var redrawRuns = service.Extract(legacyBytes, 0).Where(b => b.Text.Contains("Keen")).SelectMany(b => b.Runs);
+        Check(redrawRuns.All(r => r.CharacterSpacing >= 0), "Legacy save compressed glyphs with negative tracking");
+    }
+    Console.WriteLine($"PASS edit mode: {mode}");
+}
+// Restoring preferences must not change the user's real settings file.
+var settingsPath = Path.GetFullPath("tmp/pdfs/edit-mode-settings.txt");
+var settingsService = new EditorSettingsService(settingsPath);
+foreach (var mode in Enum.GetValues<TextEditingMode>())
+{
+    settingsService.Save(new(10, 20, 1100, 800), new() { TextEditingMode = mode });
+    var loaded = new TextFontSettings();
+    var placement = settingsService.Load(loaded);
+    Check(loaded.TextEditingMode == mode && placement?.Width == 1100, "Edit mode preference did not round-trip");
+}
+File.WriteAllText(settingsPath, "TextEditingMode=invalid");
+var defaults = new TextFontSettings(); settingsService.Load(defaults);
+Check(defaults.TextEditingMode == TextEditingMode.PreserveOriginal, "Invalid mode must preserve the default");
+var collisionFixture = Fixtures.CreateCollision();
+var collisionBlock = service.Extract(collisionFixture, 0).First(b => b.Text.Contains("Editable"));
+try
+{
+    service.Edit(collisionFixture, 0, new(collisionBlock, collisionBlock.Text + "\nBLOCKER"));
+    throw new Exception("New line collided with unselected text");
+}
+catch (InvalidOperationException error) when (error.Message.Contains("겹칩니다")) { checks++; }
+Console.WriteLine("PASS: legacy redraw, saved tracking, mode preference persistence, new-line collision rejection");
 Console.WriteLine($"PASS: {checks} assertions (glyph identity/coordinates, all attachment pages, forms, no-op, encoding)");

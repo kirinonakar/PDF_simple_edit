@@ -31,7 +31,7 @@ namespace PDF_simple_edit.Services
             IReadOnlyList<int>? originalFontObjectNumbersByLine = null,
             IReadOnlyList<double>? lineXOffsets = null,
             IReadOnlyList<double>? lineBaselineOffsets = null,
-            IReadOnlyList<double>? displayLineWidths = null,
+            int characterSpacing = 0,
             int fontWeight = 400,
             IReadOnlyList<string>? originalLines = null)
         {
@@ -264,8 +264,6 @@ namespace PDF_simple_edit.Services
                     return resolvedFontSize * 0.25f;
                 }
             }
-
-            static int CountSpaces(string value) => value.Count(character => character == ' ');
 
             static void ShowTextPreservingSpaces(
                 PdfCanvas targetCanvas,
@@ -589,29 +587,15 @@ namespace PDF_simple_edit.Services
                         currentXOffset - previousXOffset,
                         -(currentBaselineOffset - previousBaselineOffset));
                 }
-                float characterSpacing = 0;
                 float resolvedFontSize = (float)Math.Max(fontSize, 1);
                 var missingSpaceAdvances = resolvedLineSegments[i]
                     .Select(segment => GetMissingSpaceAdvance(segment.Font, resolvedFontSize))
                     .ToList();
-                float addedSpaceWidth = resolvedLineSegments[i]
-                    .Select((segment, index) =>
-                        CountSpaces(segment.Text) * missingSpaceAdvances[index])
-                    .Sum();
-                if (displayLineWidths != null &&
-                    i < displayLineWidths.Count &&
-                    displayLineWidths[i] > 0.1 &&
-                    lines[i].Length > 0)
-                {
-                    float measuredLineWidth = resolvedLineSegments[i]
-                        .Sum(segment => segment.Font.GetWidth(
-                            segment.Text,
-                            (float)Math.Max(fontSize, 1)));
-                    characterSpacing = (float)(
-                        (displayLineWidths[i] - measuredLineWidth - addedSpaceWidth) /
-                        Math.Max(lines[i].Length, 1));
-                }
-                canvas.SetCharacterSpacing(characterSpacing);
+                // Use explicit tracking in the same 1/1000 em units as WinUI.
+                // Never derive Tc from a target box width: font substitution or
+                // a longer edit otherwise distributes a negative advance into
+                // every glyph and can reverse the pen for narrow characters.
+                canvas.SetCharacterSpacing(Math.Max(characterSpacing, 0) * resolvedFontSize / 1000f);
                 for (int segmentIndex = 0;
                     segmentIndex < resolvedLineSegments[i].Count;
                     segmentIndex++)

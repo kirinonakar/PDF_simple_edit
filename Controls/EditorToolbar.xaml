@@ -4,6 +4,10 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Grid Padding="8,4" BorderBrush="#30000000" BorderThickness="0,0,0,1">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="Auto"/>
@@ -11,7 +15,16 @@
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
-
+        <StackPanel Grid.Row="1" Grid.ColumnSpan="5" Orientation="Horizontal" Spacing="10" Margin="4,5,0,2">
+            <TextBlock Text="텍스트 편집 방식" VerticalAlignment="Center"/>
+            <ComboBox x:Name="TextEditingModeComboBox" x:FieldModifier="public" Width="168" SelectedIndex="1"
+                      AutomationProperties.Name="텍스트 편집 방식">
+                <ComboBoxItem Content="기존 방식"/>
+                <ComboBoxItem Content="원본 보존 방식"/>
+            </ComboBox>
+            <TextBlock x:Name="TextEditingModeDescription" x:FieldModifier="public" VerticalAlignment="Center" FontSize="12"
+                       Text="원래 글꼴과 줄 위치를 유지하여 편집"/>
+        </StackPanel>
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2">
             <Button x:Name="OpenButton" x:FieldModifier="public" ToolTipService.ToolTip="열기 (Ctrl+O)" Padding="8,6" Background="Transparent" BorderThickness="0">
                 <FontIcon Glyph="&#xE8E5;" FontSize="16"/>
