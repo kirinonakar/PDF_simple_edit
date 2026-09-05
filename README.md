@@ -12,6 +12,7 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
     - `Ctrl+Enter` or right-click confirms, `Esc` cancels.
     - If an overlap warning appears, drag to select only the overlapping fragment and edit it.
     - Single-line selections expand to the right; multi-line selections wrap to the line below.
+    - If the original font is not available, a fallback font is used instead.
   - **Replace Mode**: After activating the Select tool, click to select and drag to move.
     - `Ctrl+Enter` or right-click confirms, `Esc` cancels.
     - If characters are clipped or letter spacing looks too tight after editing, select the box and enlarge it.
