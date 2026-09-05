@@ -19,7 +19,7 @@
             <TextBlock Text="텍스트 편집 방식" VerticalAlignment="Center"/>
             <ComboBox x:Name="TextEditingModeComboBox" x:FieldModifier="public" Width="168" SelectedIndex="1"
                       AutomationProperties.Name="텍스트 편집 방식">
-                <ComboBoxItem Content="기존 방식"/>
+                <ComboBoxItem Content="대체 방식"/>
                 <ComboBoxItem Content="원본 보존 방식"/>
             </ComboBox>
             <TextBlock x:Name="TextEditingModeDescription" x:FieldModifier="public" VerticalAlignment="Center" FontSize="12"

@@ -283,7 +283,7 @@ public sealed class AnnotationCanvasController
                     if (annotation == null) continue;
                     _getAnnotations().Add(annotation); SelectedAnnotations.Add(annotation); PrimarySelection ??= annotation;
                 }
-                _statusText.Text = blocks.Count > 0 ? "드래그한 글자만 선택됨 · 두 번 클릭하여 편집 · Alt+드래그로 이동" : "범위 안에 텍스트가 없습니다.";
+                _statusText.Text = blocks.Count > 0 ? "텍스트 편집 구역 선택됨 (더블클릭: 편집, Alt+드래그: 이동)" : "범위 안에 텍스트가 없습니다.";
                 Render();
             }
             return;
@@ -424,7 +424,7 @@ public sealed class AnnotationCanvasController
         if (selection.AddedFromPageContent is PdfAnnotation added)
         {
             _statusText.Text = added.IsOriginalTextReplacement
-                ? "텍스트 편집 구역이 선택되었습니다. 두 번 클릭하여 편집하세요."
+                ? "텍스트 편집 구역 선택됨 (더블클릭: 편집, Alt+드래그: 이동)"
                 : "이미지가 선택되었습니다. 드래그하여 이동하거나 핸들로 크기를 조정하세요.";
         }
 

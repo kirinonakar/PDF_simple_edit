@@ -247,7 +247,7 @@ public sealed class AnnotationEditController
     {
         if (annotation.NativeText != null)
         {
-            _statusText.Text = "더블 클릭하여 원본 글꼴로 문단 편집 · 드래그로 범위 선택 · Alt+드래그로 이동";
+            _statusText.Text = "텍스트 편집 구역 선택됨 (더블클릭: 편집, Alt+드래그: 이동)";
             return false;
         }
         PdfDocumentManager manager = _getManager();

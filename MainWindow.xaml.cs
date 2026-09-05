@@ -535,7 +535,7 @@ namespace PDF_simple_edit
                 _windowSettingsController?.Save();
                 TxtStatus.Text = mode == TextEditingMode.PreserveOriginal
                     ? "원본 보존 방식으로 전환했습니다. 텍스트를 다시 선택해 주세요."
-                    : "기존 방식으로 전환했습니다. 텍스트를 다시 선택해 주세요.";
+                    : "대체 방식으로 전환했습니다. 텍스트를 다시 선택해 주세요.";
             }
             catch (Exception error) { TxtStatus.Text = error.Message; }
             finally
