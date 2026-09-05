@@ -47,6 +47,37 @@ var first = service.Extract(bytes, 0);
 File.WriteAllText("tmp/pdfs/native-original.json", JsonSerializer.Serialize(first, new JsonSerializerOptions { WriteIndented = true }));
 var title = first.First(b => b.Text.Contains("Internal Knee"));
 var originalTitleGlyphs = title.Glyphs.Where(g => !g.IsVirtual).ToList();
+await WindowsRenderingProbe.Render(bytes, "original");
+// Reproduce consecutive new keystrokes, rather than only permutations of glyphs
+// already present in an edited span. Each newly encoded glyph needs its own advance.
+foreach (var (name, text) in new[]
+{
+    ("middle-delete", title.Text.Remove(5, 1)),
+    ("insert-one", title.Text.Insert(5, "e")),
+    ("insert-two", title.Text.Insert(5, "ee")),
+    ("insert-three", title.Text.Insert(5, "eee")),
+})
+{
+    var result = service.Edit(bytes, 0, new(title, text));
+    File.WriteAllBytes($"tmp/pdfs/{name}.pdf", result.Bytes);
+    File.WriteAllText($"tmp/pdfs/{name}-layout.json", JsonSerializer.Serialize(result.Layout));
+    await WindowsRenderingProbe.Render(result.Bytes, name, result.Layout);
+    var actual = Glyphs(result.Bytes, 0);
+    foreach (var glyph in result.Layout.Glyphs.Where(g => !g.IsVirtual))
+    {
+        Check(glyph.Advance > 0, $"{name}: nonpositive advance for '{glyph.Text}' at {glyph.TextIndex}: {glyph.Advance}");
+        Check(actual.Any(g => g.Text == glyph.Text && Math.Abs(g.Origin.X - glyph.Origin.X) < .003 && Math.Abs(g.Origin.Y - glyph.Origin.Y) < .003),
+            $"{name}: saved glyph differs from live layout: '{glyph.Text}' {glyph.Origin}");
+    }
+    Console.WriteLine($"PASS consecutive input: {name}");
+}
+var reopenedBytes = File.ReadAllBytes("tmp/pdfs/middle-delete.pdf");
+var reopenedBlock = service.Extract(reopenedBytes, 0).First(b => b.Text.Contains("Interal Knee"));
+var resumedInput = service.Edit(reopenedBytes, 0, new(reopenedBlock, reopenedBlock.Text.Insert(5, "nn")));
+File.WriteAllBytes("tmp/pdfs/reopen-insert.pdf", resumedInput.Bytes);
+File.WriteAllText("tmp/pdfs/reopen-insert-layout.json", JsonSerializer.Serialize(resumedInput.Layout));
+await WindowsRenderingProbe.Render(resumedInput.Bytes, "reopen-insert", resumedInput.Layout);
+Check(service.Extract(resumedInput.Bytes, 0).Any(b => b.Text.Contains("Internnal Knee")), "Consecutive typing after reopening lost characters");
 var blankLine = service.Edit(bytes, 0, new(title, title.Text + "\n\n"));
 Check(ReferenceEquals(blankLine.Bytes, bytes), "Blank-line input must not rewrite unchanged painted content");
 Check(blankLine.Layout.Text.EndsWith("\n\n") && blankLine.Layout.Glyphs[^1].End.Y > title.Glyphs[^1].Origin.Y + title.LineHeight,
@@ -54,6 +85,7 @@ Check(blankLine.Layout.Text.EndsWith("\n\n") && blankLine.Layout.Glyphs[^1].End.
 var moved = service.Edit(bytes, 0, new(title, title.Text, 10, 5));
 SameGlyphs(originalTitleGlyphs, Glyphs(moved.Bytes, 0).Take(originalTitleGlyphs.Count), 10, 5);
 File.WriteAllBytes("tmp/pdfs/native-move.pdf", moved.Bytes);
+await WindowsRenderingProbe.Render(moved.Bytes, "move", moved.Layout);
 var edited = service.Edit(bytes, 0, new(title, title.Text.Replace("Knee", "Keen", StringComparison.Ordinal)));
 File.WriteAllBytes("tmp/pdfs/native-edit.pdf", edited.Bytes);
 Check(service.Extract(edited.Bytes, 0).Any(b => b.Text.Contains("Keen")), "Reopened PDF must contain edited word");

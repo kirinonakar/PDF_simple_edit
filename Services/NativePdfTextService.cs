@@ -512,8 +512,23 @@ public sealed class NativePdfTextService
             placed.Add(Translate(token, dx, dy) with { End = new(x + advance + edit.DeltaX, baseline + edit.DeltaY) });
             x += advance; previous = token;
         }
-        var lineBoxes = placed.Where(g => g.Text != "\n").GroupBy(g => Math.Round(g.Origin.Y, 2))
-            .Select(g => PdfTextBox.Union(g.Select(c => c.Bounds))).ToList();
+        // Unedited physical lines keep their exact source operands/coordinates;
+        // accumulating float advances needlessly changes their sub-pixel layout.
+        var sourceLines = block.Text.Split('\n');
+        var editedLines = text.Split('\n');
+        var preserved = new Dictionary<int, NativePdfGlyph>();
+        int sourceStart = 0, editedStart = 0;
+        for (int i = 0; i < Math.Min(sourceLines.Length, editedLines.Length); i++)
+        {
+            if (sourceLines[i] == editedLines[i])
+                foreach (var glyph in original.Where(g => g.TextIndex >= sourceStart && g.TextIndex < sourceStart + sourceLines[i].Length))
+                {
+                    int textIndex = editedStart + glyph.TextIndex - sourceStart;
+                    preserved[textIndex] = Translate(glyph, edit.DeltaX, edit.DeltaY) with { TextIndex = textIndex };
+                }
+            sourceStart += sourceLines[i].Length + 1; editedStart += editedLines[i].Length + 1;
+        }
+        placed = placed.Select(g => preserved.GetValueOrDefault(g.TextIndex, g)).ToList();
         if (text.StartsWith(block.Text, StringComparison.Ordinal) && text[block.Text.Length..].All(char.IsWhiteSpace))
         {
             // Extending the insertion area with blank lines/spaces must preserve
@@ -522,6 +537,8 @@ public sealed class NativePdfTextService
             placed = placed.Select(g => prefix.TryGetValue(g.TextIndex, out var source)
                 ? Translate(source, edit.DeltaX, edit.DeltaY) : g).ToList();
         }
+        var lineBoxes = placed.Where(g => g.Text != "\n").GroupBy(g => Math.Round(g.Origin.Y, 2))
+            .Select(g => PdfTextBox.Union(g.Select(c => c.Bounds))).ToList();
         return block with { Text = text, Glyphs = placed, Lines = lineBoxes, Bounds = PdfTextBox.Union(lineBoxes) };
     }
 
@@ -676,24 +693,32 @@ public sealed class NativePdfTextService
             var run = runs.SingleOrDefault(r => r.OperandIndex == operandIndex);
             if (run == null || !replacements.TryGetValue(run.Id, out var glyphs)) { output.Write(str); Write(" Tj\n"); continue; }
             double cursor = 0;
+            double rise = run.Rise;
+            var matrix = MatrixOf(run.TextMatrix).Multiply(MatrixOf(run.Ctm));
+            double a = matrix.Get(0), b = matrix.Get(1), c = matrix.Get(3), d = matrix.Get(4);
+            double determinant = a * d - b * c;
+            if (Math.Abs(determinant) < 1e-12) throw new InvalidOperationException("역변환할 수 없는 PDF 텍스트 행렬입니다.");
             foreach (var glyph in glyphs)
             {
                 var originalOrigin = run.Glyphs[0].Origin;
-                var textVector = new Vector((float)cursor, 0, 0).Cross(MatrixOf(run.TextMatrix).Multiply(MatrixOf(run.Ctm)));
-                var zero = map.Map(0, 0); var mapped = map.Map(textVector.Get(0), textVector.Get(1));
-                double displayX = originalOrigin.X + mapped.X - zero.X;
-                double displayY = originalOrigin.Y + mapped.Y - zero.Y;
-                var delta = map.UnmapVector(glyph.Origin.X - displayX, glyph.Origin.Y - displayY);
-                // cm acts in the current user space. Invert the original CTM linear part.
-                var c = run.Ctm; double determinant = c[0] * c[3] - c[1] * c[2];
-                if (Math.Abs(determinant) < 1e-12) throw new InvalidOperationException("역변환할 수 없는 PDF 변환 행렬입니다.");
-                double tx = (delta.X * c[3] - delta.Y * c[2]) / determinant;
-                double ty = (delta.Y * c[0] - delta.X * c[1]) / determinant;
-                Write($"q\n1 0 0 1 {N(tx)} {N(ty)} cm\n<{Convert.ToHexString(glyph.Code)}> Tj\nQ\n");
-                cursor += glyph.Advance;
+                var delta = map.UnmapVector(glyph.Origin.X - originalOrigin.X, glyph.Origin.Y - originalOrigin.Y);
+                double textX = (delta.X * d - delta.Y * c) / determinant;
+                double textY = (delta.Y * a - delta.X * b) / determinant;
+                // Position with text operators only. Windows.Data.Pdf restores
+                // its text cursor across q/Q while other engines advance it;
+                // putting every glyph inside q/cm/Tj/Q collapses text there.
+                // TJ advances the actual text cursor and Ts places the baseline
+                // without replacing the original text or line matrix.
+                double shift = -(textX - cursor) * 1000 / (run.FontSize * run.HorizontalScale);
+                if (Math.Abs(shift) > .000001) Write($"[{N(shift)}] TJ\n");
+                double nextRise = run.Rise + textY;
+                if (Math.Abs(nextRise - rise) > .000001) { Write($"{N(nextRise)} Ts\n"); rise = nextRise; }
+                Write($"<{Convert.ToHexString(glyph.Code)}> Tj\n");
+                cursor = textX + glyph.Advance;
             }
-            // q/Q intentionally does not save the PDF text matrix. Compensating TJ
-            // restores the exact original advance without touching the line matrix.
+            if (Math.Abs(rise - run.Rise) > .000001) Write($"{N(run.Rise)} Ts\n");
+            // Leave following strings, relative positioning and T* at exactly
+            // their original origin, independently of the replacement's length.
             double adjustment = -(run.OriginalAdvance - cursor) * 1000 / (run.FontSize * run.HorizontalScale);
             Write($"[{N(adjustment)}] TJ\n");
         }
