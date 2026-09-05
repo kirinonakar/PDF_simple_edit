@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <FileVersion>1.0.0.0</FileVersion>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>PDF_simple_edit</RootNamespace>
@@ -28,6 +27,22 @@
     <DebugSymbols>false</DebugSymbols>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- Embed the manifest version so packaged and unpackaged apps share one source. -->
+  <Target Name="ReadAppManifestVersion" BeforeTargets="GetAssemblyVersion">
+    <XmlPeek XmlInputPath="$(MSBuildProjectDirectory)\Package.appxmanifest"
+             Query="/*[local-name()='Package']/*[local-name()='Identity']/@Version">
+      <Output TaskParameter="Result" PropertyName="AppManifestVersion" />
+    </XmlPeek>
+    <Error Condition="'$(AppManifestVersion)' == ''"
+           Text="Package.appxmanifest must specify Identity/@Version." />
+    <PropertyGroup>
+      <Version>$(AppManifestVersion)</Version>
+      <AssemblyVersion>$(AppManifestVersion)</AssemblyVersion>
+      <FileVersion>$(AppManifestVersion)</FileVersion>
+      <InformationalVersion>$(AppManifestVersion)</InformationalVersion>
+    </PropertyGroup>
+  </Target>
 
   <ItemGroup>
     <!-- Keep local diagnostic probes out of the application compilation. -->

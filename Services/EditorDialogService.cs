@@ -101,7 +101,9 @@ public sealed class EditorDialogService
             FontSize = 20,
             FontWeight = Microsoft.UI.Text.FontWeights.Bold
         });
-        panel.Children.Add(new TextBlock { Text = "버전 1.0.0" });
+        // Assembly version is populated from Package.appxmanifest at build time.
+        var version = typeof(EditorDialogService).Assembly.GetName().Version;
+        panel.Children.Add(new TextBlock { Text = $"버전 {version}" });
         panel.Children.Add(new TextBlock { Text = "WinUI 3 + iText 9 기반 PDF 편집기", Opacity = 0.7 });
         panel.Children.Add(new HyperlinkButton
         {
