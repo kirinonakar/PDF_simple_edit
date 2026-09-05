@@ -3,6 +3,8 @@ using PDF_simple_edit.Models;
 using iText.Kernel.Pdf;
 using System.Text.Json;
 
+await FontFallbackChecks.Run();
+if (args.Contains("--fallback-only")) return;
 var path = args.FirstOrDefault() ?? "D:/ASUNA/test/3D knee.pdf";
 var bytes = File.ReadAllBytes(path);
 var service = new NativePdfTextService();
@@ -163,9 +165,11 @@ var again = service.Extract(edited.Bytes, 0).First(b => b.Text.Contains("Keen"))
 var secondEdit = service.Edit(edited.Bytes, 0, new(again, again.Text.Replace("Keen", "Knee")));
 Check(service.Extract(secondEdit.Bytes, 0).Any(b => b.Text.Contains("Knee")), "Repeat edit after save/reopen");
 File.WriteAllBytes("tmp/pdfs/native-delete.pdf", service.Edit(bytes, 0, new(title, "")).Bytes);
-try { service.Edit(bytes, 0, new(title, title.Text.Replace("Knee", "knee"))); throw new Exception("Missing subset glyph was silently accepted"); }
-catch (InvalidOperationException) { checks++; }
-Console.WriteLine("PASS attachment: exact translated glyph positions, edit, repeat edit, missing CFF glyph rejection");
+var cffFallback = service.Edit(bytes, 0, new(title, title.Text.Replace("Knee", "knee")));
+Check(cffFallback.FontSubstitutionStatus != null, "Missing CFF outline must report font substitution");
+Check(service.Extract(cffFallback.Bytes, 0).Any(b => b.Text.Contains("knee")), "CFF fallback lost text");
+await WindowsRenderingProbe.Render(cffFallback.Bytes, "cff-fallback", cffFallback.Layout);
+Console.WriteLine("PASS attachment: exact translated glyph positions, edit, repeat edit, missing CFF glyph fallback");
 
 var fixture = Fixtures.Create();
 File.WriteAllBytes("tmp/pdfs/fixture.pdf", fixture);

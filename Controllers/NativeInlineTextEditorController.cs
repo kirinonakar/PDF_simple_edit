@@ -141,6 +141,8 @@ public sealed class NativeInlineTextEditorController
             if (version != _version || _input == null) return;
             byte[] snapshot = _snapshot!; int pageIndex = _pageIndex;
             NativePdfTextBlock source = _session!.Annotation.NativeText!;
+            // Resolve each IME composition against the original font again, so a
+            // completed syllable never inherits the preceding jamo's fallback.
             var result = await Task.Run(() => _service.Edit(snapshot, pageIndex, new(source, text)));
             if (version != _version || _input == null) return;
             using var bytes = new MemoryStream(result.Bytes);
@@ -152,7 +154,9 @@ public sealed class NativeInlineTextEditorController
             var bounds = _layout.Bounds;
             _input.Width = Math.Max((_session!.Annotation.Width + Math.Max(0, bounds.Right - _session.Annotation.NativeText!.Bounds.Right)) * Scale, 20);
             _input.Height = Math.Max((_session.Annotation.Height + Math.Max(0, bounds.Bottom - _session.Annotation.NativeText!.Bounds.Bottom)) * Scale, 20);
-            _status?.Invoke(source.Lines.Count > 1
+            _status?.Invoke(result.FontSubstitutionStatus is string substitution
+                ? substitution + " · Ctrl+Enter 완료 · Esc 취소"
+                : source.Lines.Count > 1
                 ? "원본 글꼴로 문단 자동 줄바꿈 중 · Ctrl+Enter 완료 · Esc 취소"
                 : "원본 글꼴로 한 줄 오른쪽 확장 중 · Ctrl+Enter 완료 · Esc 취소");
             DrawSelection();
@@ -281,7 +285,9 @@ public sealed class NativeInlineTextEditorController
                 foreach (var item in _annotations!.Where(a => a.PageIndex == _pageIndex && a.NativeText != null).ToList())
                 { _annotations!.Remove(item); _selected!.Remove(item); _removed?.Invoke(item); }
             }
+            string? substitution = _preview.FontSubstitutionStatus;
             Cleanup(); if (_render != null) await _render(); _overlays?.Invoke(); _restoreFocus?.Invoke(false);
+            if (substitution != null) _status?.Invoke("텍스트 편집 완료 · " + substitution);
         }
         catch (Exception error)
         {

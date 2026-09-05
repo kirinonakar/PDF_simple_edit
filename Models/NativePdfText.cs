@@ -27,6 +27,8 @@ public sealed record NativePdfGlyph
     public string Text { get; init; } = "";
     public byte[] Code { get; init; } = Array.Empty<byte>();
     public string RunId { get; init; } = "";
+    public int ReplacementFontObjectNumber { get; init; }
+    public string? ReplacementFontName { get; init; }
     public double Advance { get; init; }
     public PdfTextPoint Origin { get; init; }
     public PdfTextPoint End { get; init; }
@@ -70,4 +72,9 @@ public sealed record NativePdfTextBlock
 }
 
 public sealed record NativePdfTextEdit(NativePdfTextBlock Block, string Text, double DeltaX = 0, double DeltaY = 0);
-public sealed record NativePdfTextResult(byte[] Bytes, NativePdfTextBlock Layout);
+public sealed record NativePdfTextResult(byte[] Bytes, NativePdfTextBlock Layout)
+{
+    public string? FontSubstitutionStatus => Layout.Glyphs.Any(g => !g.IsVirtual && g.ReplacementFontName != null)
+        ? "글리프 누락으로 글꼴 대체: " + string.Join(", ", Layout.Glyphs.Where(g => !g.IsVirtual)
+            .Select(g => g.ReplacementFontName).Where(n => n != null).Distinct()) : null;
+}

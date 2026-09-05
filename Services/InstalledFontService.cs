@@ -84,6 +84,46 @@ public static class InstalledFontService
             .FirstOrDefault(File.Exists);
     }
 
+    // Rank installed faces by family, typographic class, weight and slant.
+    internal static IReadOnlyList<string> GetSimilarFontFiles(string originalName, int weight)
+    {
+        static string Normalize(string name)
+        {
+            int subset = name.IndexOf('+');
+            if (subset >= 0) name = name[(subset + 1)..];
+            string result = new(name.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+            foreach (string suffix in new[] { "psmt", "mt", "bolditalic", "boldoblique", "semibold", "regular", "italic", "oblique", "bold" })
+                if (result.EndsWith(suffix, StringComparison.Ordinal)) result = result[..^suffix.Length];
+            return result;
+        }
+        static int Kind(string name) => name.Contains("mono") || name.Contains("courier") || name.Contains("consolas") ? 2
+            : !name.Contains("sans") && (name.Contains("serif") || name.Contains("times") || name.Contains("mincho") || name.Contains("batang") || name.Contains("명조") || name.Contains("바탕")) ? 1 : 0;
+        string family = Normalize(originalName);
+        bool italic = originalName.Contains("italic", StringComparison.OrdinalIgnoreCase) || originalName.Contains("oblique", StringComparison.OrdinalIgnoreCase);
+        var candidates = new List<(string Path, int Score)>();
+        foreach (var root in new[] { Registry.CurrentUser, Registry.LocalMachine })
+        {
+            try
+            {
+                using var key = root.OpenSubKey(FontsRegistryPath);
+                if (key == null) continue;
+                foreach (string name in key.GetValueNames())
+                {
+                    if (key.GetValue(name) is not string file || ResolveRegisteredFontPath(file) is not string path) continue;
+                    int suffix = name.LastIndexOf(" (", StringComparison.Ordinal);
+                    string face = suffix >= 0 ? name[..suffix] : name;
+                    string normalized = Normalize(face);
+                    int score = (normalized == family ? 100000 : 0) + (Kind(normalized) == Kind(family) ? 10000 : 0)
+                        + ScoreFace(face, weight, italic);
+                    candidates.Add((path, score));
+                }
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex.Message); }
+        }
+        return candidates.OrderByDescending(c => c.Score).ThenBy(c => c.Path, StringComparer.OrdinalIgnoreCase)
+            .Select(c => c.Path).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
     private static HashSet<string> ReadRegisteredFontFaces()
     {
         var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

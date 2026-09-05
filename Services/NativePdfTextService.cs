@@ -8,6 +8,7 @@ using iText.Kernel.Pdf.Canvas.Parser.Data;
 using iText.Kernel.Pdf.Canvas.Parser.Listener;
 using iText.Kernel.Pdf.Canvas.Parser.Util;
 using PDF_simple_edit.Models;
+using PDF_simple_edit.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -326,7 +327,7 @@ public sealed class NativePdfTextService
                             .Concat(run.Glyphs.Skip(insertion).Where((g, i) => !selectedIndexes.Contains(i + insertion))).ToList();
                     }
                     bool unchanged = run.Glyphs.Count == placed.Count && run.Glyphs.Zip(placed).All(pair =>
-                        pair.First.Code.SequenceEqual(pair.Second.Code) && Math.Abs(pair.First.Origin.X - pair.Second.Origin.X) < .00001 &&
+                        pair.Second.ReplacementFontObjectNumber == 0 && pair.First.Code.SequenceEqual(pair.Second.Code) && Math.Abs(pair.First.Origin.X - pair.Second.Origin.X) < .00001 &&
                         Math.Abs(pair.First.Origin.Y - pair.Second.Origin.Y) < .00001);
                     if (unchanged) continue;
                     if (replacements.TryGetValue(run.Id, out var prior))
@@ -357,6 +358,13 @@ public sealed class NativePdfTextService
                 if (xobjects != null) foreach (var name in xobjects.KeySet()) pageXObjects.Put(name, xobjects.Get(name));
             }
             pageResources.Put(PdfName.XObject, pageXObjects);
+            var pageFonts = CopyDictionary(pageResources.GetAsDictionary(PdfName.Font) ?? new PdfDictionary());
+            foreach (var source in data.Sources)
+            {
+                var sourceFonts = source.Resources.GetResource(PdfName.Font);
+                if (sourceFonts != null) foreach (var name in sourceFonts.KeySet()) pageFonts.Put(name, sourceFonts.Get(name));
+            }
+            pageResources.Put(PdfName.Font, pageFonts);
             page.GetPdfObject().Put(PdfName.Resources, pageResources);
             // A trailing line break/space changes the live caret layout without
             // painting any glyph. Keep that edit buffer and the exact source
@@ -431,6 +439,36 @@ public sealed class NativePdfTextService
             return f;
         }
         var spaceWidths = new Dictionary<string, double>();
+        var replacementFonts = new Dictionary<string, PdfFont?>();
+        var candidatePaths = new Dictionary<string, IReadOnlyList<string>>();
+        PdfFont ReplacementFont(NativePdfRun run, PdfFont originalFont, int unicode)
+        {
+            if (!candidatePaths.TryGetValue(run.Id, out var paths))
+            {
+                var metadata = PdfFontMetadataResolver.Resolve(originalFont);
+                candidatePaths[run.Id] = paths = InstalledFontService.GetSimilarFontFiles(metadata.RawName, metadata.Weight);
+            }
+            foreach (string path in paths)
+            {
+                if (!replacementFonts.TryGetValue(path, out var candidate))
+                {
+                    try
+                    {
+                        candidate = PdfFontFactory.CreateFont(path.EndsWith(".ttc", StringComparison.OrdinalIgnoreCase) ? path + ",0" : path,
+                            PdfEncodings.IDENTITY_H, PdfFontFactory.EmbeddingStrategy.FORCE_EMBEDDED);
+                    }
+                    catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex.Message); }
+                    replacementFonts[path] = candidate;
+                }
+                if (candidate?.ContainsGlyph(unicode) == true)
+                {
+                    candidate.GetPdfObject().MakeIndirect(doc);
+                    doc.AddFont(candidate);
+                    return candidate;
+                }
+            }
+            throw new InvalidOperationException($"'{char.ConvertFromUtf32(unicode)}' 글리프를 지원하는 대체 글꼴이 설치되어 있지 않습니다.");
+        }
         double SpaceWidth(NativePdfRun run)
         {
             if (spaceWidths.TryGetValue(run.Id, out double cached)) return cached;
@@ -474,10 +512,8 @@ public sealed class NativePdfTextService
                     index++; continue;
                 }
                 int unicode = char.ConvertToUtf32(value, 0);
-                if (!font.ContainsGlyph(unicode)) throw new InvalidOperationException($"원본 글꼴 '{run.FontName}'에 '{value}' 글리프가 없습니다. 이 글꼴로는 해당 문자를 보존하여 입력할 수 없습니다.");
                 byte[] code = font.ConvertToBytes(value);
-                if (code.Length == 0 || font.Decode(new PdfString(code)) != value)
-                    throw new InvalidOperationException($"원본 글꼴의 문자 인코딩으로 '{value}'를 표현할 수 없습니다.");
+                bool needsReplacement = !font.ContainsGlyph(unicode) || code.Length == 0 || font.Decode(new PdfString(code)) != value;
                 if (!coverage.TryGetValue(run.FontObjectNumber, out var names))
                 {
                     var program = font.GetPdfObject().GetAsDictionary(PdfName.FontDescriptor)?.GetAsStream(PdfName.FontFile3);
@@ -487,10 +523,17 @@ public sealed class NativePdfTextService
                 }
                 if (names != null && font is PdfType1Font type1 &&
                     (code.Length != 1 || !names.Contains(type1.GetFontEncoding().GetDifference(code[0]) ?? AdobeGlyphList.UnicodeToName(unicode))))
-                    throw new InvalidOperationException($"원본 서브셋 글꼴 '{run.FontName}'에는 '{value}'의 실제 윤곽선이 포함되어 있지 않습니다.");
+                    needsReplacement = true;
+                if (needsReplacement)
+                {
+                    font = ReplacementFont(run, font, unicode);
+                    code = font.ConvertToBytes(value);
+                }
                 double advance = (font.GetContentWidth(new PdfString(code)) * run.FontSize / 1000 + run.CharacterSpacing +
                     (code.Length == 1 && code[0] == 32 ? run.WordSpacing : 0)) * run.HorizontalScale;
-                tokens.Add(near with { Text = value, Code = code, Advance = advance, TextIndex = index, IsVirtual = false });
+                tokens.Add(near with { Text = value, Code = code, Advance = advance, TextIndex = index, IsVirtual = false,
+                    ReplacementFontObjectNumber = needsReplacement ? font.GetPdfObject().GetIndirectReference().GetObjNumber() : 0,
+                    ReplacementFontName = needsReplacement ? font.GetFontProgram().GetFontNames().GetFontName() : null });
             }
             index += value.Length;
         }
@@ -599,7 +642,22 @@ public sealed class NativePdfTextService
         {
             var runs = data.Runs.Where(r => r.SourcePath == source.Path && r.OperationIndex == op.TextIndex).ToList();
             if (!runs.Any(r => replacements.ContainsKey(r.Id))) continue;
-            patches[op] = RewriteOperation(op, runs, replacements, data.Map);
+            resources ??= CopyDictionary(source.Resources.GetPdfObject());
+            var fontResources = CopyDictionary(resources.GetAsDictionary(PdfName.Font) ?? new PdfDictionary());
+            var fontNames = new Dictionary<int, PdfName>();
+            foreach (var glyph in runs.Where(r => replacements.ContainsKey(r.Id)).SelectMany(r => replacements[r.Id])
+                .Where(g => g.ReplacementFontObjectNumber > 0))
+            {
+                int number = glyph.ReplacementFontObjectNumber;
+                if (fontNames.ContainsKey(number)) continue;
+                string prefix = "NativeFont" + number;
+                var name = new PdfName(prefix);
+                for (int suffix = 1; fontResources.ContainsKey(name); suffix++) name = new PdfName(prefix + "_" + suffix);
+                fontResources.Put(name, doc.GetPdfObject(number));
+                fontNames[number] = name;
+            }
+            resources.Put(PdfName.Font, fontResources);
+            patches[op] = RewriteOperation(op, runs, replacements, data.Map, fontResources, fontNames);
         }
         if (patches.Count == 0) return null;
         using var buffer = new MemoryStream(); int position = 0;
@@ -659,7 +717,7 @@ public sealed class NativePdfTextService
     }
 
     private static byte[] RewriteOperation(Operation op, List<NativePdfRun> runs,
-        Dictionary<string, List<NativePdfGlyph>> replacements, PageMap map)
+        Dictionary<string, List<NativePdfGlyph>> replacements, PageMap map, PdfDictionary fontResources, Dictionary<int, PdfName> fontNames)
     {
         using var buffer = new MemoryStream();
         var output = new PdfOutputStream(buffer);
@@ -676,6 +734,9 @@ public sealed class NativePdfTextService
             int operandIndex = index++;
             var run = runs.SingleOrDefault(r => r.OperandIndex == operandIndex);
             if (run == null || !replacements.TryGetValue(run.Id, out var glyphs)) { output.Write(str); Write(" Tj\n"); continue; }
+            var originalFontName = fontResources.KeySet().First(name =>
+                fontResources.GetAsDictionary(name)?.GetIndirectReference()?.GetObjNumber() == run.FontObjectNumber);
+            var activeFontName = originalFontName;
             double cursor = 0;
             double rise = run.Rise;
             var matrix = MatrixOf(run.TextMatrix).Multiply(MatrixOf(run.Ctm));
@@ -697,9 +758,12 @@ public sealed class NativePdfTextService
                 if (Math.Abs(shift) > .000001) Write($"[{N(shift)}] TJ\n");
                 double nextRise = run.Rise + textY;
                 if (Math.Abs(nextRise - rise) > .000001) { Write($"{N(nextRise)} Ts\n"); rise = nextRise; }
+                var fontName = glyph.ReplacementFontObjectNumber > 0 ? fontNames[glyph.ReplacementFontObjectNumber] : originalFontName;
+                if (!fontName.Equals(activeFontName)) { Write($"{fontName} {N(run.FontSize)} Tf\n"); activeFontName = fontName; }
                 Write($"<{Convert.ToHexString(glyph.Code)}> Tj\n");
                 cursor = textX + glyph.Advance;
             }
+            if (!activeFontName.Equals(originalFontName)) Write($"{originalFontName} {N(run.FontSize)} Tf\n");
             if (Math.Abs(rise - run.Rise) > .000001) Write($"{N(run.Rise)} Ts\n");
             // Leave following strings, relative positioning and T* at exactly
             // their original origin, independently of the replacement's length.
