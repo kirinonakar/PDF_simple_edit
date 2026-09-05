@@ -7,15 +7,11 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 ## 🚀 Features
 
 ### 📝 Precision Editing
-- **Interactive Text Manipulation**: Select, move, and remove existing text within PDF documents with high accuracy.
-- **Text selection**: Click or drag. alt+drag to move
-- **Direct Editing**: Double-click any existing text block to modify its content instantly.
-- **Text Confirmation**: When editing text, press `Enter` to confirm a single-line edit or `Ctrl+Enter` to confirm a multi-line edit. You can also right-click to confirm either type of edit.
-- **Text Addition**: Add new text with full control over font family, size, color, bold, and italic styles.
-- **Smart Text Extraction**: Automatically groups fragmented characters into logical sentences for easier selection and editing.
-- **Image Insertion**: Easily place images into your PDF pages.
-- **Image Extraction**: Extract all embedded images from a PDF to a selected folder.
-- **Image Saving**: Save a selected image as a standalone image file.
+- **Select & Move**: Click or drag to select text, `Alt+Drag` to move it. Fragmented characters are automatically grouped into sentences.
+- **Edit in Place**: Double-click a text block to edit. Confirm with `Enter` (single-line) or `Ctrl+Enter` (multi-line); `Esc` or right-click also confirms.
+- **Add Text**: Press `A` to switch to the Add Text tool, then add text with custom font family, size, color, bold, and italic.
+- **Edit Modes**: Preserve the original text or replace it.
+- **Images**: Insert images, save a selected image as a file, or extract all embedded images to a folder.
 
 ### 🖋️ Annotation & Highlighting
 - **Smooth Highlighting**: Add semi-transparent highlights to text blocks.
