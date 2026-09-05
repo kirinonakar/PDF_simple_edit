@@ -212,33 +212,42 @@ public sealed class NativePdfTextService
     private static float[] Values(Matrix m) => new[] { m.Get(0), m.Get(1), m.Get(3), m.Get(4), m.Get(6), m.Get(7) };
     private static Matrix MatrixOf(float[] m) => new(m[0], m[1], m[2], m[3], m[4], m[5]);
 
-    private static List<NativePdfTextBlock> Group(List<NativePdfRun> runs)
+    private static List<NativePdfTextBlock> Group(List<NativePdfRun> runs) =>
+        NativePdfParagraphLayout.GroupRuns(runs).Select(parts => BuildBlock(parts) with
+        { Runs = parts.Select(p => p.Id).Distinct().Select(id => runs.Single(r => r.Id == id)).ToList() }).ToList();
+
+    // A marquee is an explicit editing boundary, never an invitation to expand
+    // to the inferred paragraph. Keep full runs for validation and operand repair.
+    public static List<NativePdfTextBlock> SelectRegion(IEnumerable<NativePdfTextBlock> blocks, PdfTextBox region)
     {
-        var blocks = new List<NativePdfTextBlock>();
-        var current = new List<NativePdfRun>();
-        foreach (var run in runs.Where(r => r.Glyphs.Count > 0))
+        var selected = new List<NativePdfTextBlock>();
+        foreach (var block in blocks)
         {
-            if (current.Count > 0)
-            {
-                var last = current[^1];
-                var a = last.Glyphs[^1]; var b = run.Glyphs[0];
-                double size = Math.Max(last.DisplayFontSize, run.DisplayFontSize);
-                double dy = b.Origin.Y - a.Origin.Y, dx = b.Origin.X - a.End.X;
-                double left = current.Min(r => r.Glyphs.Min(g => g.Origin.X));
-                double right = current.Max(r => r.Glyphs.Max(g => g.End.X));
-                bool sameLine = Math.Abs(dy) < size * 0.3 && dx >= -size * 0.5 &&
-                    dx < size * (last.FontName == run.FontName ? 2 : .8);
-                bool nextLine = dy > size * 0.65 && dy < size * 1.8 &&
-                    Math.Abs(b.Origin.X - left) < size * 1.8 && right - left > size * 6 &&
-                    Math.Abs(last.DisplayFontSize - run.DisplayFontSize) < size * 0.15;
-                // Different orientations are independent editing objects.
-                bool horizontal = Math.Abs(b.End.Y - b.Origin.Y) < 0.1 && Math.Abs(a.End.Y - a.Origin.Y) < 0.1;
-                if (!(horizontal && (sameLine || nextLine))) { blocks.Add(BuildBlock(current)); current = new(); }
-            }
-            current.Add(run);
+            var codes = block.Glyphs.Where(g => !g.IsVirtual && region.Contains(
+                g.Bounds.X + g.Bounds.Width / 2, g.Bounds.Y + g.Bounds.Height / 2)).Select(g => g.Code).ToHashSet();
+            var slices = block.Runs.Select(r => r with { Glyphs = r.Glyphs.Where(g => codes.Contains(g.Code)).ToList() })
+                .Where(r => r.Glyphs.Count > 0).ToList();
+            if (slices.Count == 0) continue;
+            selected.Add(BuildBlock(slices) with { Runs = block.Runs.Where(r => slices.Any(s => s.Id == r.Id)).ToList() });
         }
-        if (current.Count > 0) blocks.Add(BuildBlock(current));
-        return blocks;
+        var columns = new List<List<NativePdfTextBlock>>();
+        foreach (var block in selected.OrderBy(b => b.Bounds.Y).ThenBy(b => b.Bounds.X))
+        {
+            var column = columns.FirstOrDefault(c =>
+                c[0].Runs[0].SourcePath == block.Runs[0].SourcePath &&
+                c[^1].Bounds.Bottom <= block.Bounds.Y &&
+                Math.Abs(c[0].Bounds.X - block.Bounds.X) < Math.Max(2, block.Runs.Max(r => r.DisplayFontSize) * .55));
+            if (column == null) { column = new(); columns.Add(column); }
+            column.Add(block);
+        }
+        return columns.Select(column =>
+        {
+            var codes = column.SelectMany(b => b.Glyphs).Where(g => !g.IsVirtual).Select(g => g.Code).ToHashSet();
+            var runs = column.SelectMany(b => b.Runs).DistinctBy(r => r.Id).ToList();
+            var slices = runs.Select(r => r with { Glyphs = r.Glyphs.Where(g => codes.Contains(g.Code)).ToList() })
+                .OrderBy(r => r.Glyphs[0].Origin.Y).ThenBy(r => r.Glyphs[0].Origin.X).ToList();
+            return BuildBlock(slices) with { Runs = runs };
+        }).ToList();
     }
 
     private static NativePdfTextBlock BuildBlock(List<NativePdfRun> runs)
@@ -256,7 +265,7 @@ public sealed class NativePdfTextService
                 double dy = glyph.Origin.Y - previous.Origin.Y;
                 double gap = glyph.Origin.X - previous.End.X;
                 bool newLine = previous.RunId != glyph.RunId && dy > run.DisplayFontSize * 0.6;
-                string separator = newLine ? "\n" :
+                string separator = newLine ? (previous.Text.EndsWith('-') || previous.Text.EndsWith(' ') || glyph.Text.StartsWith(' ') ? "" : " ") :
                     previous.RunId != glyph.RunId && gap > run.DisplayFontSize * 0.12 && !previous.Text.EndsWith(' ') && !glyph.Text.StartsWith(' ') ? " " : "";
                 if (separator.Length > 0)
                 {
@@ -306,12 +315,30 @@ public sealed class NativePdfTextService
                 foreach (var run in original)
                 {
                     var placed = layout.Glyphs.Where(g => !g.IsVirtual && g.RunId == run.Id).ToList();
+                    var editedGlyphs = placed.ToList();
+                    var sourceRun = edit.Block.Runs.Single(r => r.Id == run.Id);
+                    var selectedCodes = edit.Block.Glyphs.Where(g => !g.IsVirtual && g.RunId == run.Id).Select(g => g.Code).ToHashSet();
+                    var selectedIndexes = sourceRun.Glyphs.Select((g, i) => (g, i)).Where(p => selectedCodes.Contains(p.g.Code)).Select(p => p.i).ToHashSet();
+                    if (selectedIndexes.Count < run.Glyphs.Count)
+                    {
+                        int insertion = selectedIndexes.Min();
+                        placed = run.Glyphs.Take(insertion).Concat(placed)
+                            .Concat(run.Glyphs.Skip(insertion).Where((g, i) => !selectedIndexes.Contains(i + insertion))).ToList();
+                    }
                     bool unchanged = run.Glyphs.Count == placed.Count && run.Glyphs.Zip(placed).All(pair =>
                         pair.First.Code.SequenceEqual(pair.Second.Code) && Math.Abs(pair.First.Origin.X - pair.Second.Origin.X) < .00001 &&
                         Math.Abs(pair.First.Origin.Y - pair.Second.Origin.Y) < .00001);
                     if (unchanged) continue;
-                    if (!replacements.TryAdd(run.Id, placed))
-                        throw new InvalidOperationException("겹치는 텍스트 선택입니다.");
+                    if (replacements.TryGetValue(run.Id, out var prior))
+                    {
+                        var originalCodes = selectedIndexes.Select(i => run.Glyphs[i].Code).ToHashSet();
+                        if (prior.Count(g => originalCodes.Contains(g.Code)) != selectedIndexes.Count)
+                            throw new InvalidOperationException("겹치는 텍스트 선택입니다.");
+                        int insertion = prior.FindIndex(g => originalCodes.Contains(g.Code));
+                        prior.RemoveAll(g => originalCodes.Contains(g.Code));
+                        prior.InsertRange(insertion, editedGlyphs);
+                    }
+                    else replacements.Add(run.Id, placed);
                 }
             }
             var contents = new PdfArray();
@@ -343,13 +370,14 @@ public sealed class NativePdfTextService
         var finalPage = finalDoc.GetPage(pageIndex + 1); var finalBox = finalPage.GetCropBox();
         var finalMap = new PageMap(finalBox.GetX(), finalBox.GetY(), finalBox.GetWidth(), finalBox.GetHeight(), ((finalPage.GetRotation() % 360) + 360) % 360);
         layout = ApplyInkBounds(resultBytes, pageIndex, new() { layout! }, finalMap)[0];
-        if (edits.Count == 1 && edits[0].Text != edits[0].Block.Text && layout.Bounds.Bottom > edits[0].Block.Bounds.Bottom + .5)
+        if (edits.Count == 1 && edits[0].Text != edits[0].Block.Text)
         {
             var original = edits[0].Block;
-            var ids = original.Runs.Select(r => r.Id).ToHashSet();
+            bool Selected(NativePdfGlyph g) => original.Glyphs.Any(s => !s.IsVirtual && s.RunId == g.RunId &&
+                s.Code.SequenceEqual(g.Code) && Math.Abs(s.Origin.X - g.Origin.X) < .001 && Math.Abs(s.Origin.Y - g.Origin.Y) < .001);
             var other = new NativePdfTextService().Extract(bytes, pageIndex).SelectMany(b => b.Glyphs)
-                .Where(g => !g.IsVirtual && !ids.Contains(g.RunId)).ToList();
-            foreach (var glyph in layout.Glyphs.Where(g => !g.IsVirtual && g.Bounds.Bottom > original.Bounds.Bottom + .5))
+                .Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text) && !Selected(g)).ToList();
+            foreach (var glyph in layout.Glyphs.Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text) && !Selected(g)))
                 if (other.Any(g => Math.Min(g.Bounds.Right, glyph.Bounds.Right) - Math.Max(g.Bounds.X, glyph.Bounds.X) > .25 &&
                     Math.Min(g.Bounds.Bottom, glyph.Bounds.Bottom) - Math.Max(g.Bounds.Y, glyph.Bounds.Y) > .25))
                     throw new InvalidOperationException("추가한 줄이 다른 원본 텍스트와 겹칩니다. 내용을 줄이거나 텍스트 영역을 먼저 이동해 주세요.");
@@ -402,6 +430,17 @@ public sealed class NativePdfTextService
                 fonts[run.Id] = f = PdfFontFactory.CreateFont((PdfDictionary)doc.GetPdfObject(run.FontObjectNumber));
             return f;
         }
+        var spaceWidths = new Dictionary<string, double>();
+        double SpaceWidth(NativePdfRun run)
+        {
+            if (spaceWidths.TryGetValue(run.Id, out double cached)) return cached;
+            var gaps = original.Where(g => g.Text == " " && Math.Abs(g.End.Y - g.Origin.Y) < .1 &&
+                g.End.X > g.Origin.X && runs[g.RunId].FontObjectNumber == run.FontObjectNumber)
+                .Select(g => g.End.X - g.Origin.X).Order().ToList();
+            double measured = gaps.Count > 0 ? gaps[gaps.Count / 2] : DisplayAdvance(run,
+                (Font(run).GetWidth(' ') * run.FontSize / 1000 + run.CharacterSpacing + run.WordSpacing) * run.HorizontalScale, data.Map);
+            return spaceWidths[run.Id] = measured > .01 ? measured : run.DisplayFontSize * .25;
+        }
         var matches = MatchCharacters(block.Text, text);
         var tokens = new List<NativePdfGlyph>();
         int precedingSourceIndex = -1;
@@ -427,8 +466,8 @@ public sealed class NativePdfTextService
                 {
                     // PDF word gaps need no painted glyph. Many CFF subsets omit
                     // the space outline entirely but retain its advance in Widths.
-                    double spaceAdvance = (font.GetWidth(' ') * run.FontSize / 1000 + run.CharacterSpacing + run.WordSpacing) * run.HorizontalScale;
-                    double spaceWidth = DisplayAdvance(run, spaceAdvance, data.Map);
+                    double spaceWidth = SpaceWidth(run);
+                    double spaceAdvance = spaceWidth / DisplayAdvance(run, 1, data.Map);
                     tokens.Add(near with { Text = value, Code = Array.Empty<byte>(), Advance = spaceAdvance,
                         IsVirtual = true, IsSoftBreak = false, TextIndex = index,
                         End = new(near.Origin.X + spaceWidth, near.Origin.Y) });
@@ -464,82 +503,27 @@ public sealed class NativePdfTextService
         if (tokens.Count == 0) return block with { Text = "", Glyphs = new(), Lines = new(), Bounds = default };
         bool horizontal = original.Where(g => !g.IsVirtual).All(g => Math.Abs(g.End.Y - g.Origin.Y) < 0.1 && g.End.X >= g.Origin.X);
         if (!horizontal) throw new InvalidOperationException("회전되거나 오른쪽에서 왼쪽으로 배치된 텍스트는 현재 이동과 전체 삭제만 지원합니다.");
-        var anchors = new List<PdfTextPoint>();
-        bool startOfLine = true;
-        foreach (var glyph in original)
-        {
-            if (glyph.Text == "\n") { startOfLine = true; continue; }
-            if (startOfLine && !glyph.IsVirtual) { anchors.Add(glyph.Origin); startOfLine = false; }
-        }
-        int lineIndex = 0;
-        double left = anchors[0].X, x = left;
-        double baseline = anchors[0].Y;
-        double right = Math.Max(block.Bounds.Right, original.Max(g => g.End.X));
-        var placed = new List<NativePdfGlyph>();
-        NativePdfGlyph? previous = null;
         double Width(NativePdfGlyph token)
         {
-            var run = runs[token.RunId];
             if (token.Text == "\n") return 0;
+            var run = runs[token.RunId];
+            if (token.IsSoftBreak) return SpaceWidth(run);
             return token.IsVirtual ? Math.Max(token.End.X - token.Origin.X, 0) : DisplayAdvance(run, token.Advance, data.Map);
         }
-        for (int tokenIndex = 0; tokenIndex < tokens.Count; tokenIndex++)
+        double Kerning(NativePdfGlyph previous, NativePdfGlyph token)
         {
-            var token = tokens[tokenIndex];
+            if (previous.IsVirtual || token.IsVirtual ||
+                !originalOrder.TryGetValue(previous.Code, out int a) || !originalOrder.TryGetValue(token.Code, out int b) || b != a + 1 ||
+                Math.Abs(previous.Origin.Y - token.Origin.Y) > .1) return 0;
+            double kern = token.Origin.X - previous.Origin.X - Width(previous);
+            return Math.Abs(kern) < runs[token.RunId].DisplayFontSize * .5 ? kern : 0;
+        }
+        double TrailingSpacing(NativePdfGlyph token)
+        {
             var run = runs[token.RunId];
-            if (token.Text == "\n")
-            {
-                lineIndex++;
-                var next = lineIndex < anchors.Count ? anchors[lineIndex] : new PdfTextPoint(anchors[0].X,
-                    baseline + Math.Max(block.LineHeight, runs.Values.Max(r => r.DisplayFontSize) * 1.1));
-                placed.Add(token with { Origin = new(x + edit.DeltaX, baseline + edit.DeltaY), End = new(next.X + edit.DeltaX, next.Y + edit.DeltaY) });
-                left = next.X; x = left; baseline = next.Y; previous = null; continue;
-            }
-            double advance = Width(token);
-            // Preserve explicit PDF kerning between adjacent unchanged glyphs.
-            double kern = previous != null && !previous.IsVirtual && !token.IsVirtual &&
-                originalOrder.TryGetValue(previous.Code, out int previousIndex) && originalOrder.TryGetValue(token.Code, out int nextIndex) &&
-                nextIndex == previousIndex + 1 &&
-                Math.Abs(previous.Origin.Y - token.Origin.Y) < 0.1 ? token.Origin.X - previous.Origin.X - Width(previous) : 0;
-            if (Math.Abs(kern) < run.DisplayFontSize * 0.5) x += kern;
-            // Preserve line origins; never collapse/reflow a whole PDF paragraph
-            // after a single keystroke. Overflow is explicit instead of silently
-            // painting into the next line or adjacent column.
-            double trailingSpacing = token.IsVirtual ? 0 : DisplayAdvance(run, run.CharacterSpacing * run.HorizontalScale, data.Map);
-            if (x + advance - trailingSpacing > right + .5 && !string.IsNullOrWhiteSpace(token.Text))
-                throw new InvalidOperationException("원래 텍스트 영역의 줄 폭을 넘었습니다. 줄바꿈을 추가하거나 '기존 방식'으로 전환해 주세요.");
-            double dx = x - token.Origin.X + edit.DeltaX, dy = baseline - token.Origin.Y + edit.DeltaY;
-            placed.Add(Translate(token, dx, dy) with { End = new(x + advance + edit.DeltaX, baseline + edit.DeltaY) });
-            x += advance; previous = token;
+            return token.IsVirtual ? 0 : Math.Sign(run.CharacterSpacing) * DisplayAdvance(run, run.CharacterSpacing * run.HorizontalScale, data.Map);
         }
-        // Unedited physical lines keep their exact source operands/coordinates;
-        // accumulating float advances needlessly changes their sub-pixel layout.
-        var sourceLines = block.Text.Split('\n');
-        var editedLines = text.Split('\n');
-        var preserved = new Dictionary<int, NativePdfGlyph>();
-        int sourceStart = 0, editedStart = 0;
-        for (int i = 0; i < Math.Min(sourceLines.Length, editedLines.Length); i++)
-        {
-            if (sourceLines[i] == editedLines[i])
-                foreach (var glyph in original.Where(g => g.TextIndex >= sourceStart && g.TextIndex < sourceStart + sourceLines[i].Length))
-                {
-                    int textIndex = editedStart + glyph.TextIndex - sourceStart;
-                    preserved[textIndex] = Translate(glyph, edit.DeltaX, edit.DeltaY) with { TextIndex = textIndex };
-                }
-            sourceStart += sourceLines[i].Length + 1; editedStart += editedLines[i].Length + 1;
-        }
-        placed = placed.Select(g => preserved.GetValueOrDefault(g.TextIndex, g)).ToList();
-        if (text.StartsWith(block.Text, StringComparison.Ordinal) && text[block.Text.Length..].All(char.IsWhiteSpace))
-        {
-            // Extending the insertion area with blank lines/spaces must preserve
-            // the original prefix, including sub-pixel advances and kerning.
-            var prefix = original.ToDictionary(g => g.TextIndex);
-            placed = placed.Select(g => prefix.TryGetValue(g.TextIndex, out var source)
-                ? Translate(source, edit.DeltaX, edit.DeltaY) : g).ToList();
-        }
-        var lineBoxes = placed.Where(g => g.Text != "\n").GroupBy(g => Math.Round(g.Origin.Y, 2))
-            .Select(g => PdfTextBox.Union(g.Select(c => c.Bounds))).ToList();
-        return block with { Text = text, Glyphs = placed, Lines = lineBoxes, Bounds = PdfTextBox.Union(lineBoxes) };
+        return NativePdfParagraphLayout.Place(block, text, tokens, Width, Kerning, TrailingSpacing, edit.DeltaX, edit.DeltaY);
     }
 
     private static PdfTextBox Shift(PdfTextBox box, double x, double y) => box with { X = box.X + x, Y = box.Y + y };

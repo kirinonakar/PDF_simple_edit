@@ -15,7 +15,32 @@ internal static class Fixtures
             var font = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
             var canvas = new iText.Kernel.Pdf.Canvas.PdfCanvas(page);
             canvas.BeginText().SetFontAndSize(font, 16).MoveText(40, 240).ShowText("Editable text.").EndText();
-            canvas.BeginText().SetFontAndSize(font, 16).MoveText(40, 218).ShowText("BLOCKER").EndText();
+            canvas.BeginText().SetFontAndSize(PdfFontFactory.CreateFont(StandardFonts.COURIER_BOLD), 16).MoveText(40, 218).ShowText("BLOCKER").EndText();
+        }
+        return output.ToArray();
+    }
+
+    public static byte[] CreateParagraphs()
+    {
+        using var output = new MemoryStream();
+        using (var document = new PdfDocument(new PdfWriter(output)))
+        {
+            var page = document.AddNewPage(new PageSize(500, 500));
+            var font = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
+            var canvas = new iText.Kernel.Pdf.Canvas.PdfCanvas(page);
+            void Line(double x, double y, string text) => canvas.BeginText().SetFontAndSize(font, 12).MoveText(x, y).ShowText(text).EndText();
+            // Intentionally interleave columns in paint order.
+            Line(40, 440, "Alpha beta gamma delta"); Line(300, 440, "Separate column text");
+            Line(40, 422, "epsilon zeta eta theta"); Line(300, 422, "stays at its position");
+            Line(40, 404, "iota kappa lambda");
+            Line(40, 230, "One two"); Line(40, 212, "three four"); Line(40, 194, "five six");
+            Line(40, 140, "Alpha beta"); Line(106, 140, "Right column");
+            Line(40, 122, "Alpha beta"); Line(106, 122, "Other column");
+            foreach (int y in new[] { 80, 62 })
+            {
+                var cells = new PdfArray(); cells.Add(new PdfString("Left")); cells.Add(new PdfNumber(-1000)); cells.Add(new PdfString("Right"));
+                canvas.BeginText().SetFontAndSize(font, 12).MoveText(40, y).ShowText(cells).EndText();
+            }
         }
         return output.ToArray();
     }

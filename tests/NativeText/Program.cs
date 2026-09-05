@@ -13,7 +13,7 @@ void Check(bool condition, string message) { if (!condition) throw new Exception
 List<NativePdfGlyph> Glyphs(byte[] pdf, int page) => service.Extract(pdf, page).SelectMany(b => b.Glyphs).Where(g => !g.IsVirtual).ToList();
 void SameGlyphs(IEnumerable<NativePdfGlyph> expected, IEnumerable<NativePdfGlyph> actual, double dx = 0, double dy = 0)
 {
-    var a = expected.ToList(); var b = actual.ToList();
+    var a = expected.OrderBy(g => Math.Round(g.Origin.Y, 2)).ThenBy(g => Math.Round(g.Origin.X, 2)).ThenBy(g => g.Text).ToList(); var b = actual.OrderBy(g => Math.Round(g.Origin.Y - dy, 2)).ThenBy(g => Math.Round(g.Origin.X - dx, 2)).ThenBy(g => g.Text).ToList();
     Check(a.Count == b.Count, $"Glyph count {a.Count} != {b.Count}");
     for (int i = 0; i < a.Count; i++)
     {
@@ -24,6 +24,33 @@ void SameGlyphs(IEnumerable<NativePdfGlyph> expected, IEnumerable<NativePdfGlyph
 }
 
 int pages;
+var paragraphBytes = Fixtures.CreateParagraphs();
+var paragraphs = service.Extract(paragraphBytes, 0);
+var leftParagraph = paragraphs.Single(b => b.Text.StartsWith("Alpha beta gamma"));
+Check(leftParagraph.Lines.Count == 3 && !leftParagraph.Text.Contains("Separate"), "Interleaved columns merged");
+Check(paragraphs.Single(b => b.Text.StartsWith("One two")).Lines.Count == 3, "Short paragraph lines disconnected");
+Check(paragraphs.Single(b => b.Text.StartsWith("Right column")).Text == "Right column Other column", "Narrow gutter lost right column");
+Check(paragraphs.Any(b => b.Text == "Alpha beta Alpha beta"), "Narrow gutter merged columns");
+var cells = paragraphs.Where(b => b.Bounds.Y > 400).ToList();
+Check(cells.Count == 2 && cells.Any(b => b.Text == "Left Left") && cells.Any(b => b.Text == "Right Right"), "Columns inside one TJ operand merged");
+var bothCellsDeleted = service.EditMany(paragraphBytes, 0, cells.Select(b => new NativePdfTextEdit(b, "")).ToList());
+SameGlyphs(Glyphs(paragraphBytes, 0).Where(g => g.Origin.Y < 400), Glyphs(bothCellsDeleted.Bytes, 0));
+var flowInsert = service.Edit(paragraphBytes, 0, new(leftParagraph, "Alpha beta " + leftParagraph.Text));
+var flowDelete = service.Edit(paragraphBytes, 0, new(leftParagraph, leftParagraph.Text[23..]));
+Check(flowInsert.Layout.Lines.Count > leftParagraph.Lines.Count, "Insertion did not flow down");
+Check(flowDelete.Layout.Lines.Count < leftParagraph.Lines.Count, "Deletion did not pull up");
+await WindowsRenderingProbe.Render(flowInsert.Bytes, "paragraph-insert", flowInsert.Layout);
+await WindowsRenderingProbe.Render(flowDelete.Bytes, "paragraph-delete", flowDelete.Layout);
+var lineGlyphs = leftParagraph.Glyphs.Where(g => !g.IsVirtual && Math.Abs(g.Origin.Y - leftParagraph.Glyphs[0].Origin.Y) < .1).ToList();
+var selectedBox = PdfTextBox.Union(lineGlyphs.Skip(6).Take(4).Select(g => g.Bounds));
+var partial = NativePdfTextService.SelectRegion(paragraphs, selectedBox).Single();
+Check(partial.Text == "beta", $"Marquee expanded outside requested glyphs: {partial.Text}");
+var partialResult = service.Edit(paragraphBytes, 0, new(partial, ""));
+var selectedOrigins = partial.Glyphs.Where(g => !g.IsVirtual).Select(g => g.Origin).ToHashSet();
+SameGlyphs(Glyphs(paragraphBytes, 0).Where(g => !selectedOrigins.Contains(g.Origin)).OrderBy(g => g.Origin.Y).ThenBy(g => g.Origin.X), Glyphs(partialResult.Bytes, 0).OrderBy(g => g.Origin.Y).ThenBy(g => g.Origin.X));
+var multiple = NativePdfTextService.SelectRegion(paragraphs, new(35, 350, 165, 45));
+Check(multiple.Count == 2 && multiple.All(b => !b.Text.Contains("beta Right")), "Marquee merged separate columns");
+Console.WriteLine("PASS: column gutters, paragraph reflow, exact partial-operand marquee deletion");
 using (var doc = new PdfDocument(new PdfReader(new MemoryStream(bytes)))) pages = doc.GetNumberOfPages();
 for (int page = 0; page < pages; page++)
 {
@@ -33,7 +60,8 @@ for (int page = 0; page < pages; page++)
         .OrderByDescending(b => b.Glyphs.Count).First();
     Check(ReferenceEquals(service.Edit(bytes, page, new(target, target.Text)).Bytes, bytes), "No-op must preserve exact bytes");
     var ids = target.Runs.Select(r => r.Id).ToHashSet();
-    var outside = blocks.SelectMany(b => b.Glyphs).Where(g => !g.IsVirtual && !ids.Contains(g.RunId)).ToList();
+    var selectedCodesForPage = target.Glyphs.Where(g => !g.IsVirtual).Select(g => g.Code).ToHashSet();
+    var outside = blocks.SelectMany(b => b.Glyphs).Where(g => !g.IsVirtual && !selectedCodesForPage.Contains(g.Code)).ToList();
     var deletion = service.Edit(bytes, page, new(target, ""));
     SameGlyphs(outside, Glyphs(deletion.Bytes, page));
     using var originalDoc = new PdfDocument(new PdfReader(new MemoryStream(bytes)));
@@ -46,6 +74,22 @@ for (int page = 0; page < pages; page++)
 var first = service.Extract(bytes, 0);
 File.WriteAllText("tmp/pdfs/native-original.json", JsonSerializer.Serialize(first, new JsonSerializerOptions { WriteIndented = true }));
 var title = first.First(b => b.Text.Contains("Internal Knee"));
+var body = first.First(b => b.Text.StartsWith("To prospectively"));
+foreach (var (name, text) in new[] { ("body-insert", "the " + body.Text), ("body-delete", body.Text[17..]) })
+{
+    var result = service.Edit(bytes, 0, new(body, text));
+    Check(result.Layout.Glyphs.Any(g => !g.IsVirtual && body.Glyphs.Any(s => ReferenceEquals(s.Code, g.Code) && Math.Abs(s.Origin.Y - g.Origin.Y) > 1)), "Body edit did not move glyphs between lines");
+    File.WriteAllBytes($"tmp/pdfs/{name}.pdf", result.Bytes);
+    await WindowsRenderingProbe.Render(result.Bytes, name, result.Layout);
+}
+var bodySelection = NativePdfTextService.SelectRegion(first, body.Lines[1]).Single();
+Check(bodySelection.Lines.Count == 1, "Attachment marquee included unselected lines");
+var bodyRemoved = service.Edit(bytes, 0, new(bodySelection, ""));
+var bodySelectedOrigins = bodySelection.Glyphs.Where(g => !g.IsVirtual).Select(g => (g.RunId, g.Origin)).ToHashSet();
+SameGlyphs(first.SelectMany(b => b.Glyphs).Where(g => !g.IsVirtual && !bodySelectedOrigins.Contains((g.RunId, g.Origin))), Glyphs(bodyRemoved.Bytes, 0));
+File.WriteAllBytes("tmp/pdfs/body-region-delete.pdf", bodyRemoved.Bytes);
+await WindowsRenderingProbe.Render(bodyRemoved.Bytes, "body-region-delete");
+Check(title.Lines.Count == 4 && title.Text.Contains("FISP MR Sequence"), "Mixed-style title must be one flowing paragraph");
 var originalTitleGlyphs = title.Glyphs.Where(g => !g.IsVirtual).ToList();
 await WindowsRenderingProbe.Render(bytes, "original");
 // Reproduce consecutive new keystrokes, rather than only permutations of glyphs
@@ -135,8 +179,10 @@ foreach (var glyph in multi.Layout.Glyphs.Where(g => !g.IsVirtual && g.TextIndex
     Check(title.Runs.Any(r => r.Id == glyph.RunId), "Original run style was lost");
 Check(multi.Layout.Glyphs.Any(g => g.RunId == title.Runs.Last().Id), "Mixed final font was lost");
 File.WriteAllBytes("tmp/pdfs/native-fixed-layout.pdf", multi.Bytes);
-try { service.Edit(bytes, 0, new(title, title.Text.Replace("Study", "Study Study Study Study"))); throw new Exception("Overflow was accepted"); }
-catch (InvalidOperationException) { checks++; }
+var expandedTitle = service.Edit(bytes, 0, new(title, title.Text.Replace("Study", "Study Study Study Study")));
+Check(expandedTitle.Layout.Lines.Count > title.Lines.Count, "Title overflow must wrap to the next line");
+await WindowsRenderingProbe.Render(expandedTitle.Bytes, "paragraph-title", expandedTitle.Layout);
+File.WriteAllBytes("tmp/pdfs/paragraph-title.pdf", expandedTitle.Bytes);
 var sourceLines = title.Glyphs.Where(g => !g.IsVirtual && g.Origin.Y > title.Glyphs[0].Origin.Y + 1).ToList();
 var editedLines = edited.Layout.Glyphs.Where(g => !g.IsVirtual && g.Origin.Y > title.Glyphs[0].Origin.Y + 1).ToList();
 SameGlyphs(sourceLines, editedLines);
@@ -156,7 +202,7 @@ var oneBlock = new NativePdfTextBlock { Runs = new() { oneRun }, Glyphs = runGly
     Lines = new() { PdfTextBox.Union(runGlyphs.Select(g => g.Bounds)) }, LineHeight = operandBlock.LineHeight };
 var oneDeleted = service.Edit(fixture, 0, new(oneBlock, ""));
 SameGlyphs(allBefore.Where(g => g.RunId != oneRun.Id), Glyphs(oneDeleted.Bytes, 0));
-Console.WriteLine("PASS: spacing/scaling, mixed fonts, fixed line origins, overflow rejection, partial TJ, original font/image stream bytes");
+Console.WriteLine("PASS: spacing/scaling, mixed fonts, paragraph wrapping, partial TJ, original font/image stream bytes");
 foreach (var mode in new[] { TextEditingMode.Legacy, TextEditingMode.PreserveOriginal })
 {
     var contents = await pageExtractor.ExtractAsync(bytes, 0, mode);

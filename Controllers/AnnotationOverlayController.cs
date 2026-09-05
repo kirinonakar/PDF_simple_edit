@@ -50,7 +50,7 @@ public sealed class AnnotationOverlayController
                 if (!selectedAnnotations.Contains(annotation)) continue;
                 double dx = annotation.X - annotation.NativeText.Bounds.X;
                 double dy = annotation.Y - annotation.NativeText.Bounds.Y;
-                foreach (var line in annotation.NativeText.Lines)
+                var line = annotation.NativeText.Bounds;
                 {
                     var outline = new Border { Width = Math.Max(line.Width * PdfToPixels, 1),
                         Height = Math.Max(line.Height * PdfToPixels, 1), BorderThickness = new(0.75),

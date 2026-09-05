@@ -61,6 +61,8 @@ public sealed class AnnotationCanvasController
     private ImageSource? _moveOriginalImage;
     private readonly SemaphoreSlim _movePreviewGate = new(1, 1);
     private PdfTextPoint? _pendingInlineCaret;
+    private Point? _regionStart;
+    private Rectangle? _regionPreview;
 
     public AnnotationCanvasController(
         Canvas canvas,
@@ -167,6 +169,16 @@ public sealed class AnnotationCanvasController
         switch (toolMode)
         {
             case EditToolMode.Select:
+                bool alt = InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Menu)
+                    .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+                var hit = _contentService.FindAnnotationAt(_getAnnotations(), _getPageIndex(), pdfX, pdfY);
+                if (_fontSettings.TextEditingMode == TextEditingMode.PreserveOriginal && !alt &&
+                    !(e.OriginalSource is Rectangle { Tag: string }) && (hit == null || hit.NativeText != null))
+                {
+                    _regionStart = position;
+                    _canvas.CapturePointer(e.Pointer);
+                    return;
+                }
                 await BeginSelectionAsync(e, position, pdfX, pdfY, selectPressSequence);
                 break;
             case EditToolMode.AddText:
@@ -192,6 +204,22 @@ public sealed class AnnotationCanvasController
     public void PointerMoved(PointerRoutedEventArgs e)
     {
         var pointerPoint = e.GetCurrentPoint(_canvas);
+
+        if (_regionStart is Point start)
+        {
+            if (!pointerPoint.Properties.IsLeftButtonPressed) return;
+            var end = pointerPoint.Position;
+            if (Math.Abs(end.X - start.X) + Math.Abs(end.Y - start.Y) < 4) return;
+            if (_regionPreview == null)
+            {
+                _regionPreview = new Rectangle { Stroke = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
+                    StrokeThickness = 1, Fill = new SolidColorBrush(Windows.UI.Color.FromArgb(30, 30, 120, 255)), IsHitTestVisible = false };
+                _canvas.Children.Add(_regionPreview);
+            }
+            Canvas.SetLeft(_regionPreview, Math.Min(start.X, end.X)); Canvas.SetTop(_regionPreview, Math.Min(start.Y, end.Y));
+            _regionPreview.Width = Math.Abs(end.X - start.X); _regionPreview.Height = Math.Abs(end.Y - start.Y);
+            return;
+        }
 
         if (_signaturePreview != null && _getToolMode() == EditToolMode.Signature)
         {
@@ -228,6 +256,38 @@ public sealed class AnnotationCanvasController
 
     public async Task PointerReleasedAsync(PointerRoutedEventArgs e)
     {
+        if (_regionStart is Point start)
+        {
+            _regionStart = null;
+            var end = e.GetCurrentPoint(_canvas).Position;
+            if (_regionPreview != null) _canvas.Children.Remove(_regionPreview);
+            _regionPreview = null;
+            _canvas.ReleasePointerCapture(e.Pointer);
+            _pendingSelectPointerId = null;
+            long sequence = ++_selectPointerPressSequence;
+            if (Math.Abs(end.X - start.X) + Math.Abs(end.Y - start.Y) < 4)
+                await BeginSelectionAsync(e, end, end.X / PdfToPixels, end.Y / PdfToPixels, sequence);
+            else
+            {
+                var regionManager = _getManager(); int page = _getPageIndex();
+                var contents = await regionManager.ExtractPageContentsAsync(page);
+                if (sequence != _selectPointerPressSequence || regionManager != _getManager() || page != _getPageIndex()) return;
+                var region = new PdfTextBox(Math.Min(start.X, end.X) / PdfToPixels, Math.Min(start.Y, end.Y) / PdfToPixels,
+                    Math.Abs(end.X - start.X) / PdfToPixels, Math.Abs(end.Y - start.Y) / PdfToPixels);
+                var blocks = NativePdfTextService.SelectRegion(contents.Where(c => c.NativeText != null).Select(c => c.NativeText!), region);
+                _getAnnotations().RemoveAll(a => a.PageIndex == page && a.NativeText != null);
+                ClearSelection();
+                foreach (var block in blocks)
+                {
+                    var annotation = _contentService.ConvertToAnnotation(NativePdfTextService.ToPageContent(block), page);
+                    if (annotation == null) continue;
+                    _getAnnotations().Add(annotation); SelectedAnnotations.Add(annotation); PrimarySelection ??= annotation;
+                }
+                _statusText.Text = blocks.Count > 0 ? "드래그한 글자만 선택됨 · 두 번 클릭하여 편집 · Alt+드래그로 이동" : "범위 안에 텍스트가 없습니다.";
+                Render();
+            }
+            return;
+        }
         if (_signaturePreview != null && _getToolMode() == EditToolMode.Signature)
         {
             CompleteSignature(e);

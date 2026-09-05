@@ -14,6 +14,7 @@
     <Compile Include="../../Models/PdfAnnotation.cs" Link="Models/PdfAnnotation.cs" />
     <Compile Include="../../Models/NativePdfText.cs" Link="Models/NativePdfText.cs" />
     <Compile Include="../../Services/NativePdfTextService.cs" Link="Services/NativePdfTextService.cs" />
+    <Compile Include="../../Services/NativePdfParagraphLayout.cs" Link="Services/NativePdfParagraphLayout.cs" />
     <Compile Include="../../Services/NativePdfGlyphGeometry.cs" Link="Services/NativePdfGlyphGeometry.cs" />
     <Compile Include="../../Services/PdfPageContentExtractor.cs" Link="Services/PdfPageContentExtractor.cs" />
     <Compile Include="../../Services/PdfContentStreamEditor.cs" Link="Services/PdfContentStreamEditor.cs" />

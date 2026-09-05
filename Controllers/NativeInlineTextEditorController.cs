@@ -152,7 +152,7 @@ public sealed class NativeInlineTextEditorController
             var bounds = _layout.Bounds;
             _input.Width = Math.Max((_session!.Annotation.Width + Math.Max(0, bounds.Right - _session.Annotation.NativeText!.Bounds.Right)) * Scale, 20);
             _input.Height = Math.Max((_session.Annotation.Height + Math.Max(0, bounds.Bottom - _session.Annotation.NativeText!.Bounds.Bottom)) * Scale, 20);
-            _status?.Invoke("원본 글꼴과 PDF 배치로 편집 중 · Ctrl+Enter 완료 · Esc 취소");
+            _status?.Invoke("원본 글꼴로 문단 자동 줄바꿈 중 · Ctrl+Enter 완료 · Esc 취소");
             DrawSelection();
         }
         catch (Exception error)
@@ -173,10 +173,10 @@ public sealed class NativeInlineTextEditorController
         _decoration.Children.Clear();
         int start = Math.Min(_input.Document.Selection.StartPosition, _input.Document.Selection.EndPosition);
         int end = Math.Max(_input.Document.Selection.StartPosition, _input.Document.Selection.EndPosition);
-        foreach (var line in _layout.Lines)
-            AddBox(line, false);
+        if (_layout.Bounds.Height > 0) AddBox(_layout.Bounds, false);
         foreach (var glyph in _layout.Glyphs.Where(g => g.TextIndex < end && g.TextIndex + g.Text.Length > start && g.Text != "\n"))
-            AddBox(glyph.Bounds with { Width = Math.Max(glyph.Bounds.Width, Math.Abs(glyph.End.X - glyph.Origin.X)) }, true);
+            AddBox(glyph.Bounds with { Width = glyph.IsSoftBreak ? Math.Max(glyph.Bounds.Width, 1) :
+                Math.Max(glyph.Bounds.Width, Math.Abs(glyph.End.X - glyph.Origin.X)) }, true);
         if (start != end || !_caretVisible) return;
         var next = _layout.Glyphs.FirstOrDefault(g => g.TextIndex >= start);
         var last = _layout.Glyphs.LastOrDefault();
@@ -213,7 +213,7 @@ public sealed class NativeInlineTextEditorController
     {
         if (_layout == null || _layout.Glyphs.Count == 0) return 0;
         var nearestLine = _layout.Lines.OrderBy(line => Math.Abs(line.Y + line.Height / 2 - y)).FirstOrDefault();
-        var glyph = _layout.Glyphs.Where(g => g.Text != "\n" && (nearestLine.Height == 0 ||
+        var glyph = _layout.Glyphs.Where(g => g.Text != "\n" && !g.IsSoftBreak && (nearestLine.Height == 0 ||
             g.Bounds.Y + g.Bounds.Height / 2 >= nearestLine.Y - .1 && g.Bounds.Y + g.Bounds.Height / 2 <= nearestLine.Bottom + .1)).OrderBy(g =>
             Math.Pow(Math.Max(Math.Max(g.Bounds.Y - y, y - g.Bounds.Bottom), 0) * 4, 2) +
             Math.Pow(Math.Min(Math.Abs(x - g.Origin.X), Math.Abs(x - g.End.X)), 2)).FirstOrDefault();

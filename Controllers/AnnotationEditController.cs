@@ -247,7 +247,7 @@ public sealed class AnnotationEditController
     {
         if (annotation.NativeText != null)
         {
-            _statusText.Text = "원본 텍스트는 PDF 글꼴과 배치를 유지합니다. 더블 클릭하여 내용을 편집하거나 드래그하여 이동하세요.";
+            _statusText.Text = "더블 클릭하여 원본 글꼴로 문단 편집 · 드래그로 범위 선택 · Alt+드래그로 이동";
             return false;
         }
         PdfDocumentManager manager = _getManager();

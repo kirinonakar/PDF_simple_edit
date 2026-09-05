@@ -516,7 +516,7 @@ namespace PDF_simple_edit
             var mode = (TextEditingMode)EditorToolbar.TextEditingModeComboBox.SelectedIndex;
             if (!Enum.IsDefined(mode)) return;
             EditorToolbar.TextEditingModeDescription.Text = mode == TextEditingMode.PreserveOriginal
-                ? "원래 글꼴과 줄 위치를 유지하여 편집"
+                ? "원본 글꼴로 문단 편집 · 드래그 범위 선택 · Alt+드래그 이동"
                 : "글꼴·크기 변경 가능 · 원본 텍스트를 교체하여 편집";
             if (_fontSettings.TextEditingMode == mode) return;
             _changingTextMode = true;
