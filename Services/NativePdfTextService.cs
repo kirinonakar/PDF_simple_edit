@@ -298,7 +298,11 @@ public sealed class NativePdfTextService
         using var input = new MemoryStream(bytes);
         using var output = new MemoryStream();
         NativePdfTextBlock? layout = null;
-        using (var doc = new PdfDocument(new PdfReader(input), new PdfWriter(output), new StampingProperties().UseAppendMode()))
+        // Windows.Data.Pdf can keep rendering the original revision of some
+        // PDFs after an incremental update (including the AJCC9 abstract). Write
+        // a complete current revision so preview, saved output and extraction
+        // agree. PatchSource still preserves untouched content stream bytes.
+        using (var doc = new PdfDocument(new PdfReader(input), new PdfWriter(output)))
         {
             var page = doc.GetPage(pageIndex + 1);
             var data = Read(page);

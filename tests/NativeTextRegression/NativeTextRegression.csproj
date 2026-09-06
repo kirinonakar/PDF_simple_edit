@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows10.0.19041.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><RuntimeIdentifier>win-x64</RuntimeIdentifier></PropertyGroup>
+<ItemGroup>
+<Compile Include="../../Models/NativePdfText.cs" Link="NativePdfText.cs" />
+<Compile Include="../../Models/PdfAnnotation.cs" Link="PdfAnnotation.cs" />
+<Compile Include="../../Services/NativePdf*.cs" Link="%(Filename)%(Extension)" />
+<Compile Include="../../Services/PdfDisplayColorService.cs" Link="PdfDisplayColorService.cs" />
+<Compile Include="../../Services/InstalledFontService.cs" Link="InstalledFontService.cs" />
+<Compile Include="../../Helpers/PdfFontMetadataResolver.cs" Link="PdfFontMetadataResolver.cs" />
+<PackageReference Include="Newtonsoft.Json" Version="13.0.4" /><PackageReference Include="itext" Version="9.5.0" />
+<PackageReference Include="itext.bouncy-castle-adapter" Version="9.5.0" />
+<PackageReference Include="PDFiumCore" Version="154.0.8035" />
+</ItemGroup></Project>
+
