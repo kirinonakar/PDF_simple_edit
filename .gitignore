@@ -12,6 +12,7 @@
 *.env
 tmp/
 output/
+test/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
