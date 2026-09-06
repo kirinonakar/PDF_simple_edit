@@ -19,6 +19,8 @@ foreach (var (label, selected, text) in new[] {
     ("region-delete", NativePdfTextService.SelectRegion(blocks, block.Bounds).Single(), "") })
 {
     var result = service.Edit(bytes, 0, new(selected, text));
+    if (result.FontSubstitutionStatus != null)
+        throw new Exception(label + ": Existing abstract characters unnecessarily use a fallback font.");
     string savedPath = Path.Combine(artifactDirectory, label + ".pdf");
     File.WriteAllBytes(savedPath, result.Bytes);
     var saved = File.ReadAllBytes(savedPath);
@@ -48,6 +50,31 @@ foreach (var (label, selected, text) in new[] {
         throw new Exception(label + ": Saved abstract text does not match the edit.");
     Console.WriteLine($"PASS {label}: Windows rendering, saved text, surrounding pixels and unedited page.");
 }
+var sampleGlyphs = block.Glyphs.Where(g => !g.IsVirtual && g.Text.Length == 1 && !char.IsWhiteSpace(g.Text[0]))
+    .DistinctBy(g => g.Text).ToList();
+foreach (var glyph in sampleGlyphs)
+{
+    var result = service.Edit(bytes, 0, new(block, block.Text + glyph.Text));
+    var added = result.Layout.Glyphs.Single(g => g.TextIndex == block.Text.Length);
+    if (result.FontSubstitutionStatus != null || !added.Code.AsSpan().SequenceEqual(glyph.Code))
+        throw new Exception($"Adding '{glyph.Text}' did not reuse the original font/code.");
+    if (ReferenceEquals(added.Code, glyph.Code))
+        throw new Exception("Inserted glyph must have its own identity for kerning.");
+}
+Console.WriteLine($"PASS {sampleGlyphs.Count} existing characters appended without font substitution.");
+
+// Evidence may be outside the marquee, but must belong to the same PDF font.
+var firstGlyph = block.Glyphs.First(g => !g.IsVirtual);
+var singleLetter = NativePdfTextService.SelectRegion(blocks, firstGlyph.Bounds).Single();
+var regionResult = service.Edit(bytes, 0, new(singleLetter, "h"));
+if (singleLetter.Text != "T" || regionResult.FontSubstitutionStatus != null)
+    throw new Exception("A character outside the selection was not reused from the same font.");
+await Render(regionResult.Bytes, 0, "region-existing-glyph");
+var missing = service.Edit(bytes, 0, new(block, block.Text + "한"));
+if (missing.FontSubstitutionStatus == null)
+    throw new Exception("A genuinely unavailable glyph must still use fallback.");
+Console.WriteLine("PASS partial selection and missing-glyph fallback.");
+
 if (!File.ReadAllBytes(args[0]).AsSpan().SequenceEqual(bytes))
     throw new Exception("Source fixture was modified.");
 

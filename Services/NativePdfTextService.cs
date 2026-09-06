@@ -434,6 +434,14 @@ public sealed class NativePdfTextService
         var originalOrder = original.Select((glyph, index) => (glyph, index)).Where(p => !p.glyph.IsVirtual)
             .ToDictionary(p => p.glyph.Code, p => p.index);
         var runs = block.Runs.ToDictionary(r => r.Id);
+        // Subset CID fonts can decode and paint a code while ContainsGlyph
+        // reports false for its Unicode value. Prefer codes actually used by
+        // this exact font on the page, including outside the selected region.
+        var usedCodes = data.Runs.SelectMany(r => r.Glyphs
+            .Where(g => g.Code.Length > 0 && !string.IsNullOrEmpty(g.Text))
+            .Select(g => (r.FontObjectNumber, g.Text, g.Code)))
+            .GroupBy(g => (g.FontObjectNumber, g.Text))
+            .ToDictionary(g => g.Key, g => g.First().Code);
         var fonts = new Dictionary<string, PdfFont>();
         var coverage = new Dictionary<int, HashSet<string>?>();
         PdfFont Font(NativePdfRun run)
@@ -516,17 +524,21 @@ public sealed class NativePdfTextService
                     index++; continue;
                 }
                 int unicode = char.ConvertToUtf32(value, 0);
-                byte[] code = font.ConvertToBytes(value);
-                bool needsReplacement = !font.ContainsGlyph(unicode) || code.Length == 0 || font.Decode(new PdfString(code)) != value;
-                if (!coverage.TryGetValue(run.FontObjectNumber, out var names))
+                bool usedInFont = usedCodes.TryGetValue((run.FontObjectNumber, value), out var usedCode);
+                // A fresh array gives the inserted glyph its own identity; the
+                // layout uses original code-array identities to retain kerning.
+                byte[] code = usedInFont ? usedCode!.ToArray() : font.ConvertToBytes(value);
+                bool needsReplacement = !usedInFont &&
+                    (!font.ContainsGlyph(unicode) || code.Length == 0 || font.Decode(new PdfString(code)) != value);
+                if (!usedInFont && !coverage.TryGetValue(run.FontObjectNumber, out _))
                 {
                     var program = font.GetPdfObject().GetAsDictionary(PdfName.FontDescriptor)?.GetAsStream(PdfName.FontFile3);
-                    names = program?.GetAsName(PdfName.Subtype)?.GetValue() == "Type1C"
+                    var names = program?.GetAsName(PdfName.Subtype)?.GetValue() == "Type1C"
                         ? new CffCoverage(program.GetBytes()).ReadNames() : null;
                     coverage[run.FontObjectNumber] = names;
                 }
-                if (names != null && font is PdfType1Font type1 &&
-                    (code.Length != 1 || !names.Contains(type1.GetFontEncoding().GetDifference(code[0]) ?? AdobeGlyphList.UnicodeToName(unicode))))
+                if (!usedInFont && coverage.GetValueOrDefault(run.FontObjectNumber) is { } coveredNames && font is PdfType1Font type1 &&
+                    (code.Length != 1 || !coveredNames.Contains(type1.GetFontEncoding().GetDifference(code[0]) ?? AdobeGlyphList.UnicodeToName(unicode))))
                     needsReplacement = true;
                 if (needsReplacement)
                 {
