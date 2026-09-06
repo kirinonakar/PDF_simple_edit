@@ -59,8 +59,20 @@ internal static class NativePdfParagraphLayout
             // when it is narrower than the ordinary same-line joining threshold.
             bool Gutter(double left, double right, double y, double size) => gaps.Any(a =>
                 Math.Abs(a.Y - y) < .5 && Math.Min(a.Right, right) - Math.Max(a.Left, left) >= size * .35 &&
-                gaps.Any(b => Math.Abs(b.Y - y) >= size * .65 && Math.Abs(b.Y - y) <= size * 4 &&
-                    Math.Min(Math.Min(a.Right, b.Right), right) - Math.Max(Math.Max(a.Left, b.Left), left) >= size * .35));
+                gaps.Any(b =>
+                {
+                    if (Math.Abs(b.Y - y) < size * .65 || Math.Abs(b.Y - y) > size * 4) return false;
+                    double gutterLeft = Math.Max(Math.Max(a.Left, b.Left), left);
+                    double gutterRight = Math.Min(Math.Min(a.Right, b.Right), right);
+                    if (gutterRight - gutterLeft < size * .35) return false;
+                    double middle = (gutterLeft + gutterRight) / 2;
+                    // Justified words can have repeated wide spaces too. A
+                    // column gutter must remain clear of ink on nearby rows;
+                    // otherwise these spaces split words out of the paragraph.
+                    return !rows.Where(row => Math.Abs(row.Baseline - y) <= size * 4)
+                        .SelectMany(row => row.Runs).SelectMany(run => run.Glyphs)
+                        .Any(g => !string.IsNullOrWhiteSpace(g.Text) && g.Origin.X < middle && g.End.X > middle);
+                }));
             var lines = new List<PhysicalLine>();
             foreach (var row in rows)
             {
