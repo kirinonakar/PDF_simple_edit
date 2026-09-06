@@ -1,5 +1,14 @@
 # PDF text editing regression checks
 
+Noto CJK collection matching (requires installed Noto Sans CJK KR faces):
+
+```powershell
+dotnet run --project tests/NativeText -- "D:/ASUNA/test/AJCC9 NPca JKSR-87-12.pdf" --installed-fonts-only
+```
+
+Checks subset names, five weights, TTC face indices, localized installed family
+names, and a new Korean glyph in the attachment through save/reopen and Windows rendering.
+
 Run from the repository root on Windows with .NET 10:
 
 ```powershell

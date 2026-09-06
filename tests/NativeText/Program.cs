@@ -3,6 +3,11 @@ using PDF_simple_edit.Models;
 using iText.Kernel.Pdf;
 using System.Text.Json;
 
+if (args.Contains("--installed-fonts-only"))
+{
+    await InstalledFontChecks.Run(args[0]);
+    return;
+}
 await FontFallbackChecks.Run();
 if (args.Contains("--fallback-only")) return;
 var path = args.FirstOrDefault() ?? "D:/ASUNA/test/3D knee.pdf";

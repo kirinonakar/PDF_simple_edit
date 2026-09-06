@@ -625,6 +625,11 @@ namespace PDF_simple_edit.Services
         {
             if (string.IsNullOrWhiteSpace(nameOrFile)) return null;
 
+            // An installed exact family (including a specific TTC face) takes
+            // precedence over the compatibility aliases below.
+            string? exactFont = InstalledFontService.FindFontFile(nameOrFile, fontWeight, isItalic);
+            if (exactFont != null) return exactFont;
+
             string fontDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts");
             string userFontDir = System.IO.Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -753,13 +758,6 @@ namespace PDF_simple_edit.Services
                     }
                 }
             }
-
-            string? registeredFontPath = InstalledFontService.FindFontFile(
-                nameOrFile,
-                fontWeight,
-                isItalic);
-            if (!string.IsNullOrEmpty(registeredFontPath))
-                return registeredFontPath;
 
             // 파일명 자체가 들어온 경우 처리
             if (nameOrFile.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) || 
