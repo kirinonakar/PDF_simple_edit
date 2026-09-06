@@ -16,7 +16,7 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
   - **Replace Mode**: After activating the Select tool, click to select and drag to move.
     - `Ctrl+Enter` or right-click confirms, `Esc` cancels.
     - If characters are clipped or letter spacing looks too tight after editing, select the box and enlarge it.
-- **Add Text**: Press `A` to switch to the Add Text tool, then add text with custom font family, size, color, bold, and italic.
+- **Add Text**: Press `A` to switch to the Add Text tool, then add text with custom font family, size, color, bold, and italic. `Enter` inserts a line break, `Ctrl+Enter` confirms, and `Esc` cancels.
 - **Images**: Insert images, save a selected image as a file, or extract all embedded images to a folder.
 
 ### 🖋️ Annotation & Highlighting

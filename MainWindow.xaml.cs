@@ -1893,7 +1893,7 @@ namespace PDF_simple_edit
             }
 
             // 편집기의 KeyDown에서 Ctrl 상태를 놓치는 경우에도 창 레벨에서
-            // Enter를 먼저 소비하여 줄바꿈 대신 편집을 확정합니다.
+            // Ctrl+Enter를 소비하여 줄바꿈 대신 편집을 확정합니다.
             if (_annotationCanvasController.IsInlineEditing &&
                 e.Key == Windows.System.VirtualKey.Enter &&
                 (_controlKeyIsDown || KeyboardStateService.IsControlDown()))

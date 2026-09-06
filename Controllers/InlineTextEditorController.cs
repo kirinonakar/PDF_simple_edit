@@ -147,7 +147,9 @@ public sealed class InlineTextEditorController
 
         var editor = new RichEditBox
         {
-            AcceptsReturn = existingAnnotation != null,
+            // New text uses Enter for paragraph breaks. Ctrl+Enter is handled
+            // below as the explicit commit shortcut for both edit paths.
+            AcceptsReturn = true,
             TextWrapping = TextWrapping.NoWrap,
             MinWidth = existingAnnotation != null ? 0 : 60,
             MinHeight = 0,
@@ -201,13 +203,15 @@ public sealed class InlineTextEditorController
         editor.DoubleTapped += (_, args) => args.Handled = true;
         if (existingAnnotation != null)
             editor.TextChanged += InlineEditor_TextChanged;
-        // RichEditBox handles Enter during its normal KeyDown processing. Use
-        // the preview event so Ctrl+Enter confirms before RichEdit inserts a
-        // paragraph break into the replacement text.
+        else
+            editor.TextChanged += NewTextEditor_TextChanged;
+        // RichEditBox handles a plain Enter during its normal key processing.
+        // Use the preview event so Ctrl+Enter confirms before RichEdit inserts
+        // a paragraph break into the input text.
         editor.PreviewKeyDown += async (_, args) =>
         {
             if (args.Key == Windows.System.VirtualKey.Enter &&
-                (!editor.AcceptsReturn || KeyboardStateService.IsControlDown()))
+                KeyboardStateService.IsControlDown())
             {
                 args.Handled = true;
                 await StartApplyAsync(editor);
@@ -440,6 +444,22 @@ public sealed class InlineTextEditorController
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n')
             .Replace("\n", "\r\n", StringComparison.Ordinal);
+    }
+
+    private void NewTextEditor_TextChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is not RichEditBox editor ||
+            _activeEditor != editor ||
+            editor.Tag is not Point ||
+            _settings == null)
+            return;
+
+        editor.Height = AnnotationTextLayoutService.GetInlineEditorHeight(
+            GetEditorText(editor),
+            _settings.FontFamily,
+            _settings.FontSize,
+            _settings.IsBold,
+            _settings.IsItalic);
     }
 
     private static void ApplyEditorLineSpacing(RichEditBox editor, double lineHeightPoints)
