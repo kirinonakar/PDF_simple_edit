@@ -10,17 +10,11 @@ using PDF_simple_edit.Controllers;
 using PDF_simple_edit.Services;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
 using System.Threading.Tasks;
-using Windows.ApplicationModel.DataTransfer;
-using Windows.Graphics.Imaging;
-using Windows.Storage.Pickers;
 using Windows.Storage;
-using Windows.Storage.Streams;
 using Microsoft.UI.Windowing;
 using Microsoft.UI;
 using WinRT.Interop;
@@ -29,8 +23,6 @@ namespace PDF_simple_edit
 {
     public sealed partial class MainWindow : Window
     {
-        private const string AnnotationClipboardFormat = "PDFSimpleEditor.Annotations.v1";
-
         private readonly ObservableCollection<PdfDocumentTab> _tabs = new();
         private PdfDocumentTab? _activeTab;
 
@@ -53,27 +45,24 @@ namespace PDF_simple_edit
         }
         private AnnotationCanvasController _annotationCanvasController = null!;
         private AnnotationEditController _annotationEditController = null!;
+        private AnnotationClipboardController _clipboardController = null!;
+        private EditorImageController _imageController = null!;
+        private EditorFontController _fontController = null!;
+        private PdfPageOperationsController _pageOperationsController = null!;
         private PageViewController _pageViewController = null!;
         private WindowSettingsController _windowSettingsController = null!;
         private RecentFilesController _recentFilesController = null!;
 
         private readonly DocumentSearchController _documentSearchController = new(new PdfSearchService());
         private readonly PdfPageRenderService _pageRenderService = new();
-        private readonly PdfOperationService _pdfOperationService = new();
-        private readonly PdfImageExtractionService _pdfImageExtractionService = new();
         private readonly EditorDialogService _dialogService = new();
-        private readonly PdfSaveService _pdfSaveService;
-        private bool _isSaveInProgress;
+        private DocumentFileController _fileController = null!;
         private bool _controlKeyIsDown;
-        private readonly PrintHelper _printHelper = new();
         private readonly TextFontSettings _fontSettings = new();
         private string _signatureColor = "#000000";
         private double _signatureLineWidth = 2.0;
-        private bool _isSyncingFontControls;
 
-
-        
-        // Aliases to active tab for easier migration
+        // Resolve the selected document when a composed controller invokes a command.
         private PdfDocumentManager _pdfManager => _activeTab?.PdfManager ?? new PdfDocumentManager();
         private ObservableCollection<PageThumbnailData> _pageThumbnails => _activeTab?.PageThumbnails ?? new ObservableCollection<PageThumbnailData>();
         private List<PdfAnnotation> _annotations => _activeTab?.Annotations ?? new List<PdfAnnotation>();
@@ -91,33 +80,22 @@ namespace PDF_simple_edit
         private ToggleButton BtnHighlight => EditorToolbar.HighlightButton;
         private ToggleButton BtnSignature => EditorToolbar.SignatureButton;
         private Border SignatureColorIndicator => EditorToolbar.SignatureColorIndicator;
-        private Flyout SignatureSettingsFlyout => EditorToolbar.SignatureSettingsFlyout;
         private ColorPicker SignatureColorPicker => EditorToolbar.SignatureColorPicker;
         private Slider SldSignatureWidth => EditorToolbar.SignatureWidthSlider;
         private TextBlock TxtSignatureWidth => EditorToolbar.SignatureWidthText;
         private Button BtnSignatureSettings => EditorToolbar.SignatureSettingsButton;
         private Border HighlightColorIndicator => EditorToolbar.HighlightIndicator;
-        private Flyout HighlightFlyout => EditorToolbar.HighlightSettingsFlyout;
         private ColorPicker HighlightColorPicker => EditorToolbar.HighlightPicker;
         private Slider SldHighlightOpacity => EditorToolbar.HighlightOpacitySlider;
         private TextBlock TxtHighlightOpacity => EditorToolbar.HighlightOpacityText;
         private Button BtnHighlightSettings => EditorToolbar.HighlightSettingsButton;
         private ToggleButton BtnColorPicker => EditorToolbar.ColorPickerButton;
         private Button BtnAddImage => EditorToolbar.AddImageButton;
-        private StackPanel FontToolbar => EditorToolbar.FontControls;
-        private ComboBox CmbFontFamily => EditorToolbar.FontFamilyComboBox;
-        private ComboBox CmbFontSize => EditorToolbar.FontSizeComboBox;
-        private ToggleButton BtnBold => EditorToolbar.BoldButton;
-        private ToggleButton BtnItalic => EditorToolbar.ItalicButton;
-        private DropDownButton BtnFontColor => EditorToolbar.FontColorButton;
-        private Border FontColorIndicator => EditorToolbar.FontColorIndicatorElement;
-        private GridView ColorPalette => EditorToolbar.ColorPaletteGrid;
         private TextBlock TxtZoom => EditorToolbar.ZoomText;
 
         private ListView PageListView => PagePanel.ListView;
         private StackPanel WelcomePanel => PdfSurface.Welcome;
         private ScrollViewer PdfScrollViewer => PdfSurface.Viewer;
-        private Grid PdfContentGrid => PdfSurface.ContentGrid;
         private Image PdfPageImage => PdfSurface.PageImage;
         private Canvas OverlayCanvas => PdfSurface.AnnotationCanvas;
         private ProgressRing LoadingRing => PdfSurface.LoadingIndicator;
@@ -135,7 +113,6 @@ namespace PDF_simple_edit
 
         public MainWindow()
         {
-            _pdfSaveService = new PdfSaveService(new PdfAnnotationDocumentService());
             try
             {
                 // XAML 컨트롤이 생성될 때 SelectionChanged가 발생할 수 있으므로
@@ -177,8 +154,6 @@ namespace PDF_simple_edit
                             Content.Focus(FocusState.Programmatic);
                         }
                     });
-                _annotationCanvasController.PrimarySelectionChanged +=
-                    SyncFontControlsWithSelection;
                 _pageViewController = new PageViewController(
                     _pageRenderService,
                     PageListView,
@@ -207,17 +182,44 @@ namespace PDF_simple_edit
                     () => _annotations,
                     () => _currentPageIndex,
                     RenderCurrentPageAsync);
+                _clipboardController = new AnnotationClipboardController(
+                    _annotationCanvasController, _fontSettings, TxtStatus,
+                    () => _pdfManager, () => _annotations, () => _currentPageIndex,
+                    DeleteSelectedAnnotationsAsync, SetToolMode);
+                _imageController = new EditorImageController(
+                    _annotationCanvasController, new PdfImageExtractionService(), TxtStatus, LoadingRing,
+                    () => _pdfManager, () => _annotations, () => _currentPageIndex,
+                    () => WindowNative.GetWindowHandle(this), SetToolMode, ShowErrorDialogAsync);
+                _fontController = new EditorFontController(
+                    EditorToolbar, _annotationCanvasController, _annotationEditController,
+                    _fontSettings, TxtStatus, () => _pdfManager, () => _annotations,
+                    () => _windowSettingsController?.Save());
+                _pageOperationsController = new PdfPageOperationsController(
+                    new PdfOperationService(), TxtStatus, LoadingRing,
+                    () => _pdfManager, () => _activeTab, () => _currentPageIndex,
+                    value => _currentPageIndex = value, GetSelectedPageIndices,
+                    () => PageListView.SelectedItems.Clear(),
+                    AddDocumentTab,
+                    () => WindowNative.GetWindowHandle(this), () => Content.XamlRoot,
+                    UpdateUIState, ShowErrorDialogAsync);
                 _windowSettingsController = new WindowSettingsController(
                     this,
                     new EditorSettingsService(),
                     _fontSettings,
-                    ApplyFontSettingsToControls);
+                    _fontController.ApplySettings);
+                _fileController = new DocumentFileController(
+                    _dialogService, new PdfSaveService(new PdfAnnotationDocumentService()),
+                    new PrintHelper(), TxtStatus, LoadingRing,
+                    () => _pdfManager, () => _annotations, () => _activeTab,
+                    AddDocumentTab, AddToRecentFiles,
+                    () => WindowNative.GetWindowHandle(this), () => Content.XamlRoot,
+                    _annotationCanvasController.FinishActiveInlineEditAsync,
+                    RenderCurrentPageAsync, UpdateUIState, ShowErrorDialogAsync);
                 _recentFilesController = new RecentFilesController(
                     new RecentFilesService(),
-                    MenuRecentFiles,
-                    OpenPdfFileAsync,
+                    EditorMenu.RecentFilesMenu,
+                    _fileController.OpenPdfFileAsync,
                     ShowErrorDialogAsync);
-                AddInstalledNotoFonts();
                 WireChildControlEvents();
                 DocTabView.TabItemsSource = _tabs;
                 // TextBox 내부 처리로 이미 Handled 된 키도 편집 확정 로직에서
@@ -244,9 +246,6 @@ namespace PDF_simple_edit
                 // 한 번 그려진 뒤 이동하는 현상이 발생합니다.
                 LoadWindowPosition();
 
-                // Initialize color palette programmatically
-                EditorColorService.PopulatePalette(ColorPalette);
-
                 // Initialize Highlight UI
                 HighlightColorPicker.Color = ParseColor(_fontSettings.HighlightColor);
                 SldHighlightOpacity.Value = _fontSettings.HighlightOpacity;
@@ -258,7 +257,6 @@ namespace PDF_simple_edit
                 TxtSignatureWidth.Text = $"{_signatureLineWidth:0.#} pt";
 
                 _recentFilesController.Load();
-                InitializeZoomAccelerators();
 
                 Activated += MainWindow_Activated;
                 Closed += MainWindow_Closed;
@@ -365,17 +363,17 @@ namespace PDF_simple_edit
                 _activeTab.PdfManager.PageStructureChanged += PdfManager_PageStructureChanged;
                 _activeTab.PdfManager.ModifiedStateChanged += PdfManager_ModifiedStateChanged;
                 _activeTab.PdfManager.UndoRedoPerformed += PdfManager_UndoRedoPerformed;
-                
+
                 // 설정: 원복 시 복원할 UI 상태(어노테이션 목록) 제공 함수
                 _activeTab.PdfManager.GetUIStateFunc = () => {
                     return _activeTab.Annotations.Select(a => a.Clone()).ToList();
                 };
 
                 PageListView.ItemsSource = _pageThumbnails;
-                
+
                 UpdateUIState();
                 UpdateTitleBar();
-                
+
                 if (_activeTab.PdfManager.IsLoaded)
                 {
                     // Manually trigger refresh logic for current view
@@ -393,9 +391,41 @@ namespace PDF_simple_edit
 
         #endregion
 
+        private void ExecuteMenuCommand(EditorMenuCommand command)
+        {
+            switch (command)
+            {
+                case EditorMenuCommand.NewDocument: NewDocument_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.OpenFile: OpenFile_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.SaveFile: SaveFile_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.SaveAsFile: SaveAsFile_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.Print: Print_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.CloseFile: CloseFile_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.Undo: Undo_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.Redo: Redo_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.Find: Find_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.ZoomIn: ZoomIn_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.ZoomOut: ZoomOut_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.FitToPage: FitToPage_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.TogglePagePanel: TogglePagePanel_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.SelectTool: SelectTool_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.AddTextTool: AddTextTool_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.HighlightTool: HighlightTool_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.SignatureTool: SignatureTool_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.AddImageTool: AddImageTool_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.ExtractAllImages: ExtractAllImages_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.MergePdf: MergePdf_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.SplitPdf: SplitPdf_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.DeletePage: DeletePage_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.Settings: Settings_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.About: About_Click(EditorMenu, new RoutedEventArgs()); break;
+            }
+        }
+
         private void WireChildControlEvents()
         {
-            EditorToolbar.TextEditingModeComboBox.SelectionChanged += TextEditingMode_Changed;
+            EditorMenu.CommandRequested += ExecuteMenuCommand;
+            EditorMenu.ToolAcceleratorInvoked += ToolAccelerator_Invoked;
             BtnOpen.Click += OpenFile_Click;
             BtnSave.Click += SaveFile_Click;
             BtnSaveAs.Click += SaveAsFile_Click;
@@ -414,11 +444,6 @@ namespace PDF_simple_edit
             SldHighlightOpacity.ValueChanged += HighlightOpacity_Changed;
             SignatureColorPicker.ColorChanged += SignatureColorPicker_ColorChanged;
             SldSignatureWidth.ValueChanged += SignatureWidth_Changed;
-            CmbFontFamily.SelectionChanged += FontFamily_Changed;
-            CmbFontSize.SelectionChanged += FontSize_Changed;
-            BtnBold.Click += FontBold_Click;
-            BtnItalic.Click += FontItalic_Click;
-            ColorPalette.SelectionChanged += FontColor_Changed;
             EditorToolbar.ZoomOutButton.Click += ZoomOut_Click;
             EditorToolbar.ZoomInButton.Click += ZoomIn_Click;
             EditorToolbar.FitToPageButton.Click += FitToPage_Click;
@@ -471,149 +496,6 @@ namespace PDF_simple_edit
             BtnPrevPage.Click += PrevPage_Click;
             BtnNextPage.Click += NextPage_Click;
             TxtGoToPage.KeyDown += GoToPage_KeyDown;
-        }
-
-        private void AddInstalledNotoFonts()
-        {
-            var existingFamilies = CmbFontFamily.Items
-                .OfType<ComboBoxItem>()
-                .Select(item => item.Content?.ToString())
-                .Where(family => !string.IsNullOrWhiteSpace(family))
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            foreach (string family in InstalledFontService.GetInstalledNotoFamilies())
-            {
-                if (existingFamilies.Add(family))
-                    CmbFontFamily.Items.Add(new ComboBoxItem { Content = family });
-            }
-        }
-
-        private void ApplyFontSettingsToControls()
-        {
-            if (!_changingTextMode)
-                EditorToolbar.TextEditingModeComboBox.SelectedIndex = (int)_fontSettings.TextEditingMode;
-            _pdfManager.TextEditingMode = _fontSettings.TextEditingMode;
-            ApplyFontValuesToControls(
-                _fontSettings.FontFamily,
-                _fontSettings.FontSize,
-                _fontSettings.IsBold,
-                _fontSettings.IsItalic,
-                _fontSettings.Color);
-        }
-
-        private bool _changingTextMode;
-        private async void TextEditingMode_Changed(object sender, SelectionChangedEventArgs e)
-        {
-            if (_changingTextMode) return;
-            var mode = (TextEditingMode)EditorToolbar.TextEditingModeComboBox.SelectedIndex;
-            if (!Enum.IsDefined(mode)) return;
-            EditorToolbar.TextEditingModeDescription.Text = mode == TextEditingMode.PreserveOriginal
-                ? "원본 글꼴로 문단 편집 · 드래그 범위 선택 · Alt+드래그 이동"
-                : "글꼴·크기 변경 가능 · 원본 텍스트를 교체하여 편집";
-            if (_fontSettings.TextEditingMode == mode) return;
-            _changingTextMode = true;
-            EditorToolbar.TextEditingModeComboBox.IsEnabled = false;
-            try
-            {
-                if (_annotationCanvasController != null)
-                    await _annotationCanvasController.FinishActiveInlineEditAsync();
-                _fontSettings.TextEditingMode = mode;
-                _pdfManager.TextEditingMode = mode;
-                // Selection handles describe one extraction mode. Pending rewritten
-                // annotations are edits and must survive a mode change.
-                _annotations.RemoveAll(a => a.IsOriginalTextReplacement);
-                _annotationCanvasController?.ClearSelection();
-                _annotationCanvasController?.Render();
-                _windowSettingsController?.Save();
-                TxtStatus.Text = mode == TextEditingMode.PreserveOriginal
-                    ? "원본 보존 방식으로 전환했습니다. 텍스트를 다시 선택해 주세요."
-                    : "대체 방식으로 전환했습니다. 텍스트를 다시 선택해 주세요.";
-            }
-            catch (Exception error) { TxtStatus.Text = error.Message; }
-            finally
-            {
-                _changingTextMode = false;
-                EditorToolbar.TextEditingModeComboBox.SelectedIndex = (int)_fontSettings.TextEditingMode;
-                EditorToolbar.TextEditingModeComboBox.IsEnabled = true;
-            }
-        }
-
-        private void SyncFontControlsWithSelection(PdfAnnotation? annotation)
-        {
-            if (annotation?.Type is AnnotationType.Text or AnnotationType.FreeText)
-            {
-                ApplyFontValuesToControls(
-                    annotation.FontFamily,
-                    annotation.FontSize,
-                    annotation.IsBold,
-                    annotation.IsItalic,
-                    annotation.Color);
-                return;
-            }
-
-            ApplyFontSettingsToControls();
-        }
-
-        private void ApplyFontValuesToControls(
-            string fontFamily,
-            double fontSize,
-            bool isBold,
-            bool isItalic,
-            string color)
-        {
-            _isSyncingFontControls = true;
-            try
-            {
-                if (CmbFontFamily != null && !string.IsNullOrWhiteSpace(fontFamily))
-                {
-                    ComboBoxItem? fontItem = CmbFontFamily.Items
-                        .OfType<ComboBoxItem>()
-                        .FirstOrDefault(item => string.Equals(
-                            item.Content?.ToString(),
-                            fontFamily,
-                            StringComparison.OrdinalIgnoreCase));
-                    if (fontItem == null)
-                    {
-                        fontItem = new ComboBoxItem { Content = fontFamily };
-                        CmbFontFamily.Items.Add(fontItem);
-                    }
-
-                    if (!ReferenceEquals(CmbFontFamily.SelectedItem, fontItem))
-                        CmbFontFamily.SelectedItem = fontItem;
-                }
-
-                if (CmbFontSize != null && double.IsFinite(fontSize) && fontSize > 0)
-                {
-                    string sizeText = fontSize.ToString("0.##", CultureInfo.InvariantCulture);
-                    ComboBoxItem? sizeItem = CmbFontSize.Items
-                        .OfType<ComboBoxItem>()
-                        .FirstOrDefault(item => double.TryParse(
-                                item.Content?.ToString(),
-                                NumberStyles.Float,
-                                CultureInfo.InvariantCulture,
-                                out double itemSize) &&
-                            Math.Abs(itemSize - fontSize) < 0.005);
-                    if (sizeItem == null)
-                    {
-                        sizeItem = new ComboBoxItem { Content = sizeText };
-                        CmbFontSize.Items.Add(sizeItem);
-                    }
-
-                    if (!ReferenceEquals(CmbFontSize.SelectedItem, sizeItem))
-                        CmbFontSize.SelectedItem = sizeItem;
-                }
-
-                if (BtnBold != null)
-                    BtnBold.IsChecked = isBold;
-                if (BtnItalic != null)
-                    BtnItalic.IsChecked = isItalic;
-                if (FontColorIndicator != null)
-                    FontColorIndicator.Background = new SolidColorBrush(ParseColor(color));
-            }
-            finally
-            {
-                _isSyncingFontControls = false;
-            }
         }
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
@@ -690,10 +572,10 @@ namespace PDF_simple_edit
                     {
                         _activeTab.Annotations.Add(ann);
                     }
-                    
+
                     // UI 갱신
                     RenderAnnotationOverlays();
-                    
+
                     // 만약 Undo로 인해 원본 PDF 데이터가 바뀌었다면 렌더링 다시 수행
                     await RenderCurrentPageAsync();
                 });
@@ -714,23 +596,10 @@ namespace PDF_simple_edit
         private void UpdateUIState()
         {
             bool hasDoc = _pdfManager.IsLoaded;
+            EditorMenu.UpdateDocumentState(hasDoc, _pdfManager.CanUndo, _pdfManager.CanRedo);
 
             WelcomePanel.Visibility = hasDoc ? Visibility.Collapsed : Visibility.Visible;
             PdfScrollViewer.Visibility = hasDoc ? Visibility.Visible : Visibility.Collapsed;
-
-            MenuSave.IsEnabled = hasDoc;
-            MenuSaveAs.IsEnabled = hasDoc;
-            MenuPrint.IsEnabled = hasDoc;
-            MenuClose.IsEnabled = hasDoc;
-            MenuFind.IsEnabled = hasDoc;
-            MenuSelect.IsEnabled = hasDoc;
-            MenuAddText.IsEnabled = hasDoc;
-            MenuHighlight.IsEnabled = hasDoc;
-            MenuSignature.IsEnabled = hasDoc;
-            MenuAddImage.IsEnabled = hasDoc;
-            MenuExtractImages.IsEnabled = hasDoc;
-            MenuSplitPdf.IsEnabled = hasDoc;
-            MenuDeletePage.IsEnabled = hasDoc;
 
             int selectedPageCount = GetSelectedPageIndices().Count;
             PagePanel.ExtractMenuItem.IsEnabled = hasDoc && selectedPageCount > 0;
@@ -750,9 +619,6 @@ namespace PDF_simple_edit
             BtnSignatureSettings.IsEnabled = hasDoc;
             BtnColorPicker.IsEnabled = hasDoc;
             BtnAddImage.IsEnabled = hasDoc;
-
-            MenuUndo.IsEnabled = hasDoc && _pdfManager.CanUndo;
-            MenuRedo.IsEnabled = hasDoc && _pdfManager.CanRedo;
 
             BtnPrevPage.IsEnabled = hasDoc && _currentPageIndex > 0;
             BtnNextPage.IsEnabled = hasDoc && _currentPageIndex < _pdfManager.PageCount - 1;
@@ -818,7 +684,7 @@ namespace PDF_simple_edit
                         var oldActive = _activeTab;
                         _activeTab = tab;
                         SaveFile_Click(this, null);
-                        // Restoring _activeTab might be tricky if we are closing, 
+                        // Restoring _activeTab might be tricky if we are closing,
                         // but since we close after the loop it's fine.
                     }
                     _isBypassingClosingCheck = true;
@@ -850,95 +716,19 @@ namespace PDF_simple_edit
 
         #endregion
 
+        private void AddDocumentTab(PdfDocumentTab tab)
+        {
+            _tabs.Add(tab);
+            DocTabView.SelectedItem = tab;
+        }
+
+        private void NewDocument_Click(object sender, RoutedEventArgs? e) => _fileController.NewDocument();
+        private async void OpenFile_Click(object sender, RoutedEventArgs? e) => await _fileController.OpenFilesAsync();
+        private async void SaveFile_Click(object sender, RoutedEventArgs? e) => await _fileController.SaveAsync();
+        private async void SaveAsFile_Click(object sender, RoutedEventArgs? e) => await _fileController.SaveAsAsync();
+        private async void Print_Click(object sender, RoutedEventArgs? e) => await _fileController.PrintAsync();
+
         #region File Operations
-
-        private async void NewDocument_Click(object sender, RoutedEventArgs? e)
-        {
-            var newTab = new PdfDocumentTab { Header = "새 문서" };
-            newTab.PdfManager.NewDocument();
-            
-            _tabs.Add(newTab);
-            DocTabView.SelectedItem = newTab;
-            
-            // SelectionChanged will handle the rest
-        }
-
-        private async void OpenFile_Click(object sender, RoutedEventArgs? e)
-        {
-            var picker = new FileOpenPicker();
-            picker.FileTypeFilter.Add(".pdf");
-            picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
-
-            var hwnd = WindowNative.GetWindowHandle(this);
-            InitializeWithWindow.Initialize(picker, hwnd);
-
-            var files = await picker.PickMultipleFilesAsync();
-            if (files != null && files.Count > 0)
-            {
-                foreach (var file in files)
-                {
-                    await OpenPdfFileInNewTabAsync(file);
-                }
-            }
-        }
-
-        private async Task OpenPdfFileInNewTabAsync(StorageFile file)
-        {
-            LoadingRing.IsActive = true;
-            TxtStatus.Text = "파일을 여는 중...";
-
-            try
-            {
-                var newTab = new PdfDocumentTab 
-                { 
-                    Header = file.Name,
-                    FilePath = file.Path
-                };
-                
-                PdfOpenStatus status = await newTab.PdfManager.OpenWithPasswordAsync(file.Path, null);
-                bool isRetry = false;
-                while (status is PdfOpenStatus.PasswordRequired or PdfOpenStatus.WrongPassword)
-                {
-                    TxtStatus.Text = "암호 입력 대기 중...";
-                    string? password = await _dialogService.ShowPasswordPromptAsync(Content.XamlRoot, file.Name, isRetry);
-                    if (password == null)
-                    {
-                        // 사용자가 암호 입력을 취소하면 파일을 열지 않는다.
-                        TxtStatus.Text = "파일 열기가 취소되었습니다.";
-                        return;
-                    }
-
-                    status = await newTab.PdfManager.OpenWithPasswordAsync(file.Path, password);
-                    isRetry = true;
-                }
-
-                if (status == PdfOpenStatus.Success)
-                {
-                    newTab.Annotations.AddRange(await Task.Run(newTab.PdfManager.LoadSavedSignatures));
-                    _tabs.Add(newTab);
-                    DocTabView.SelectedItem = newTab;
-                    AddToRecentFiles(file.Path);
-                }
-                else
-                {
-                    await ShowErrorDialogAsync("오류", "PDF 파일을 열 수 없습니다.");
-                }
-            }
-            catch (Exception ex)
-            {
-                await ShowErrorDialogAsync("오류", $"파일을 여는 중 오류가 발생했습니다: {ex.Message}");
-            }
-            finally
-            {
-                LoadingRing.IsActive = false;
-            }
-        }
-
-        // Keep this for compatibility if called elsewhere, but update to create tab
-        private async Task OpenPdfFileAsync(StorageFile file)
-        {
-            await OpenPdfFileInNewTabAsync(file);
-        }
 
         private bool IsPageListDrag(DragEventArgs e) =>
             _pageViewController.IsPageListDrag(e);
@@ -996,43 +786,7 @@ namespace PDF_simple_edit
             var items = await e.DataView.GetStorageItemsAsync();
             if (items.Count > 0 && items[0] is StorageFile file && file.FileType.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
             {
-                await OpenPdfFileAsync(file);
-            }
-        }
-
-        private async void SaveFile_Click(object sender, RoutedEventArgs? e)
-        {
-            if (!_pdfManager.IsLoaded) return;
-
-            if (_pdfManager.FilePath != null)
-            {
-                string filePath = _pdfManager.FilePath;
-                if (await PerformSaveAsync(filePath, true))
-                    AddToRecentFiles(filePath);
-            }
-            else
-            {
-                SaveAsFile_Click(sender, e);
-            }
-        }
-
-        private async void SaveAsFile_Click(object sender, RoutedEventArgs? e)
-        {
-            if (!_pdfManager.IsLoaded) return;
-
-            var picker = new FileSavePicker();
-            picker.FileTypeChoices.Add("PDF 파일", new List<string> { ".pdf" });
-            picker.SuggestedFileName = _pdfManager.FilePath != null
-                ? Path.GetFileName(_pdfManager.FilePath) : "새문서.pdf";
-
-            var hwnd = WindowNative.GetWindowHandle(this);
-            InitializeWithWindow.Initialize(picker, hwnd);
-
-            var file = await picker.PickSaveFileAsync();
-            if (file != null)
-            {
-                if (await PerformSaveAsync(file.Path, true))
-                    AddToRecentFiles(file.Path);
+                await _fileController.OpenPdfFileAsync(file);
             }
         }
 
@@ -1041,27 +795,6 @@ namespace PDF_simple_edit
             if (_activeTab != null)
             {
                 _tabs.Remove(_activeTab);
-            }
-        }
-
-        private async void Print_Click(object sender, RoutedEventArgs? e)
-        {
-            if (!_pdfManager.IsLoaded) return;
-
-            try
-            {
-                // 인쇄 시에는 현재 모든 어노테이션이 반영된 상태여야 하므로 임시 파일로 플래트닝하여 저장
-                string tempPath = Path.Combine(Path.GetTempPath(), $"print_{Guid.NewGuid()}.pdf");
-                if (!await PerformSaveAsync(tempPath, false))
-                    return;
-
-                var hwnd = WindowNative.GetWindowHandle(this);
-                // PerformSaveAsync handles iText 9 document flushing
-                await _printHelper.PrintAsync(tempPath, hwnd);
-            }
-            catch (Exception ex)
-            {
-                await ShowErrorDialogAsync("인쇄 오류", $"인쇄 중 오류가 발생했습니다: {ex.Message}");
             }
         }
 
@@ -1139,27 +872,6 @@ namespace PDF_simple_edit
         private void PdfScrollViewer_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e) =>
             _pageViewController.ViewChanged();
 
-        private void InitializeZoomAccelerators()
-        {
-            // 확대 (+ or =)
-            var keysIn = new[] { Windows.System.VirtualKey.Add, (Windows.System.VirtualKey)187 };
-            foreach (var key in keysIn)
-            {
-                var acc = new KeyboardAccelerator { Key = key };
-                acc.Invoked += ToolAccelerator_Invoked;
-                MenuZoomIn.KeyboardAccelerators.Add(acc);
-            }
-
-            // 축소 (-)
-            var keysOut = new[] { Windows.System.VirtualKey.Subtract, (Windows.System.VirtualKey)189 };
-            foreach (var key in keysOut)
-            {
-                var acc = new KeyboardAccelerator { Key = key };
-                acc.Invoked += ToolAccelerator_Invoked;
-                MenuZoomOut.KeyboardAccelerators.Add(acc);
-            }
-        }
-
         #endregion
 
         #region Tool Modes
@@ -1167,17 +879,13 @@ namespace PDF_simple_edit
         private void SetToolMode(EditToolMode mode)
         {
             _currentTool = mode;
+            EditorMenu.SetToolMode(mode);
 
             BtnSelect.IsChecked = mode == EditToolMode.Select;
             BtnAddText.IsChecked = mode == EditToolMode.AddText;
             BtnHighlight.IsChecked = mode == EditToolMode.Highlight;
             BtnSignature.IsChecked = mode == EditToolMode.Signature;
             BtnColorPicker.IsChecked = mode == EditToolMode.ColorPicker;
-            
-            if (MenuSelect != null) MenuSelect.IsChecked = mode == EditToolMode.Select;
-            if (MenuAddText != null) MenuAddText.IsChecked = mode == EditToolMode.AddText;
-            if (MenuHighlight != null) MenuHighlight.IsChecked = mode == EditToolMode.Highlight;
-            if (MenuSignature != null) MenuSignature.IsChecked = mode == EditToolMode.Signature;
 
             TxtToolMode.Text = mode switch
             {
@@ -1273,109 +981,10 @@ namespace PDF_simple_edit
             }
         }
 
-        private async void AddImageTool_Click(object sender, RoutedEventArgs e)
-        {
-            if (!_pdfManager.IsLoaded) return;
-
-            var picker = new FileOpenPicker();
-            picker.FileTypeFilter.Add(".png");
-            picker.FileTypeFilter.Add(".jpg");
-            picker.FileTypeFilter.Add(".jpeg");
-            picker.FileTypeFilter.Add(".bmp");
-
-            var hwnd = WindowNative.GetWindowHandle(this);
-            InitializeWithWindow.Initialize(picker, hwnd);
-
-            var file = await picker.PickSingleFileAsync();
-            if (file != null)
-            {
-                var pageSize = _pdfManager.GetPageSize(_currentPageIndex);
-                var imageProperties = await file.Properties.GetImagePropertiesAsync();
-                (double w, double h) = CalculateInitialImageSize(
-                    imageProperties.Width,
-                    imageProperties.Height,
-                    pageSize.width,
-                    pageSize.height);
-                double x = (pageSize.width - w) / 2;
-                double y = (pageSize.height - h) / 2;
-
-                var imageAnnotation = new PdfAnnotation
-                {
-                    Type = AnnotationType.Image,
-                    PageIndex = _currentPageIndex,
-                    X = x,
-                    Y = y,
-                    Width = w,
-                    Height = h,
-                    ImagePath = file.Path,
-                    IsApplied = false
-                };
-                _annotations.Add(imageAnnotation);
-                _pdfManager.MarkModified();
-
-                // 이미지를 추가한 뒤 바로 핸들이 보이도록 선택 도구로 전환하고
-                // 새 이미지를 선택 상태로 둡니다.
-                SetToolMode(EditToolMode.Select);
-                _annotationCanvasController.SelectOnly(imageAnnotation);
-                TxtStatus.Text = "이미지가 추가되었습니다 (저장 시 반영)";
-                RenderAnnotationOverlays();
-            }
-        }
-
-        private async void ExtractAllImages_Click(object sender, RoutedEventArgs e)
-        {
-            byte[]? pdfBytes = _pdfManager.GetPdfBytes();
-            if (pdfBytes == null)
-                return;
-
-            var picker = new FolderPicker
-            {
-                SuggestedStartLocation = PickerLocationId.PicturesLibrary
-            };
-            picker.FileTypeFilter.Add("*");
-            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
-
-            StorageFolder? folder = await picker.PickSingleFolderAsync();
-            if (folder == null)
-                return;
-
-            string documentName = !string.IsNullOrWhiteSpace(_pdfManager.FilePath)
-                ? Path.GetFileNameWithoutExtension(_pdfManager.FilePath)
-                : "document";
-
-            TxtStatus.Text = "이미지 추출 중...";
-            LoadingRing.IsActive = true;
-            try
-            {
-                PdfImageExtractionResult result = await _pdfImageExtractionService.ExtractAllAsync(
-                    pdfBytes,
-                    folder.Path,
-                    documentName);
-
-                TxtStatus.Text = result switch
-                {
-                    { SavedCount: 0, FailedCount: 0 } => "추출할 이미지가 없습니다.",
-                    { FailedCount: 0 } => $"이미지 추출 완료: {result.SavedCount}개",
-                    _ => $"이미지 {result.SavedCount}개 추출, {result.FailedCount}개 실패"
-                };
-            }
-            catch (Exception ex)
-            {
-                await ShowErrorDialogAsync(
-                    "이미지 추출 오류",
-                    $"이미지 추출 중 오류가 발생했습니다: {ex.Message}");
-                TxtStatus.Text = "이미지 추출에 실패했습니다.";
-            }
-            finally
-            {
-                LoadingRing.IsActive = false;
-            }
-        }
-
         private void AnnotationContextMenu_Opening(object? sender, object e)
         {
             int selectedCount = _annotationCanvasController.SelectedAnnotations.Count;
-            int copyableCount = GetCopyableSelection().Count;
+            int copyableCount = _clipboardController.GetCopyableSelection().Count;
             bool hasCopyableSelection = copyableCount > 0;
             PdfSurface.CopyItem.Visibility = hasCopyableSelection
                 ? Visibility.Visible
@@ -1383,7 +992,7 @@ namespace PDF_simple_edit
             PdfSurface.CutItem.Visibility = hasCopyableSelection && copyableCount == selectedCount
                 ? Visibility.Visible
                 : Visibility.Collapsed;
-            PdfSurface.PasteItem.IsEnabled = CanPasteClipboardContent();
+            PdfSurface.PasteItem.IsEnabled = AnnotationClipboardController.CanPasteClipboardContent();
 
             PdfAnnotation? selectedImage = _annotationCanvasController.SelectedAnnotations.Count == 1
                 ? _annotationCanvasController.SelectedAnnotations[0]
@@ -1394,415 +1003,24 @@ namespace PDF_simple_edit
         }
 
         private async void CopySelectedObjects_Click(object sender, RoutedEventArgs e) =>
-            await CopySelectedObjectsAsync();
-
-        private async void CutSelectedObjects_Click(object sender, RoutedEventArgs e) =>
-            await CutSelectedObjectsAsync();
-
-        private async Task<bool> CutSelectedObjectsAsync()
-        {
-            List<PdfAnnotation> selectedObjects = GetCopyableSelection();
-            if (selectedObjects.Count == 0 ||
-                selectedObjects.Count != _annotationCanvasController.SelectedAnnotations.Count)
-            {
-                return false;
-            }
-
-            if (!await CopySelectedObjectsAsync())
-                return false;
-
-            if (!await DeleteSelectedAnnotationsAsync())
-                return false;
-
-            TxtStatus.Text = selectedObjects.Count > 1
-                ? $"{selectedObjects.Count}개 객체를 잘라냈습니다."
-                : selectedObjects[0].Type == AnnotationType.Image
-                    ? "이미지를 잘라냈습니다."
-                    : "텍스트를 잘라냈습니다.";
-            return true;
-        }
-
-        private async Task<bool> CopySelectedObjectsAsync()
-        {
-            List<PdfAnnotation> selectedObjects = GetCopyableSelection();
-            if (selectedObjects.Count == 0)
-                return false;
-
-            try
-            {
-                var dataPackage = new DataPackage
-                {
-                    RequestedOperation = DataPackageOperation.Copy
-                };
-                dataPackage.SetData(
-                    AnnotationClipboardFormat,
-                    JsonSerializer.Serialize(selectedObjects.Select(annotation => annotation.Clone())));
-
-                List<PdfAnnotation> selectedText = selectedObjects
-                    .Where(IsTextAnnotation)
-                    .ToList();
-                if (selectedText.Count > 0)
-                {
-                    dataPackage.SetText(string.Join(
-                        Environment.NewLine,
-                        selectedText.Select(annotation => annotation.Content)));
-                }
-
-                PdfAnnotation? selectedImage = selectedObjects.FirstOrDefault(annotation =>
-                    annotation.Type == AnnotationType.Image &&
-                    !string.IsNullOrWhiteSpace(annotation.ImagePath) &&
-                    File.Exists(annotation.ImagePath));
-                if (selectedImage?.ImagePath != null)
-                {
-                    StorageFile imageFile = await StorageFile.GetFileFromPathAsync(selectedImage.ImagePath);
-                    dataPackage.SetBitmap(RandomAccessStreamReference.CreateFromFile(imageFile));
-                }
-
-                Clipboard.SetContent(dataPackage);
-                Clipboard.Flush();
-                TxtStatus.Text = selectedObjects.Count > 1
-                    ? $"{selectedObjects.Count}개 객체를 클립보드에 복사했습니다."
-                    : selectedObjects[0].Type == AnnotationType.Image
-                        ? "이미지를 클립보드에 복사했습니다."
-                        : "텍스트를 클립보드에 복사했습니다.";
-                return true;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Clipboard copy error: {ex}");
-                TxtStatus.Text = "클립보드에 복사하지 못했습니다.";
-                return false;
-            }
-        }
+            await _clipboardController.CopySelectedObjectsAsync();
 
         private async void Paste_Click(object sender, RoutedEventArgs e) =>
-            await PasteClipboardContentAsync();
+            await _clipboardController.PasteClipboardContentAsync();
 
-        private async Task<bool> PasteClipboardContentAsync()
-        {
-            if (!_pdfManager.IsLoaded)
-                return false;
-
-            try
-            {
-                DataPackageView clipboardContent = Clipboard.GetContent();
-                if (clipboardContent.Contains(AnnotationClipboardFormat))
-                {
-                    object data = await clipboardContent.GetDataAsync(AnnotationClipboardFormat);
-                    if (data is string json)
-                    {
-                        List<PdfAnnotation>? annotations =
-                            JsonSerializer.Deserialize<List<PdfAnnotation>>(json);
-                        if (annotations != null && PasteAnnotationObjects(annotations))
-                            return true;
-                    }
-                }
-
-                if (clipboardContent.Contains(StandardDataFormats.Bitmap))
-                {
-                    RandomAccessStreamReference bitmapReference =
-                        await clipboardContent.GetBitmapAsync();
-                    ClipboardImageData image = await SaveClipboardImageAsync(bitmapReference);
-                    AddPastedAnnotations(new[] { CreateImageAnnotation(image) });
-                    TxtStatus.Text = "이미지를 새 객체로 붙여넣었습니다.";
-                    return true;
-                }
-
-                if (clipboardContent.Contains(StandardDataFormats.Text))
-                {
-                    string text = await clipboardContent.GetTextAsync();
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        AddPastedAnnotations(new[] { CreateTextAnnotation(text) });
-                        TxtStatus.Text = "텍스트를 새 객체로 붙여넣었습니다.";
-                        return true;
-                    }
-                }
-
-                TxtStatus.Text = "붙여넣을 수 있는 텍스트나 이미지가 없습니다.";
-                return false;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Clipboard paste error: {ex}");
-                TxtStatus.Text = "클립보드 내용을 붙여넣지 못했습니다.";
-                return false;
-            }
-        }
-
-        private List<PdfAnnotation> GetCopyableSelection() =>
-            _annotationCanvasController.SelectedAnnotations
-                .Where(annotation =>
-                    IsTextAnnotation(annotation)
-                        ? !string.IsNullOrWhiteSpace(annotation.Content)
-                        : annotation.Type == AnnotationType.Image &&
-                          !string.IsNullOrWhiteSpace(annotation.ImagePath) &&
-                          File.Exists(annotation.ImagePath))
-                .OrderBy(annotation => annotation.PageIndex)
-                .ThenBy(annotation => annotation.Y)
-                .ThenBy(annotation => annotation.X)
-                .ToList();
-
-        private static bool IsTextAnnotation(PdfAnnotation annotation) =>
-            annotation.Type is AnnotationType.Text or AnnotationType.FreeText;
-
-        private static bool CanPasteClipboardContent()
-        {
-            try
-            {
-                DataPackageView content = Clipboard.GetContent();
-                return content.Contains(AnnotationClipboardFormat) ||
-                    content.Contains(StandardDataFormats.Text) ||
-                    content.Contains(StandardDataFormats.Bitmap);
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private bool PasteAnnotationObjects(IEnumerable<PdfAnnotation> sourceAnnotations)
-        {
-            (double pageWidth, double pageHeight) = _pdfManager.GetPageSize(_currentPageIndex);
-            var pasted = new List<PdfAnnotation>();
-            foreach (PdfAnnotation source in sourceAnnotations.Where(annotation =>
-                IsTextAnnotation(annotation) || annotation.Type == AnnotationType.Image))
-            {
-                if (source.Type == AnnotationType.Image &&
-                    (string.IsNullOrWhiteSpace(source.ImagePath) || !File.Exists(source.ImagePath)))
-                {
-                    continue;
-                }
-
-                PdfAnnotation annotation = source.Clone();
-                PreparePastedAnnotation(annotation);
-                annotation.X = Math.Clamp(
-                    source.X + 12,
-                    0,
-                    Math.Max(pageWidth - Math.Max(annotation.Width, 1), 0));
-                annotation.Y = Math.Clamp(
-                    source.Y + 12,
-                    0,
-                    Math.Max(pageHeight - Math.Max(annotation.Height, 1), 0));
-                pasted.Add(annotation);
-            }
-
-            if (pasted.Count == 0)
-                return false;
-
-            AddPastedAnnotations(pasted);
-            TxtStatus.Text = pasted.Count > 1
-                ? $"{pasted.Count}개 객체를 붙여넣었습니다."
-                : pasted[0].Type == AnnotationType.Image
-                    ? "이미지를 새 객체로 붙여넣었습니다."
-                    : "텍스트를 새 객체로 붙여넣었습니다.";
-            return true;
-        }
-
-        private void PreparePastedAnnotation(PdfAnnotation annotation)
-        {
-            // A clipboard copy is a new text object, never a handle to another
-            // document's content stream operators.
-            annotation.NativeText = null;
-            annotation.Id = Guid.NewGuid().ToString();
-            annotation.PageIndex = _currentPageIndex;
-            annotation.CreatedAt = DateTime.Now;
-            annotation.IsApplied = false;
-            annotation.IsOriginalTextReplacement = false;
-            annotation.IsOriginalImageReplacement = false;
-            annotation.OriginalPdfX = 0;
-            annotation.OriginalPdfY = 0;
-            annotation.OriginalText = string.Empty;
-            annotation.OriginalImageName = null;
-            annotation.OperatorId = null;
-            annotation.ContentStreamIndex = -1;
-            annotation.ContentStreamObjectNumber = -1;
-            annotation.OperationIndex = -1;
-            annotation.OriginalFontObjectNumber = -1;
-            annotation.GraphicOperationIndexes.Clear();
-            annotation.GraphicTextOperationIndexes.Clear();
-            annotation.GraphicOperations.Clear();
-            if (IsTextAnnotation(annotation))
-                annotation.TextFragments.Clear();
-        }
-
-        private PdfAnnotation CreateTextAnnotation(string text)
-        {
-            (double pageWidth, double pageHeight) = _pdfManager.GetPageSize(_currentPageIndex);
-            (double width, double height) = AnnotationTextLayoutService.MeasureBounds(
-                text,
-                _fontSettings.FontFamily,
-                _fontSettings.FontSize,
-                _fontSettings.IsBold,
-                _fontSettings.IsItalic,
-                _fontSettings.IsBold ? 700 : 400);
-            return new PdfAnnotation
-            {
-                Type = AnnotationType.Text,
-                PageIndex = _currentPageIndex,
-                X = Math.Max((pageWidth - width) / 2, 0),
-                Y = Math.Max((pageHeight - height) / 2, 0),
-                Width = Math.Max(width, 1),
-                Height = Math.Max(height, 1),
-                Content = text,
-                FontFamily = _fontSettings.FontFamily,
-                FontSize = _fontSettings.FontSize,
-                Color = _fontSettings.Color,
-                FontWeight = _fontSettings.IsBold ? 700 : 400,
-                IsBold = _fontSettings.IsBold,
-                IsItalic = _fontSettings.IsItalic,
-                IsApplied = false
-            };
-        }
-
-        private PdfAnnotation CreateImageAnnotation(ClipboardImageData image)
-        {
-            (double pageWidth, double pageHeight) = _pdfManager.GetPageSize(_currentPageIndex);
-            (double width, double height) = CalculateInitialImageSize(
-                image.PixelWidth,
-                image.PixelHeight,
-                pageWidth,
-                pageHeight);
-            return new PdfAnnotation
-            {
-                Type = AnnotationType.Image,
-                PageIndex = _currentPageIndex,
-                X = Math.Max((pageWidth - width) / 2, 0),
-                Y = Math.Max((pageHeight - height) / 2, 0),
-                Width = width,
-                Height = height,
-                ImagePath = image.Path,
-                IsApplied = false
-            };
-        }
-
-        private static async Task<ClipboardImageData> SaveClipboardImageAsync(
-            RandomAccessStreamReference bitmapReference)
-        {
-            using IRandomAccessStreamWithContentType sourceStream =
-                await bitmapReference.OpenReadAsync();
-            BitmapDecoder decoder = await BitmapDecoder.CreateAsync(sourceStream);
-
-            StorageFolder tempFolder = await StorageFolder.GetFolderFromPathAsync(Path.GetTempPath());
-            StorageFolder appFolder = await tempFolder.CreateFolderAsync(
-                "PDF_simple_edit",
-                CreationCollisionOption.OpenIfExists);
-            StorageFolder clipboardFolder = await appFolder.CreateFolderAsync(
-                "clipboard",
-                CreationCollisionOption.OpenIfExists);
-            StorageFile imageFile = await clipboardFolder.CreateFileAsync(
-                $"clipboard_{Guid.NewGuid():N}.png",
-                CreationCollisionOption.GenerateUniqueName);
-
-            using IRandomAccessStream outputStream = await imageFile.OpenAsync(FileAccessMode.ReadWrite);
-            BitmapEncoder encoder = await BitmapEncoder.CreateForTranscodingAsync(
-                outputStream,
-                decoder);
-            await encoder.FlushAsync();
-            return new ClipboardImageData(imageFile.Path, decoder.PixelWidth, decoder.PixelHeight);
-        }
-
-        private void AddPastedAnnotations(IEnumerable<PdfAnnotation> annotations)
-        {
-            List<PdfAnnotation> pasted = annotations.ToList();
-            if (pasted.Count == 0)
-                return;
-
-            SetToolMode(EditToolMode.Select);
-            _annotations.AddRange(pasted);
-            _annotationCanvasController.ClearSelection();
-            foreach (PdfAnnotation annotation in pasted)
-                _annotationCanvasController.SelectedAnnotations.Add(annotation);
-            _annotationCanvasController.PrimarySelection = pasted[^1];
-            _pdfManager.MarkModified();
-            RenderAnnotationOverlays();
-        }
-
-        private sealed record ClipboardImageData(string Path, uint PixelWidth, uint PixelHeight);
-
-        private async void SaveSelectedImage_Click(object sender, RoutedEventArgs e)
-        {
-            PdfAnnotation? selectedImage = _annotationCanvasController.SelectedAnnotations.Count == 1
-                ? _annotationCanvasController.SelectedAnnotations[0]
-                : null;
-            string? sourcePath = selectedImage?.Type == AnnotationType.Image
-                ? selectedImage.ImagePath
-                : null;
-            if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
-            {
-                TxtStatus.Text = "저장할 이미지 파일을 찾을 수 없습니다.";
-                return;
-            }
-
-            string extension = Path.GetExtension(sourcePath).ToLowerInvariant();
-            if (string.IsNullOrWhiteSpace(extension))
-                extension = ".png";
-
-            string documentName = !string.IsNullOrWhiteSpace(_pdfManager.FilePath)
-                ? Path.GetFileNameWithoutExtension(_pdfManager.FilePath)
-                : "document";
-            var picker = new FileSavePicker
-            {
-                SuggestedStartLocation = PickerLocationId.PicturesLibrary,
-                SuggestedFileName = $"{documentName}_page_{selectedImage!.PageIndex + 1}_image{extension}"
-            };
-            picker.FileTypeChoices.Add(
-                GetImageFileTypeDescription(extension),
-                new List<string> { extension });
-            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
-
-            StorageFile? targetFile = await picker.PickSaveFileAsync();
-            if (targetFile == null)
-                return;
-
-            try
-            {
-                string sourceFullPath = Path.GetFullPath(sourcePath);
-                string targetFullPath = Path.GetFullPath(targetFile.Path);
-                if (!string.Equals(sourceFullPath, targetFullPath, StringComparison.OrdinalIgnoreCase))
-                    await Task.Run(() => File.Copy(sourceFullPath, targetFullPath, true));
-                TxtStatus.Text = $"이미지 저장 완료: {targetFile.Name}";
-            }
-            catch (Exception ex)
-            {
-                await ShowErrorDialogAsync(
-                    "이미지 저장 오류",
-                    $"이미지를 저장하는 중 오류가 발생했습니다: {ex.Message}");
-                TxtStatus.Text = "이미지 저장에 실패했습니다.";
-            }
-        }
-
-        private static string GetImageFileTypeDescription(string extension) =>
-            extension switch
-            {
-                ".jpg" or ".jpeg" => "JPEG 이미지",
-                ".tif" or ".tiff" => "TIFF 이미지",
-                ".jp2" => "JPEG 2000 이미지",
-                ".bmp" => "BMP 이미지",
-                ".gif" => "GIF 이미지",
-                ".jbig2" => "JBIG2 이미지",
-                _ => "PNG 이미지"
-            };
-
-        private static (double width, double height) CalculateInitialImageSize(
-            uint pixelWidth,
-            uint pixelHeight,
-            double pageWidth,
-            double pageHeight)
-        {
-            const double preferredMaximumSize = 150;
-            if (pixelWidth == 0 || pixelHeight == 0)
-                return (preferredMaximumSize, preferredMaximumSize);
-
-            double maximumWidth = Math.Min(preferredMaximumSize, Math.Max(pageWidth * 0.8, 1));
-            double maximumHeight = Math.Min(preferredMaximumSize, Math.Max(pageHeight * 0.8, 1));
-            double scale = Math.Min(maximumWidth / pixelWidth, maximumHeight / pixelHeight);
-            return (
-                Math.Max(pixelWidth * scale, 1),
-                Math.Max(pixelHeight * scale, 1));
-        }
+        private async void CutSelectedObjects_Click(object sender, RoutedEventArgs e) =>
+            await _clipboardController.CutSelectedObjectsAsync();
 
         #endregion
+
+        private async void AddImageTool_Click(object sender, RoutedEventArgs e) =>
+            await _imageController.AddImageAsync();
+
+        private async void ExtractAllImages_Click(object sender, RoutedEventArgs e) =>
+            await _imageController.ExtractAllImagesAsync();
+
+        private async void SaveSelectedImage_Click(object sender, RoutedEventArgs e) =>
+            await _imageController.SaveSelectedImageAsync();
 
         #region Canvas Interaction
 
@@ -1866,7 +1084,7 @@ namespace PDF_simple_edit
             string searchText = TxtFindText.Text;
             TxtStatus.Text = "검색 중...";
             LoadingRing.IsActive = true;
-            
+
             try
             {
                 await _documentSearchController.SearchAsync(
@@ -1931,27 +1149,27 @@ namespace PDF_simple_edit
                 !_annotationCanvasController.IsInlineEditing)
             {
                 if (e.Key == Windows.System.VirtualKey.C &&
-                    GetCopyableSelection().Count > 0)
+                    _clipboardController.GetCopyableSelection().Count > 0)
                 {
                     e.Handled = true;
-                    await CopySelectedObjectsAsync();
+                    await _clipboardController.CopySelectedObjectsAsync();
                     return;
                 }
 
                 if (e.Key == Windows.System.VirtualKey.X &&
-                    GetCopyableSelection().Count ==
+                    _clipboardController.GetCopyableSelection().Count ==
                         _annotationCanvasController.SelectedAnnotations.Count &&
                     _annotationCanvasController.SelectedAnnotations.Count > 0)
                 {
                     e.Handled = true;
-                    await CutSelectedObjectsAsync();
+                    await _clipboardController.CutSelectedObjectsAsync();
                     return;
                 }
 
                 if (e.Key == Windows.System.VirtualKey.V && _pdfManager.IsLoaded)
                 {
                     e.Handled = true;
-                    await PasteClipboardContentAsync();
+                    await _clipboardController.PasteClipboardContentAsync();
                     return;
                 }
             }
@@ -1975,249 +1193,23 @@ namespace PDF_simple_edit
             _annotationEditController.DeleteSelectionAsync();
         #endregion
 
-        #region Font Settings
+        private async void MergePdf_Click(object sender, RoutedEventArgs e) =>
+            await _pageOperationsController.MergeAsync();
 
-        private async void FontFamily_Changed(object sender, SelectionChangedEventArgs e)
-        {
-            if (_isSyncingFontControls)
-                return;
+        private async void SplitPdf_Click(object sender, RoutedEventArgs e) =>
+            await _pageOperationsController.SplitAsync();
 
-            if (CmbFontFamily.SelectedItem is ComboBoxItem item)
-            {
-                string font = item.Content?.ToString() ?? "맑은 고딕";
-                await _annotationEditController.ApplyFontFamilyAsync(font);
-                SaveWindowPosition();
-            }
-        }
+        private async void DeletePage_Click(object sender, RoutedEventArgs e) =>
+            await _pageOperationsController.DeletePagesAsync();
 
-        private async void FontSize_Changed(object sender, SelectionChangedEventArgs e)
-        {
-            if (_isSyncingFontControls)
-                return;
-
-            if (CmbFontSize.SelectedItem is ComboBoxItem item &&
-                double.TryParse(
-                    item.Content?.ToString(),
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
-                    out double sizeVal))
-            {
-                await _annotationEditController.ApplyFontSizeAsync(sizeVal);
-                SaveWindowPosition();
-            }
-        }
-
-        private async void FontBold_Click(object sender, RoutedEventArgs e)
-        {
-            await _annotationEditController.ApplyBoldAsync(BtnBold.IsChecked == true);
-            SaveWindowPosition();
-        }
-
-        private async void FontItalic_Click(object sender, RoutedEventArgs e)
-        {
-            await _annotationEditController.ApplyItalicAsync(BtnItalic.IsChecked == true);
-            SaveWindowPosition();
-        }
-
-        private async void FontColor_Changed(object sender, SelectionChangedEventArgs e)
-        {
-            if (ColorPalette.SelectedItem is Border border && border.Tag is string color)
-            {
-                FontColorIndicator.Background = new SolidColorBrush(ParseColor(color));
-                await _annotationEditController.ApplyColorAsync(color);
-                SaveWindowPosition();
-            }
-        }
-
-        #endregion
-
-        #region PDF Merge / Split
-
-        private async void MergePdf_Click(object sender, RoutedEventArgs e)
-        {
-            var hwnd = WindowNative.GetWindowHandle(this);
-            PdfMergeRequest? request = await _pdfOperationService.CreateMergeRequestAsync(
-                Content.XamlRoot, hwnd, _pdfManager.IsLoaded);
-            if (request == null)
-                return;
-
-            PdfDocumentTab? newTab = null;
-            PdfDocumentManager manager = _pdfManager;
-            if (!_pdfManager.IsLoaded)
-            {
-                newTab = new PdfDocumentTab();
-                manager = newTab.PdfManager;
-            }
-
-            TxtStatus.Text = "PDF 합치기 중...";
-            LoadingRing.IsActive = true;
-            try
-            {
-                string? outputPath = await _pdfOperationService.ExecuteMergeAsync(manager, request);
-                if (outputPath == null)
-                {
-                    await ShowErrorDialogAsync("오류", "PDF 합치기에 실패했습니다.");
-                    return;
-                }
-
-                if (newTab != null)
-                {
-                    newTab.FilePath = outputPath;
-                    newTab.Header = Path.GetFileName(outputPath);
-                    _tabs.Add(newTab);
-                    DocTabView.SelectedItem = newTab;
-                }
-                else if (_activeTab != null)
-                    _activeTab.FilePath = outputPath;
-
-                _currentPageIndex = 0;
-                TxtStatus.Text = "PDF 합치기 완료";
-                UpdateUIState();
-            }
-            catch (Exception ex)
-            {
-                await ShowErrorDialogAsync("오류", $"합치기 중 에러 발생: {ex.Message}");
-            }
-            finally
-            {
-                LoadingRing.IsActive = false;
-            }
-        }
-
-        private async void SplitPdf_Click(object sender, RoutedEventArgs e)
-        {
-            if (!_pdfManager.IsLoaded) return;
-
-            PdfSplitRequest? request = await _pdfOperationService.CreateSplitRequestAsync(
-                Content.XamlRoot,
-                WindowNative.GetWindowHandle(this),
-                _pdfManager.PageCount);
-            if (request == null)
-                return;
-            if (request.Ranges.Count == 0)
-            {
-                TxtStatus.Text = "나눌 페이지 범위가 올바르지 않습니다.";
-                return;
-            }
-
-            TxtStatus.Text = "PDF 나누기 중...";
-            LoadingRing.IsActive = true;
-            try
-            {
-                int resultCount = await _pdfManager.SplitFileAsync(
-                    request.OutputFolder, request.Ranges.ToList());
-                TxtStatus.Text = $"PDF 나누기 완료: {resultCount}개 파일 생성됨";
-            }
-            catch (Exception ex)
-            {
-                await ShowErrorDialogAsync("나누기 오류", $"나누기 중 에러 발생: {ex.Message}");
-            }
-            finally
-            {
-                LoadingRing.IsActive = false;
-            }
-        }
-
-        private async void DeletePage_Click(object sender, RoutedEventArgs e)
-        {
-            if (!_pdfManager.IsLoaded)
-                return;
-
-            List<int> pageIndices = GetSelectedPageIndices();
-            if (pageIndices.Count == 0)
-                pageIndices.Add(_currentPageIndex);
-            if (pageIndices.Count == 0 || pageIndices.Count >= _pdfManager.PageCount)
-                return;
-
-            int pageCountBeforeDelete = _pdfManager.PageCount;
-            int currentPageBeforeDelete = _currentPageIndex;
-            string pageDescription = pageIndices.Count == 1
-                ? $"페이지 {pageIndices[0] + 1}"
-                : $"선택한 {pageIndices.Count}개 페이지";
-
-            var dialog = new ContentDialog
-            {
-                Title = "페이지 삭제",
-                Content = $"{pageDescription}를 삭제하시겠습니까?",
-                PrimaryButtonText = "삭제",
-                CloseButtonText = "취소",
-                XamlRoot = Content.XamlRoot
-            };
-
-            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-            {
-                int deletedBeforeCurrent = pageIndices.Count(index => index < currentPageBeforeDelete);
-                _pdfManager.DeletePages(pageIndices);
-                PageListView.SelectedItems.Clear();
-                _currentPageIndex = currentPageBeforeDelete - deletedBeforeCurrent;
-                if (_currentPageIndex >= _pdfManager.PageCount)
-                    _currentPageIndex = _pdfManager.PageCount - 1;
-                if (_currentPageIndex < 0)
-                    _currentPageIndex = 0;
-
-                // PdfManager.DeletePage()가 DocumentChanged를 호출하고, 
-                // 이는 PdfManager_DocumentChanged 핸들러에 의해 자동으로 Render 및 Thumbnail 로드를 수행합니다.
-                UpdateUIState();
-                TxtStatus.Text = pageCountBeforeDelete == _pdfManager.PageCount + pageIndices.Count
-                    ? "페이지가 삭제되었습니다"
-                    : "페이지 삭제에 실패했습니다";
-            }
-        }
-
-        private async void ExtractSelectedPages_Click(object sender, RoutedEventArgs e)
-        {
-            if (!_pdfManager.IsLoaded)
-                return;
-
-            List<int> pageIndices = GetSelectedPageIndices();
-            if (pageIndices.Count == 0)
-                return;
-
-            var picker = new FileSavePicker
-            {
-                SuggestedFileName = GetSuggestedExtractFileName()
-            };
-            picker.FileTypeChoices.Add("PDF 파일", new List<string> { ".pdf" });
-            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
-
-            StorageFile? file = await picker.PickSaveFileAsync();
-            if (file == null)
-                return;
-
-            TxtStatus.Text = "페이지 추출 중...";
-            LoadingRing.IsActive = true;
-            try
-            {
-                bool success = await _pdfManager.ExportPagesAsync(file.Path, pageIndices);
-                TxtStatus.Text = success
-                    ? $"페이지 추출 완료: {pageIndices.Count}개 페이지"
-                    : "페이지 추출에 실패했습니다";
-            }
-            catch (Exception ex)
-            {
-                await ShowErrorDialogAsync("페이지 추출 오류", $"페이지 추출 중 오류가 발생했습니다: {ex.Message}");
-            }
-            finally
-            {
-                LoadingRing.IsActive = false;
-            }
-        }
-
-        private string GetSuggestedExtractFileName()
-        {
-            string baseName = !string.IsNullOrWhiteSpace(_pdfManager.FilePath)
-                ? Path.GetFileNameWithoutExtension(_pdfManager.FilePath)
-                : "문서";
-            return $"{baseName}_추출.pdf";
-        }
-
-        #endregion
+        private async void ExtractSelectedPages_Click(object sender, RoutedEventArgs e) =>
+            await _pageOperationsController.ExtractSelectedPagesAsync();
 
         #region View
 
         private void TogglePagePanel_Click(object sender, RoutedEventArgs e)
         {
-            bool show = MenuShowPagePanel.IsChecked;
+            bool show = EditorMenu.ShowPagePanel;
             PagePanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
             PagePanelColumn.Width = show ? new GridLength(200) : new GridLength(0);
         }
@@ -2233,7 +1225,7 @@ namespace PDF_simple_edit
             _renderScale = preferences.RenderScale;
             _fontSettings.FontFamily = preferences.FontFamily;
             _fontSettings.FontSize = preferences.FontSize;
-            ApplyFontSettingsToControls();
+            _fontController.ApplySettings();
             SaveWindowPosition();
             if (_pdfManager.IsLoaded)
                 await RenderCurrentPageAsync();
@@ -2245,52 +1237,6 @@ namespace PDF_simple_edit
         #endregion
 
         #region Helpers
-
-        private async Task<bool> PerformSaveAsync(string filePath, bool isUserSave)
-        {
-            if (!_pdfManager.IsLoaded || _isSaveInProgress)
-                return false;
-
-            _isSaveInProgress = true;
-            TxtStatus.Text = isUserSave ? "저장 중..." : "렌더링 준비 중...";
-            LoadingRing.IsActive = true;
-
-            try
-            {
-                // LostFocus에서 시작된 비동기 확정도 끝까지 기다려야 마지막 입력
-                // (특히 IME 입력 직후의 문장부호)이 저장에서 빠지지 않습니다.
-                await _annotationCanvasController.FinishActiveInlineEditAsync();
-
-                await _pdfSaveService.SaveAsync(
-                    _pdfManager,
-                    _annotations,
-                    filePath,
-                    isUserSave);
-
-                if (isUserSave)
-                {
-                    if (_activeTab != null)
-                        _activeTab.FilePath = filePath;
-
-                    // 이벤트 큐의 실행 순서와 무관하게 최종 화면이 방금 저장한
-                    // PDF를 사용하도록 한 번 더 명시적으로 갱신합니다.
-                    await RenderCurrentPageAsync();
-                }
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                await ShowErrorDialogAsync("저장 오류", $"저장 중 오류가 발생했습니다: {ex.Message}");
-                return false;
-            }
-            finally
-            {
-                LoadingRing.IsActive = false;
-                _isSaveInProgress = false;
-                UpdateUIState();
-            }
-        }
 
         private static Windows.UI.Color ParseColor(string hexColor) =>
             EditorColorService.Parse(hexColor);

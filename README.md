@@ -34,7 +34,7 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 - **WinUI 3 & Windows App SDK**: Native look and feel with fluent design elements.
 - **Drag & Drop**: Open files instantly by dragging them into the application.
 - **Text Search**: Powerful search functionality to find specific phrases within the document.
-- **Keyboard Shortcuts**: 
+- **Keyboard Shortcuts**:
   - `S`: Switch to **Select Tool**
   - `A`: Switch to **Add Text Tool**
   - `Ctrl+O`: Open File

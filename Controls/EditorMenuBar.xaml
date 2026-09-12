@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PDF_simple_edit.Controls.EditorMenuBar"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Menu Bar -->
+    <MenuBar>
+        <MenuBarItem Title="파일">
+            <MenuFlyoutItem Text="새로 만들기" Tag="NewDocument" Click="Command_Click">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8A5;"/></MenuFlyoutItem.Icon>
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Modifiers="Control" Key="N"/>
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="열기..." Tag="OpenFile" Click="Command_Click">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E5;"/></MenuFlyoutItem.Icon>
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Modifiers="Control" Key="O"/>
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+            <MenuFlyoutSubItem x:Name="MenuRecentFiles" Text="최근 파일">
+                <MenuFlyoutSubItem.Icon><FontIcon Glyph="&#xE81C;"/></MenuFlyoutSubItem.Icon>
+                <MenuFlyoutItem Text="최근 파일 없음" IsEnabled="False"/>
+            </MenuFlyoutSubItem>
+            <MenuFlyoutItem Text="저장" x:Name="MenuSave" Tag="SaveFile" Click="Command_Click" IsEnabled="False">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74E;"/></MenuFlyoutItem.Icon>
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Modifiers="Control" Key="S"/>
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="다른 이름으로 저장..." x:Name="MenuSaveAs" Tag="SaveAsFile" Click="Command_Click" IsEnabled="False">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE792;"/></MenuFlyoutItem.Icon>
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Modifiers="Control,Shift" Key="S"/>
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+            <MenuFlyoutSeparator/>
+            <MenuFlyoutItem Text="인쇄..." x:Name="MenuPrint" Tag="Print" Click="Command_Click" IsEnabled="False">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE749;"/></MenuFlyoutItem.Icon>
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Modifiers="Control" Key="P"/>
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+            <MenuFlyoutSeparator/>
+            <MenuFlyoutItem Text="닫기" x:Name="MenuClose" Tag="CloseFile" Click="Command_Click" IsEnabled="False"/>
+        </MenuBarItem>
+
+        <MenuBarItem Title="편집">
+            <MenuFlyoutItem Text="실행 취소" x:Name="MenuUndo" Tag="Undo" Click="Command_Click" IsEnabled="False">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE7A7;"/></MenuFlyoutItem.Icon>
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Modifiers="Control" Key="Z"/>
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="다시 실행" x:Name="MenuRedo" Tag="Redo" Click="Command_Click" IsEnabled="False">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE7A6;"/></MenuFlyoutItem.Icon>
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Modifiers="Control" Key="Y"/>
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+            <MenuFlyoutSeparator/>
+            <MenuFlyoutItem Text="찾기..." x:Name="MenuFind" Tag="Find" Click="Command_Click" IsEnabled="False">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE721;"/></MenuFlyoutItem.Icon>
+                <MenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Modifiers="Control" Key="F"/>
+                </MenuFlyoutItem.KeyboardAccelerators>
+            </MenuFlyoutItem>
+        </MenuBarItem>
+
+        <MenuBarItem Title="보기" x:Name="MenuViewItem">
+            <MenuFlyoutItem x:Name="MenuZoomIn" Text="확대" Tag="ZoomIn" Click="Command_Click">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8A3;"/></MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem x:Name="MenuZoomOut" Text="축소" Tag="ZoomOut" Click="Command_Click">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE71F;"/></MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="페이지에 맞추기" Tag="FitToPage" Click="Command_Click"/>
+            <MenuFlyoutSeparator/>
+            <ToggleMenuFlyoutItem Text="페이지 패널 표시" x:Name="MenuShowPagePanel"
+                                   IsChecked="True" Tag="TogglePagePanel" Click="Command_Click"/>
+        </MenuBarItem>
+
+        <MenuBarItem Title="도구">
+            <ToggleMenuFlyoutItem Text="선택" x:Name="MenuSelect" Tag="SelectTool" Click="Command_Click" IsEnabled="False">
+                <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xEF20;"/></ToggleMenuFlyoutItem.Icon>
+                <ToggleMenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="S" Invoked="ToolAccelerator_Invoked"/>
+                </ToggleMenuFlyoutItem.KeyboardAccelerators>
+            </ToggleMenuFlyoutItem>
+            <ToggleMenuFlyoutItem Text="텍스트 추가" x:Name="MenuAddText" Tag="AddTextTool" Click="Command_Click" IsEnabled="False">
+                <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE8D2;"/></ToggleMenuFlyoutItem.Icon>
+                <ToggleMenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="A" Invoked="ToolAccelerator_Invoked"/>
+                </ToggleMenuFlyoutItem.KeyboardAccelerators>
+            </ToggleMenuFlyoutItem>
+            <ToggleMenuFlyoutItem Text="텍스트 강조" x:Name="MenuHighlight" Tag="HighlightTool" Click="Command_Click" IsEnabled="False">
+                <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE7E6;"/></ToggleMenuFlyoutItem.Icon>
+            </ToggleMenuFlyoutItem>
+            <ToggleMenuFlyoutItem Text="서명 그리기" x:Name="MenuSignature" Tag="SignatureTool" Click="Command_Click" IsEnabled="False">
+                <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE929;"/></ToggleMenuFlyoutItem.Icon>
+            </ToggleMenuFlyoutItem>
+            <MenuFlyoutItem Text="이미지 추가" x:Name="MenuAddImage" Tag="AddImageTool" Click="Command_Click" IsEnabled="False">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B9;"/></MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="모든 이미지 추출..." x:Name="MenuExtractImages" Tag="ExtractAllImages" Click="Command_Click" IsEnabled="False">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE91B;"/></MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+            <MenuFlyoutSeparator/>
+            <MenuFlyoutItem Text="PDF 합치기..." Tag="MergePdf" Click="Command_Click">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xEB4E;"/></MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="PDF 나누기..." x:Name="MenuSplitPdf" Tag="SplitPdf" Click="Command_Click" IsEnabled="False">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xF156;"/></MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="페이지 삭제" x:Name="MenuDeletePage" Tag="DeletePage" Click="Command_Click" IsEnabled="False">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74D;"/></MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+        </MenuBarItem>
+
+        <MenuBarItem Title="설정">
+            <MenuFlyoutItem Text="환경 설정..." Tag="Settings" Click="Command_Click">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE713;"/></MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="정보" Tag="About" Click="Command_Click">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE946;"/></MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+        </MenuBarItem>
+    </MenuBar>
+</UserControl>
