@@ -22,7 +22,6 @@ public sealed class AnnotationEditController
     private readonly Func<PdfDocumentManager> _getManager;
     private readonly Func<List<PdfAnnotation>> _getAnnotations;
     private readonly Func<int> _getCurrentPageIndex;
-    private readonly Action _invalidateRenderPath;
     private readonly Func<Task> _renderCurrentPageAsync;
 
     public AnnotationEditController(
@@ -33,7 +32,6 @@ public sealed class AnnotationEditController
         Func<PdfDocumentManager> getManager,
         Func<List<PdfAnnotation>> getAnnotations,
         Func<int> getCurrentPageIndex,
-        Action invalidateRenderPath,
         Func<Task> renderCurrentPageAsync)
     {
         _canvasController = canvasController;
@@ -43,7 +41,6 @@ public sealed class AnnotationEditController
         _getManager = getManager;
         _getAnnotations = getAnnotations;
         _getCurrentPageIndex = getCurrentPageIndex;
-        _invalidateRenderPath = invalidateRenderPath;
         _renderCurrentPageAsync = renderCurrentPageAsync;
     }
 
@@ -221,7 +218,7 @@ public sealed class AnnotationEditController
                 await _getManager().ApplyNativeTextEditsAsync(_getCurrentPageIndex(), aligned.Select(a =>
                     new NativePdfTextEdit(a.NativeText!, a.NativeText!.Text, a.X - a.NativeText.Bounds.X, a.Y - a.NativeText.Bounds.Y)).ToList());
                 _getAnnotations().RemoveAll(a => a.PageIndex == _getCurrentPageIndex() && a.NativeText != null);
-                _canvasController.ClearSelection(); _invalidateRenderPath(); await _renderCurrentPageAsync();
+                _canvasController.ClearSelection(); await _renderCurrentPageAsync();
                 _canvasController.Render(); _statusText.Text = "원본 텍스트가 정렬되었습니다.";
             }
             catch (Exception error) { _statusText.Text = error.Message; }
@@ -269,7 +266,6 @@ public sealed class AnnotationEditController
 
             annotation.IsApplied = false;
             annotation.IsOriginalTextReplacement = false;
-            _invalidateRenderPath();
             await _renderCurrentPageAsync();
             return true;
         }
@@ -310,7 +306,6 @@ public sealed class AnnotationEditController
 
         foreach (PdfAnnotation annotation in targets)
             annotation.IsOriginalTextReplacement = false;
-        _invalidateRenderPath();
         await _renderCurrentPageAsync();
         return true;
     }

@@ -12,31 +12,60 @@ namespace PDF_simple_edit.Services;
 public sealed record RenderedPdfPage(
     BitmapImage Bitmap,
     double LogicalWidth,
-    double LogicalHeight,
-    string RenderPath);
+    double LogicalHeight);
 
 public sealed class PdfPageRenderService
 {
     private const double PdfToPixels = 96.0 / 72.0;
+    private sealed class DocumentCache
+    {
+        public byte[]? Snapshot;
+        public Task<PdfRenderDocument>? Load;
+    }
+
+    private readonly ConditionalWeakTable<PdfDocumentManager, DocumentCache> _documents = new();
+
+    private async Task<PdfRenderDocument> GetDocumentAsync(PdfDocumentManager manager, byte[] snapshot)
+    {
+        // Edits, undo/redo, save and signature detachment produce new snapshots.
+        // Retain only the latest renderer per tab, not one per undo entry.
+        DocumentCache cache = _documents.GetValue(manager, _ => new DocumentCache());
+        Task<PdfRenderDocument> load;
+        lock (cache)
+        {
+            if (!ReferenceEquals(cache.Snapshot, snapshot) || cache.Load == null)
+            {
+                cache.Snapshot = snapshot;
+                cache.Load = PdfRenderDocument.LoadAsync(snapshot);
+            }
+            load = cache.Load;
+        }
+        try
+        {
+            return await load;
+        }
+        catch
+        {
+            lock (cache)
+            {
+                if (ReferenceEquals(cache.Load, load)) cache.Load = null;
+            }
+            throw;
+        }
+    }
 
     public async Task<RenderedPdfPage?> RenderPageAsync(
         PdfDocumentManager manager,
         int pageIndex,
-        double renderScale,
-        string? currentRenderPath)
+        double renderScale)
     {
-        if (!manager.IsLoaded)
+        byte[]? snapshot = manager.GetPdfBytes();
+        if (snapshot == null)
             return null;
 
-        string? renderPath = await PrepareRenderPathAsync(manager, currentRenderPath);
-        if (renderPath == null)
-            return null;
-
-        using MemoryStream? stream = await PdfRenderHelper.RenderPageWithWindowsPdfAsync(
-            renderPath,
-            pageIndex,
-            renderScale * PdfToPixels);
-        if (stream == null)
+        PdfRenderDocument document = await GetDocumentAsync(manager, snapshot);
+        using MemoryStream? stream = await document.RenderAsync(pageIndex, renderScale * PdfToPixels);
+        if (stream == null || !ReferenceEquals(snapshot, manager.GetPdfBytes()))
             return null;
 
         var bitmap = new BitmapImage();
@@ -45,114 +74,47 @@ public sealed class PdfPageRenderService
         return new RenderedPdfPage(
             bitmap,
             pageSize.width * PdfToPixels,
-            pageSize.height * PdfToPixels,
-            renderPath);
+            pageSize.height * PdfToPixels);
     }
 
     public async IAsyncEnumerable<PageThumbnailData> RenderThumbnailsAsync(
         PdfDocumentManager manager,
-        string? renderPath,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        if (!manager.IsLoaded)
+        byte[]? snapshot = manager.GetPdfBytes();
+        if (snapshot == null)
             yield break;
 
-        // 수정된 문서는 FilePath의 원본 파일과 메모리상의 PDF 내용이 다를 수 있습니다.
-        // 원본 경로를 사용하면 페이지 삭제/순서 변경 후에도 이전 썸네일이 표시되므로,
-        // 수정 상태에서는 메모리 바이트를 렌더링 소스로 사용합니다.
-        // 암호로 보호된 문서의 원본 파일은 암호 없이 렌더링할 수 없으므로
-        // 항상 메모리의 평문 바이트를 렌더링 소스로 사용한다.
-        string? sourcePath = renderPath ?? (!manager.IsModified && !manager.IsPasswordProtected ? manager.FilePath : null);
-        byte[]? pdfBytes = string.IsNullOrEmpty(sourcePath) ? manager.GetPdfBytes() : null;
-        if (string.IsNullOrEmpty(sourcePath) && pdfBytes == null)
-            yield break;
-
-        for (int pageIndex = 0; pageIndex < manager.PageCount; pageIndex++)
+        cancellationToken.ThrowIfCancellationRequested();
+        PdfRenderDocument document = await GetDocumentAsync(manager, snapshot);
+        int pageCount = document.PageCount;
+        for (int pageIndex = 0; pageIndex < pageCount; pageIndex++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            BitmapImage? bitmap = await RenderThumbnailAsync(sourcePath, pdfBytes, pageIndex, cancellationToken);
-            yield return new PageThumbnailData
+            if (!ReferenceEquals(snapshot, manager.GetPdfBytes()))
+                yield break;
+
+            BitmapImage? bitmap = null;
+            try
             {
-                PageNumber = pageIndex + 1,
-                Thumbnail = bitmap
-            };
-        }
-    }
-
-    public void DeleteTemporaryFile(string? filePath)
-    {
-        if (!IsTemporaryRenderPath(filePath) || !File.Exists(filePath))
-            return;
-
-        try { File.Delete(filePath!); }
-        catch { }
-    }
-
-    private async Task<string?> PrepareRenderPathAsync(
-        PdfDocumentManager manager,
-        string? currentRenderPath)
-    {
-        if (!manager.IsModified && currentRenderPath != null && File.Exists(currentRenderPath))
-            return currentRenderPath;
-
-        string newPath = Path.Combine(Path.GetTempPath(), $"pdfedit_render_{Guid.NewGuid()}.pdf");
-        bool saved = await manager.SaveAsAsync(newPath, false);
-        if (!saved)
-            return manager.FilePath;
-
-        DeleteTemporaryFile(currentRenderPath);
-        return newPath;
-    }
-
-    private static async Task<BitmapImage?> RenderThumbnailAsync(
-        string? filePath,
-        byte[]? pdfBytes,
-        int pageIndex,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            MemoryStream? stream = null;
-            if (!string.IsNullOrEmpty(filePath))
-            {
-                for (int retry = 0; retry < 3 && stream == null; retry++)
+                using MemoryStream? stream = await document.RenderAsync(pageIndex, 0.4, cancellationToken);
+                if (stream != null)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    stream = await PdfRenderHelper.RenderPageWithWindowsPdfAsync(filePath, pageIndex, 0.4);
-                    if (stream == null)
-                        await Task.Delay(100, cancellationToken);
+                    bitmap = new BitmapImage();
+                    await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
                 }
             }
-
-            if (stream == null && pdfBytes != null)
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
             {
-                using var input = new MemoryStream(pdfBytes);
-                stream = await PdfRenderHelper.RenderPageWithWindowsPdfStreamAsync(
-                    input.AsRandomAccessStream(),
-                    pageIndex,
-                    0.4);
+                System.Diagnostics.Debug.WriteLine($"Thumbnail render error: {ex.Message}");
             }
 
-            if (stream == null)
-                return null;
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(snapshot, manager.GetPdfBytes()))
+                yield break;
 
-            using (stream)
-            {
-                var bitmap = new BitmapImage();
-                await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
-                return bitmap;
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch
-        {
-            return null;
+            yield return new PageThumbnailData { PageNumber = pageIndex + 1, Thumbnail = bitmap };
         }
     }
-
-    private static bool IsTemporaryRenderPath(string? filePath) =>
-        filePath != null && filePath.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase);
 }

@@ -12,7 +12,8 @@
 *.env
 tmp/
 output/
-tests/
+tests/*
+!tests/PdfOpenPerformance/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs

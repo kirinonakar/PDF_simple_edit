@@ -27,7 +27,6 @@ namespace PDF_simple_edit
         
         public int CurrentPageIndex { get; set; } = 0;
         public double ZoomLevel { get; set; } = 1.0;
-        public string? RenderTempPath { get; set; }
         public bool IsFirstLoad { get; set; } = true;
         
         public bool IsModified => PdfManager.IsModified;

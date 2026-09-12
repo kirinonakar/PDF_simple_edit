@@ -46,11 +46,6 @@ namespace PDF_simple_edit
         }
         private double _renderScale = 2.0;
         private EditToolMode _currentTool = EditToolMode.None;
-        private string? _renderTempPath
-        {
-            get => _activeTab?.RenderTempPath;
-            set { if (_activeTab != null) _activeTab.RenderTempPath = value; }
-        }
         private bool _isFirstLoad
         {
             get => _activeTab?.IsFirstLoad ?? false;
@@ -169,7 +164,6 @@ namespace PDF_simple_edit
                         HighlightColorPicker.Color = color;
                         HighlightColorIndicator.Background = new SolidColorBrush(color);
                     },
-                    () => _renderTempPath = null,
                     RenderCurrentPageAsync,
                     cancelled =>
                     {
@@ -201,8 +195,6 @@ namespace PDF_simple_edit
                     value => _currentPageIndex = value,
                     () => _zoomLevel,
                     value => _zoomLevel = value,
-                    () => _renderTempPath,
-                    value => _renderTempPath = value,
                     () => _renderScale,
                     RenderAnnotationOverlays,
                     UpdateUIState);
@@ -214,7 +206,6 @@ namespace PDF_simple_edit
                     () => _pdfManager,
                     () => _annotations,
                     () => _currentPageIndex,
-                    () => _renderTempPath = null,
                     RenderCurrentPageAsync);
                 _windowSettingsController = new WindowSettingsController(
                     this,
@@ -354,6 +345,7 @@ namespace PDF_simple_edit
 
         private async void DocTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            _pageViewController?.CancelPendingOperations();
             // Unhook old events
             if (_activeTab != null)
             {
@@ -626,7 +618,7 @@ namespace PDF_simple_edit
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
-            _pageRenderService.DeleteTemporaryFile(_renderTempPath);
+            _pageViewController.CancelPendingOperations();
 
             try { SaveWindowPosition(); } catch { }
         }
@@ -637,22 +629,26 @@ namespace PDF_simple_edit
         {
             DispatcherQueue.TryEnqueue(async () =>
             {
+                if (!ReferenceEquals(sender, _activeTab?.PdfManager)) return;
+                PdfDocumentTab? tab = _activeTab;
                 UpdateUIState();
                 if (_pdfManager.IsLoaded)
                 {
                     await RenderCurrentPageAsync();
+                    if (!ReferenceEquals(tab, _activeTab)) return;
 
                     if (_isFirstLoad)
                     {
                         _isFirstLoad = false;
-                        for (int i = 0; i < 10; i++)
+                        for (int i = 0; i < 60; i++)
                         {
-                            await Task.Delay(100);
                             if (PdfScrollViewer.ViewportWidth > 0 && OverlayCanvas.Width > 0)
                             {
                                 FitToPage();
                                 break;
                             }
+                            await Task.Delay(16);
+                            if (!ReferenceEquals(tab, _activeTab)) return;
                         }
                     }
                 }
@@ -663,6 +659,7 @@ namespace PDF_simple_edit
         {
             DispatcherQueue.TryEnqueue(async () =>
             {
+                if (!ReferenceEquals(sender, _activeTab?.PdfManager)) return;
                 // MovePage에서 이미 현재 썸네일 컬렉션을 같은 순서로 이동했으므로,
                 // 직후의 재로드가 컬렉션을 원래 순서로 덮어쓰지 않게 합니다.
                 bool preserveCurrentThumbnails =
@@ -698,7 +695,6 @@ namespace PDF_simple_edit
                     RenderAnnotationOverlays();
                     
                     // 만약 Undo로 인해 원본 PDF 데이터가 바뀌었다면 렌더링 다시 수행
-                    _renderTempPath = null;
                     await RenderCurrentPageAsync();
                 });
             }
@@ -918,7 +914,7 @@ namespace PDF_simple_edit
 
                 if (status == PdfOpenStatus.Success)
                 {
-                    newTab.Annotations.AddRange(newTab.PdfManager.LoadSavedSignatures());
+                    newTab.Annotations.AddRange(await Task.Run(newTab.PdfManager.LoadSavedSignatures));
                     _tabs.Add(newTab);
                     DocTabView.SelectedItem = newTab;
                     AddToRecentFiles(file.Path);
@@ -2075,7 +2071,6 @@ namespace PDF_simple_edit
                     _activeTab.FilePath = outputPath;
 
                 _currentPageIndex = 0;
-                _renderTempPath = null;
                 TxtStatus.Text = "PDF 합치기 완료";
                 UpdateUIState();
             }
@@ -2160,9 +2155,6 @@ namespace PDF_simple_edit
                 if (_currentPageIndex < 0)
                     _currentPageIndex = 0;
 
-                // [중요] 렌더링 캐시 초기화
-                _renderTempPath = null;
-                
                 // PdfManager.DeletePage()가 DocumentChanged를 호출하고, 
                 // 이는 PdfManager_DocumentChanged 핸들러에 의해 자동으로 Render 및 Thumbnail 로드를 수행합니다.
                 UpdateUIState();
@@ -2260,15 +2252,6 @@ namespace PDF_simple_edit
                 return false;
 
             _isSaveInProgress = true;
-            string? previousRenderPath = null;
-            if (isUserSave)
-            {
-                // OpenAsync에서 발생하는 DocumentChanged가 저장 완료 직후 렌더링을
-                // 예약합니다. 이때 이전 임시 파일이 남아 있으면 저장 전 화면을
-                // 다시 사용하므로, 실제 저장을 시작하기 전에 캐시를 무효화합니다.
-                previousRenderPath = _renderTempPath;
-                _renderTempPath = null;
-            }
             TxtStatus.Text = isUserSave ? "저장 중..." : "렌더링 준비 중...";
             LoadingRing.IsActive = true;
 
@@ -2286,8 +2269,6 @@ namespace PDF_simple_edit
 
                 if (isUserSave)
                 {
-                    _pageRenderService.DeleteTemporaryFile(previousRenderPath);
-                    previousRenderPath = null;
                     if (_activeTab != null)
                         _activeTab.FilePath = filePath;
 
@@ -2300,11 +2281,6 @@ namespace PDF_simple_edit
             }
             catch (Exception ex)
             {
-                if (isUserSave && _renderTempPath == null &&
-                    previousRenderPath != null && File.Exists(previousRenderPath))
-                {
-                    _renderTempPath = previousRenderPath;
-                }
                 await ShowErrorDialogAsync("저장 오류", $"저장 중 오류가 발생했습니다: {ex.Message}");
                 return false;
             }

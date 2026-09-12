@@ -15,6 +15,8 @@ namespace PDF_simple_edit.Helpers
     public class PdfDocumentManager
     {
         private byte[]? _pdfBytes;
+        private byte[]? _pageCountSource;
+        private int _cachedPageCount;
         private string? _filePath;
         private bool _isModified;
         private readonly object _docLock = new();
@@ -60,14 +62,20 @@ namespace PDF_simple_edit.Helpers
         {
             get
             {
-                if (_pdfBytes == null) return 0;
-                try
+                lock (_docLock)
                 {
-                    using var reader = new PdfReader(new MemoryStream(_pdfBytes));
-                    using var doc = new PdfDocument(reader);
-                    return doc.GetNumberOfPages();
+                    if (_pdfBytes == null) return 0;
+                    if (ReferenceEquals(_pageCountSource, _pdfBytes)) return _cachedPageCount;
+                    try
+                    {
+                        using var reader = new PdfReader(new MemoryStream(_pdfBytes));
+                        using var doc = new PdfDocument(reader);
+                        _cachedPageCount = doc.GetNumberOfPages();
+                        _pageCountSource = _pdfBytes;
+                        return _cachedPageCount;
+                    }
+                    catch { return 0; }
                 }
-                catch { return 0; }
             }
         }
 
@@ -352,7 +360,9 @@ namespace PDF_simple_edit.Helpers
                     using var input = new MemoryStream(_pdfBytes);
                     using var reader = new PdfReader(input);
                     using var document = new PdfDocument(reader);
-                    for (int pageIndex = 0; pageIndex < document.GetNumberOfPages(); pageIndex++)
+                    _cachedPageCount = document.GetNumberOfPages();
+                    _pageCountSource = _pdfBytes;
+                    for (int pageIndex = 0; pageIndex < _cachedPageCount; pageIndex++)
                     {
                         PdfPage page = document.GetPage(pageIndex + 1);
                         foreach (iText.Kernel.Pdf.Annot.PdfAnnotation pdfAnnotation in page.GetAnnotations())
@@ -612,6 +622,8 @@ namespace PDF_simple_edit.Helpers
         public void Close()
         {
             _pdfBytes = null;
+            _pageCountSource = null;
+            _cachedPageCount = 0;
             _filePath = null;
             _isModified = false;
             _openPassword = null;

@@ -42,7 +42,6 @@ public sealed class AnnotationCanvasController
     private readonly Func<string> _getSignatureColor;
     private readonly Func<double> _getSignatureLineWidth;
     private readonly Action<Windows.UI.Color> _applyPickedHighlightColor;
-    private readonly Action _invalidateRenderPath;
     private readonly Func<Task> _renderCurrentPageAsync;
     private readonly Action<bool> _focusAfterInlineEdit;
 
@@ -78,7 +77,6 @@ public sealed class AnnotationCanvasController
         Func<string> getSignatureColor,
         Func<double> getSignatureLineWidth,
         Action<Windows.UI.Color> applyPickedHighlightColor,
-        Action invalidateRenderPath,
         Func<Task> renderCurrentPageAsync,
         Action<bool> focusAfterInlineEdit)
     {
@@ -95,7 +93,6 @@ public sealed class AnnotationCanvasController
         _getSignatureColor = getSignatureColor;
         _getSignatureLineWidth = getSignatureLineWidth;
         _applyPickedHighlightColor = applyPickedHighlightColor;
-        _invalidateRenderPath = invalidateRenderPath;
         _renderCurrentPageAsync = renderCurrentPageAsync;
         _focusAfterInlineEdit = focusAfterInlineEdit;
         _selectionController = new AnnotationSelectionController(_contentService);
@@ -620,7 +617,6 @@ public sealed class AnnotationCanvasController
         _moveOriginalImage = null;
         if (SelectedAnnotations.Any(a => a.NativeText != null))
             await RefreshNativeSelectionAsync(pageIndex);
-        _invalidateRenderPath();
         _statusText.Text = "위치 이동됨 (저장 시 반영)";
         if (!IsInlineEditing)
         {
@@ -711,7 +707,6 @@ public sealed class AnnotationCanvasController
             _contentService.BuildEditableText,
             async () =>
             {
-                _invalidateRenderPath();
                 await _renderCurrentPageAsync();
             },
             Render,

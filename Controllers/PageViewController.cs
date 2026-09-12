@@ -37,13 +37,12 @@ public sealed class PageViewController
     private readonly Action<int> _setCurrentPageIndex;
     private readonly Func<double> _getZoomLevel;
     private readonly Action<double> _setZoomLevel;
-    private readonly Func<string?> _getRenderTempPath;
-    private readonly Action<string?> _setRenderTempPath;
     private readonly Func<double> _getRenderScale;
     private readonly Action _renderAnnotationOverlays;
     private readonly Action _updateUiState;
 
     private CancellationTokenSource? _thumbnailCts;
+    private int _renderVersion;
     private PageThumbnailData? _draggedThumbnail;
     private int _draggedOriginalIndex = -1;
     private int _pageIndexBeforeReorder = -1;
@@ -68,8 +67,6 @@ public sealed class PageViewController
         Action<int> setCurrentPageIndex,
         Func<double> getZoomLevel,
         Action<double> setZoomLevel,
-        Func<string?> getRenderTempPath,
-        Action<string?> setRenderTempPath,
         Func<double> getRenderScale,
         Action renderAnnotationOverlays,
         Action updateUiState)
@@ -89,8 +86,6 @@ public sealed class PageViewController
         _setCurrentPageIndex = setCurrentPageIndex;
         _getZoomLevel = getZoomLevel;
         _setZoomLevel = setZoomLevel;
-        _getRenderTempPath = getRenderTempPath;
-        _setRenderTempPath = setRenderTempPath;
         _getRenderScale = getRenderScale;
         _renderAnnotationOverlays = renderAnnotationOverlays;
         _updateUiState = updateUiState;
@@ -98,9 +93,16 @@ public sealed class PageViewController
 
     public async Task RenderCurrentPageAsync()
     {
+        int version = ++_renderVersion;
         PdfDocumentManager manager = _getManager();
         if (!manager.IsLoaded)
             return;
+
+        int pageIndex = _getCurrentPageIndex();
+        byte[]? snapshot = manager.GetPdfBytes();
+        bool IsCurrentRequest() => version == _renderVersion &&
+            ReferenceEquals(manager, _getManager()) &&
+            ReferenceEquals(snapshot, manager.GetPdfBytes()) && pageIndex == _getCurrentPageIndex();
 
         string oldStatus = _statusText.Text;
         try
@@ -108,13 +110,11 @@ public sealed class PageViewController
             _statusText.Text = "페이지 렌더링 중...";
             RenderedPdfPage? page = await _renderService.RenderPageAsync(
                 manager,
-                _getCurrentPageIndex(),
-                _getRenderScale(),
-                _getRenderTempPath());
-            if (page == null)
+                pageIndex,
+                _getRenderScale());
+            if (page == null || !IsCurrentRequest())
                 return;
 
-            _setRenderTempPath(page.RenderPath);
             _pageImage.Source = page.Bitmap;
             _pageImage.HorizontalAlignment = HorizontalAlignment.Left;
             _pageImage.VerticalAlignment = VerticalAlignment.Top;
@@ -135,25 +135,36 @@ public sealed class PageViewController
         }
         finally
         {
-            _statusText.Text = oldStatus == "페이지 렌더링 중..." ? "준비" : oldStatus;
-            _updateUiState();
-            SyncSelection();
+            if (IsCurrentRequest())
+            {
+                _statusText.Text = oldStatus == "페이지 렌더링 중..." ? "준비" : oldStatus;
+                _updateUiState();
+                SyncSelection();
+            }
         }
+    }
+
+    public void CancelPendingOperations()
+    {
+        ++_renderVersion;
+        _thumbnailCts?.Cancel();
     }
 
     public async Task LoadThumbnailsAsync()
     {
         _thumbnailCts?.Cancel();
-        _thumbnailCts = new CancellationTokenSource();
-        CancellationToken token = _thumbnailCts.Token;
+        using var cts = new CancellationTokenSource();
+        _thumbnailCts = cts;
+        CancellationToken token = cts.Token;
         ObservableCollection<PageThumbnailData> thumbnails = _getThumbnails();
 
         try
         {
             thumbnails.Clear();
             await foreach (PageThumbnailData thumbnail in _renderService.RenderThumbnailsAsync(
-                _getManager(), _getRenderTempPath(), token))
+                _getManager(), token))
             {
+                token.ThrowIfCancellationRequested();
                 thumbnails.Add(thumbnail);
             }
         }
@@ -163,6 +174,11 @@ public sealed class PageViewController
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"LoadThumbnails error: {ex.Message}");
+        }
+        finally
+        {
+            if (ReferenceEquals(_thumbnailCts, cts))
+                _thumbnailCts = null;
         }
     }
 
@@ -297,7 +313,6 @@ public sealed class PageViewController
                 pageIndexBeforeReorder, originalIndex, newIndex));
             thumbnails.Move(originalIndex, newIndex);
             UpdateThumbnailNumbers();
-            _setRenderTempPath(null);
             _preserveThumbnailsAfterReorder = true;
             _getManager().MovePage(originalIndex, newIndex);
             UpdateAnnotationPageIndices(originalIndex, newIndex);
