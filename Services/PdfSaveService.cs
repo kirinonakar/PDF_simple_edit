@@ -41,7 +41,9 @@ public sealed class PdfSaveService
             return;
         }
 
-        await WriteAtomicallyAsync(filePath, editedBytes);
+        // 메모리의 문서는 항상 평문이므로, 사용자 저장일 때만 원래의 보호 설정을
+        // 적용한 바이트를 디스크에 기록한다. (인쇄용 임시 파일 등은 평문 유지)
+        await WriteAtomicallyAsync(filePath, manager.ProtectBytesForSave(editedBytes));
 
         manager.ReplacePdfBytesAfterSave(editedBytes, filePath);
         foreach (PdfAnnotation annotation in annotations.Where(annotation =>

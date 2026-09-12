@@ -75,13 +75,20 @@ public sealed class PdfOperationService
         PdfDocumentManager manager,
         PdfMergeRequest request)
     {
+        // 병합 결과는 원본 문서의 보호 설정을 유지한다. 병합된 파일을 다시 열
+        // 때도 같은 암호가 필요하므로 미리 기억해 둔다.
+        string? savedPassword = manager.SavePassword;
+
         string outputPath;
         if (request.Target == PdfMergeTarget.CurrentDocument)
         {
             outputPath = manager.FilePath ?? System.IO.Path.Combine(
                 Windows.Storage.ApplicationData.Current.TemporaryFolder.Path,
                 $"merging_{Guid.NewGuid()}.pdf");
-            if (!await manager.SaveAsAsync(outputPath, false))
+            // 현재 문서를 원본 경로에 평문으로 미리 덮어쓰면 보호 설정이 사라질
+            // 수 있다. 병합은 메모리 스냅샷을 소스로 사용하므로, 아직 파일이
+            // 없는 새 문서일 때만 임시 파일을 만든다.
+            if (manager.FilePath == null && !await manager.SaveAsAsync(outputPath, false))
                 return null;
         }
         else
@@ -90,7 +97,7 @@ public sealed class PdfOperationService
         }
 
         bool success = await manager.MergeFilesAsync(request.SourcePaths.ToList(), outputPath);
-        if (!success || !await manager.OpenAsync(outputPath))
+        if (!success || await manager.OpenWithPasswordAsync(outputPath, savedPassword) != PdfOpenStatus.Success)
             return null;
         return outputPath;
     }

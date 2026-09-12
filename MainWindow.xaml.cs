@@ -899,8 +899,24 @@ namespace PDF_simple_edit
                     FilePath = file.Path
                 };
                 
-                bool success = await newTab.PdfManager.OpenAsync(file.Path);
-                if (success)
+                PdfOpenStatus status = await newTab.PdfManager.OpenWithPasswordAsync(file.Path, null);
+                bool isRetry = false;
+                while (status is PdfOpenStatus.PasswordRequired or PdfOpenStatus.WrongPassword)
+                {
+                    TxtStatus.Text = "암호 입력 대기 중...";
+                    string? password = await _dialogService.ShowPasswordPromptAsync(Content.XamlRoot, file.Name, isRetry);
+                    if (password == null)
+                    {
+                        // 사용자가 암호 입력을 취소하면 파일을 열지 않는다.
+                        TxtStatus.Text = "파일 열기가 취소되었습니다.";
+                        return;
+                    }
+
+                    status = await newTab.PdfManager.OpenWithPasswordAsync(file.Path, password);
+                    isRetry = true;
+                }
+
+                if (status == PdfOpenStatus.Success)
                 {
                     newTab.Annotations.AddRange(newTab.PdfManager.LoadSavedSignatures());
                     _tabs.Add(newTab);

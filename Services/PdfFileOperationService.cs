@@ -14,13 +14,16 @@ internal sealed class PdfFileOperationService
     public Task<bool> MergeAsync(
         byte[]? currentPdfBytes,
         IReadOnlyCollection<string> sourceFiles,
-        string outputPath)
+        string outputPath,
+        WriterProperties? encryptionProperties = null)
     {
         return Task.Run(() =>
         {
             try
             {
-                using var writer = new PdfWriter(outputPath);
+                using var writer = encryptionProperties == null
+                    ? new PdfWriter(outputPath)
+                    : new PdfWriter(outputPath, encryptionProperties);
                 using var destination = new PdfDocument(writer);
                 var merger = new PdfMerger(destination);
 
@@ -56,7 +59,8 @@ internal sealed class PdfFileOperationService
         byte[] pdfBytes,
         string? sourceFilePath,
         string outputFolder,
-        IReadOnlyList<(int start, int end)> ranges)
+        IReadOnlyList<(int start, int end)> ranges,
+        WriterProperties? encryptionProperties = null)
     {
         return Task.Run(() =>
         {
@@ -77,7 +81,9 @@ internal sealed class PdfFileOperationService
                     using var input = new MemoryStream(pdfBytes);
                     using var reader = new PdfReader(input);
                     using var source = new PdfDocument(reader);
-                    using var writer = new PdfWriter(outputPath);
+                    using var writer = encryptionProperties == null
+                        ? new PdfWriter(outputPath)
+                        : new PdfWriter(outputPath, encryptionProperties);
                     using var destination = new PdfDocument(writer);
                     source.CopyPagesTo(start, end, destination);
                     count++;
@@ -95,7 +101,8 @@ internal sealed class PdfFileOperationService
     public Task<bool> ExportPagesAsync(
         byte[] pdfBytes,
         string outputPath,
-        IEnumerable<int> pageIndices)
+        IEnumerable<int> pageIndices,
+        WriterProperties? encryptionProperties = null)
     {
         List<int> indices = pageIndices
             .Distinct()
@@ -111,7 +118,9 @@ internal sealed class PdfFileOperationService
                 using var input = new MemoryStream(pdfBytes);
                 using var reader = new PdfReader(input);
                 using var source = new PdfDocument(reader);
-                using var writer = new PdfWriter(outputPath);
+                using var writer = encryptionProperties == null
+                    ? new PdfWriter(outputPath)
+                    : new PdfWriter(outputPath, encryptionProperties);
                 using var destination = new PdfDocument(writer);
 
                 foreach (int pageIndex in indices)

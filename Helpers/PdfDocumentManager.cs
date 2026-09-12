@@ -33,6 +33,11 @@ namespace PDF_simple_edit.Helpers
         private readonly PdfContentStreamEditor _contentStreamEditor = new();
         private readonly PdfAnnotationTargetResolver _annotationTargetResolver = new();
         private readonly PdfFileOperationService _fileOperationService = new();
+        private readonly PdfSecurityService _securityService = new();
+        private string? _openPassword;
+        private bool _sourceEncrypted;
+        private bool _passwordRequiredToOpen;
+        private int _sourcePermissions = -1;
         private const int MaxUndoSteps = 30;
 
         public bool CanUndo => _undoStack.Count > 0;
@@ -40,6 +45,9 @@ namespace PDF_simple_edit.Helpers
 
         public string? FilePath => _filePath;
         public void SetFilePath(string path) => _filePath = path;
+
+        public bool IsPasswordProtected => _sourceEncrypted;
+        public string? SavePassword => _openPassword;
         
         public bool IsModified => _isModified;
         public void MarkModified(bool modified = true)
@@ -105,7 +113,10 @@ namespace PDF_simple_edit.Helpers
         {
         }
 
-        public async Task<bool> OpenAsync(string filePath)
+        public async Task<bool> OpenAsync(string filePath) =>
+            await OpenWithPasswordAsync(filePath, null) == PdfOpenStatus.Success;
+
+        public async Task<PdfOpenStatus> OpenWithPasswordAsync(string filePath, string? password)
         {
             return await Task.Run(() =>
             {
@@ -113,23 +124,32 @@ namespace PDF_simple_edit.Helpers
                 {
                     try
                     {
-                        if (!File.Exists(filePath)) return false;
-                        _pdfBytes = File.ReadAllBytes(filePath);
+                        if (!File.Exists(filePath)) return PdfOpenStatus.Failed;
+
+                        PdfOpenResult result = _securityService.Open(File.ReadAllBytes(filePath), password);
+                        if (!result.IsSuccess || result.Bytes == null)
+                            return result.Status;
+
+                        _pdfBytes = result.Bytes;
                         _filePath = filePath;
                         _isModified = false;
                         _contentCache.Clear();
                         _undoStack.Clear();
                         _redoStack.Clear();
-                        
+                        _openPassword = result.Password;
+                        _sourceEncrypted = result.WasEncrypted;
+                        _passwordRequiredToOpen = result.PasswordRequiredToOpen;
+                        _sourcePermissions = result.Permissions;
+
                         DocumentChanged?.Invoke(this, EventArgs.Empty);
                         PageStructureChanged?.Invoke(this, EventArgs.Empty);
                         ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-                        return true;
+                        return PdfOpenStatus.Success;
                     }
                     catch (Exception ex)
                     {
                         System.Diagnostics.Debug.WriteLine($"Error opening PDF: {ex.Message}");
-                        return false;
+                        return PdfOpenStatus.Failed;
                     }
                 }
             });
@@ -152,7 +172,9 @@ namespace PDF_simple_edit.Helpers
                 {
                     try
                     {
-                        File.WriteAllBytes(filePath, _pdfBytes);
+                        // 메모리의 문서는 항상 평문이므로, 사용자 저장 시에만 보호
+                        // 설정을 적용한 바이트를 디스크에 기록한다.
+                        File.WriteAllBytes(filePath, isUserSave ? ProtectBytesForSave(_pdfBytes) : _pdfBytes);
                         
                         if (isUserSave)
                         {
@@ -169,6 +191,38 @@ namespace PDF_simple_edit.Helpers
                     }
                 }
             });
+        }
+
+        /// <summary>
+        /// 사용자 저장(디스크 기록)용 바이트를 만든다. 암호로 보호된 문서는 원래의
+        /// 열기 암호와 권한 설정을 유지한 채 AES-256으로 다시 암호화하며, 메모리의
+        /// 문서는 계속 평문으로 유지된다.
+        /// </summary>
+        public byte[] ProtectBytesForSave(byte[] content)
+        {
+            if (!_sourceEncrypted)
+                return content;
+
+            return PdfSecurityService.Encrypt(
+                content,
+                _passwordRequiredToOpen ? _openPassword : null,
+                _openPassword,
+                _sourcePermissions);
+        }
+
+        /// <summary>
+        /// 병합/나누기/페이지 내보내기처럼 원본 문서에서 파생된 파일을 새로 쓸 때
+        /// 사용할 보호 설정을 만든다. 보호되지 않은 문서면 null을 반환한다.
+        /// </summary>
+        public WriterProperties? CreateProtectedWriterProperties()
+        {
+            if (!_sourceEncrypted)
+                return null;
+
+            return PdfSecurityService.CreateEncryptionProperties(
+                _passwordRequiredToOpen ? _openPassword : null,
+                _openPassword,
+                _sourcePermissions);
         }
 
         public void ApplyBatchEdit(Action<PdfDocument> editAction)
@@ -543,6 +597,10 @@ namespace PDF_simple_edit.Helpers
                 _pdfBytes = ms.ToArray();
                 _filePath = null;
                 _isModified = false;
+                _openPassword = null;
+                _sourceEncrypted = false;
+                _passwordRequiredToOpen = false;
+                _sourcePermissions = -1;
                 _undoStack.Clear();
                 _redoStack.Clear();
                 DocumentChanged?.Invoke(this, EventArgs.Empty);
@@ -556,6 +614,10 @@ namespace PDF_simple_edit.Helpers
             _pdfBytes = null;
             _filePath = null;
             _isModified = false;
+            _openPassword = null;
+            _sourceEncrypted = false;
+            _passwordRequiredToOpen = false;
+            _sourcePermissions = -1;
             _undoStack.Clear();
             _redoStack.Clear();
             DocumentChanged?.Invoke(this, EventArgs.Empty);
@@ -851,10 +913,14 @@ namespace PDF_simple_edit.Helpers
             string outputPath)
         {
             byte[]? pdfSnapshot;
+            WriterProperties? protection;
             lock (_docLock)
+            {
                 pdfSnapshot = _pdfBytes == null ? null : (byte[])_pdfBytes.Clone();
+                protection = CreateProtectedWriterProperties();
+            }
 
-            return _fileOperationService.MergeAsync(pdfSnapshot, sourceFiles, outputPath);
+            return _fileOperationService.MergeAsync(pdfSnapshot, sourceFiles, outputPath, protection);
         }
 
         public Task<int> SplitFileAsync(
@@ -863,19 +929,22 @@ namespace PDF_simple_edit.Helpers
         {
             byte[] pdfSnapshot;
             string? sourceFilePath;
+            WriterProperties? protection;
             lock (_docLock)
             {
                 if (_pdfBytes == null)
                     return Task.FromResult(0);
                 pdfSnapshot = (byte[])_pdfBytes.Clone();
                 sourceFilePath = _filePath;
+                protection = CreateProtectedWriterProperties();
             }
 
             return _fileOperationService.SplitAsync(
                 pdfSnapshot,
                 sourceFilePath,
                 outputFolder,
-                ranges);
+                ranges,
+                protection);
         }
 
         public Task<bool> ExportPagesAsync(
@@ -883,17 +952,20 @@ namespace PDF_simple_edit.Helpers
             IEnumerable<int> pageIndices)
         {
             byte[] pdfSnapshot;
+            WriterProperties? protection;
             lock (_docLock)
             {
                 if (_pdfBytes == null)
                     return Task.FromResult(false);
                 pdfSnapshot = (byte[])_pdfBytes.Clone();
+                protection = CreateProtectedWriterProperties();
             }
 
             return _fileOperationService.ExportPagesAsync(
                 pdfSnapshot,
                 outputPath,
-                pageIndices);
+                pageIndices,
+                protection);
         }
     }
 }

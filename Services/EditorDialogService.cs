@@ -147,4 +147,42 @@ public sealed class EditorDialogService
             CloseButtonText = "확인",
             XamlRoot = xamlRoot
         }.ShowAsync().AsTask();
+
+    /// <summary>
+    /// 암호로 보호된 PDF를 열 때 사용할 암호를 입력받는다.
+    /// 사용자가 취소하면 null을 반환한다.
+    /// </summary>
+    public async Task<string?> ShowPasswordPromptAsync(XamlRoot xamlRoot, string fileName, bool isRetry)
+    {
+        var passwordBox = new PasswordBox
+        {
+            PlaceholderText = "PDF 암호",
+            Width = 320,
+            PasswordRevealMode = PasswordRevealMode.Peek
+        };
+
+        var panel = new StackPanel { Spacing = 8, MinWidth = 360 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = isRetry
+                ? "암호가 올바르지 않습니다. 다시 입력해 주세요."
+                : $"'{fileName}' 파일은 암호로 보호되어 있습니다.\n문서를 열려면 암호를 입력해 주세요.",
+            TextWrapping = TextWrapping.Wrap
+        });
+        panel.Children.Add(passwordBox);
+
+        var dialog = new ContentDialog
+        {
+            Title = "암호 입력",
+            Content = panel,
+            PrimaryButtonText = "열기",
+            CloseButtonText = "취소",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = xamlRoot
+        };
+        dialog.Opened += (_, _) => passwordBox.Focus(FocusState.Programmatic);
+
+        ContentDialogResult result = await dialog.ShowAsync();
+        return result == ContentDialogResult.Primary ? passwordBox.Password : null;
+    }
 }
