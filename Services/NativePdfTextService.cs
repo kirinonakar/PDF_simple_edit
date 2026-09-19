@@ -3,6 +3,8 @@ using iText.IO.Font;
 using iText.Kernel.Font;
 using iText.Kernel.Geom;
 using iText.Kernel.Pdf;
+using iText.Kernel.Colors;
+using iText.Kernel.Pdf.Canvas;
 using iText.Kernel.Pdf.Canvas.Parser;
 using iText.Kernel.Pdf.Canvas.Parser.Data;
 using iText.Kernel.Pdf.Canvas.Parser.Listener;
@@ -23,7 +25,7 @@ namespace PDF_simple_edit.Services;
 /// bytes, resources, text/line matrices, and final advances remain intact. Forms use
 /// copy-on-write per invocation, so editing an instance never edits other instances.
 /// </summary>
-public sealed class NativePdfTextService
+public sealed partial class NativePdfTextService
 {
     public static PdfPageContent ToPageContent(NativePdfTextBlock block)
     {
@@ -33,8 +35,7 @@ public sealed class NativePdfTextService
             FontFamily = run.FontName, FontSize = run.DisplayFontSize, Color = run.Color,
             OriginalFontObjectNumber = run.FontObjectNumber, LineHeight = block.LineHeight,
             BaselineOffset = block.Glyphs[0].Origin.Y - block.Bounds.Y,
-            IsBold = run.FontName.Contains("Bold", StringComparison.OrdinalIgnoreCase) || run.FontName.Contains("Heavy", StringComparison.OrdinalIgnoreCase),
-            IsItalic = run.FontName.Contains("Italic", StringComparison.OrdinalIgnoreCase) || run.FontName.Contains("Obl", StringComparison.OrdinalIgnoreCase) };
+            FontWeight = run.IsBold ? 700 : 400, IsBold = run.IsBold, IsItalic = run.IsItalic };
     }
     private sealed record Operation(int Start, int End, int TextIndex, List<PdfObject> Items)
     {
@@ -70,7 +71,7 @@ public sealed class NativePdfTextService
     }
 
     private sealed record PageData(List<Source> Sources, List<NativePdfRun> Runs,
-        List<NativePdfTextBlock> Blocks, PageMap Map);
+        List<NativePdfTextBlock> Blocks, PageMap Map, Dictionary<string, (Color Fill, Color Stroke)> Colors);
 
     private static PageData Read(PdfPage page)
     {
@@ -92,7 +93,7 @@ public sealed class NativePdfTextService
             tracker.Inner = processor.RegisterContentOperator(name, tracker);
         }
         processor.ProcessPageContent(page);
-        return new(sources, listener.Runs, Group(listener.Runs), map);
+        return new(sources, listener.Runs, Group(listener.Runs), map, listener.Colors);
     }
 
     private static Source ReadSource(PdfStream stream, PdfResources resources, string path,
@@ -154,6 +155,8 @@ public sealed class NativePdfTextService
         public Target? Current;
         public PdfCanvasProcessor Processor = null!;
         public List<NativePdfRun> Runs = new();
+        public Dictionary<string, (Color Fill, Color Stroke)> Colors = new();
+        private readonly Dictionary<PdfFont, PdfFontMetadata> _fontMetadata = new();
         public ICollection<EventType> GetSupportedEvents() => new[] { EventType.RENDER_TEXT };
         public void EventOccurred(IEventData data, EventType type)
         {
@@ -198,12 +201,21 @@ public sealed class NativePdfTextService
                 glyphs.Add(new NativePdfGlyph { Text = character.GetText(), Code = character.GetPdfString().GetValueBytes(),
                     RunId = id, Origin = origin, End = endPoint, Bounds = bounds, Advance = character.GetUnscaledWidth() });
             }
-            var vertical = new Vector(0, (float)size, 0).Cross(matrix);
             string hex = PdfDisplayColorService.ToHex(info.GetFillColor());
+            Colors[id] = (info.GetFillColor(), info.GetStrokeColor());
+            if (!_fontMetadata.TryGetValue(font, out var metadata))
+                _fontMetadata[font] = metadata = PdfFontMetadataResolver.Resolve(font);
+            double baselineLengthSquared = matrix.Get(0) * matrix.Get(0) + matrix.Get(1) * matrix.Get(1);
+            double slant = baselineLengthSquared < 1e-12 ? 0 :
+                (matrix.Get(0) * matrix.Get(3) + matrix.Get(1) * matrix.Get(4)) / baselineLengthSquared;
             Runs.Add(new NativePdfRun { Id = id, SourcePath = Current.Source.Path, OperationIndex = Current.Operation.TextIndex,
                 OperandIndex = operand, FontObjectNumber = font.GetPdfObject().GetIndirectReference()?.GetObjNumber() ?? -1,
-                FontName = font.GetFontProgram().GetFontNames().GetFontName(), Color = hex, FontSize = size,
-                DisplayFontSize = Math.Sqrt(vertical.Get(0) * vertical.Get(0) + vertical.Get(1) * vertical.Get(1)),
+                FontName = metadata.RawName, Color = hex, FontSize = size,
+                IsBold = metadata.Weight >= 600,
+                IsItalic = metadata.RawName.Contains("Italic", StringComparison.OrdinalIgnoreCase) || metadata.RawName.Contains("Obl", StringComparison.OrdinalIgnoreCase) || Math.Abs(slant) > .08,
+                Slant = slant,
+                DisplayFontSize = baselineLengthSquared < 1e-12 ? Math.Abs(size) :
+                    Math.Abs(size * (matrix.Get(0) * matrix.Get(4) - matrix.Get(1) * matrix.Get(3))) / Math.Sqrt(baselineLengthSquared),
                 HorizontalScale = hs, CharacterSpacing = gs.GetCharSpacing(), WordSpacing = gs.GetWordSpacing(),
                 Rise = gs.GetTextRise(), RenderMode = info.GetTextRenderMode(), TextMatrix = Values(tm), Ctm = Values(ctm),
                 OriginalAdvance = info.GetUnscaledWidth(), IsVertical = font.GetPdfObject().GetAsName(PdfName.Encoding)?.GetValue().EndsWith("-V", StringComparison.Ordinal) == true, Glyphs = glyphs });
@@ -293,11 +305,12 @@ public sealed class NativePdfTextService
     {
         ArgumentNullException.ThrowIfNull(bytes);
         if (edits.Count == 0) throw new ArgumentException("편집할 텍스트가 없습니다.", nameof(edits));
-        if (edits.All(e => e.Text == e.Block.Text && e.DeltaX == 0 && e.DeltaY == 0))
+        if (edits.All(e => e.Style == null && e.Text == e.Block.Text && e.DeltaX == 0 && e.DeltaY == 0))
             return new(bytes, edits[0].Block);
         using var input = new MemoryStream(bytes);
         using var output = new MemoryStream();
         NativePdfTextBlock? layout = null;
+        var layouts = new List<NativePdfTextBlock>();
         // Windows.Data.Pdf can keep rendering the original revision of some
         // PDFs after an incremental update (including the AJCC9 abstract). Write
         // a complete current revision so preview, saved output and extraction
@@ -317,6 +330,8 @@ public sealed class NativePdfTextService
                 if (original.Any(r => r.IsVertical || Math.Abs(r.HorizontalScale * r.FontSize) < 0.0001 || r.RenderMode >= 4))
                     throw new InvalidOperationException("세로쓰기 또는 클리핑 텍스트의 원본 보존 편집은 아직 지원하지 않습니다.");
                 layout = Layout(doc, data, edit);
+                if (edit.Style != null) layout = ApplyStyle(doc, data, layout, edit.Style);
+                layouts.Add(layout);
                 foreach (var run in original)
                 {
                     var placed = layout.Glyphs.Where(g => !g.IsVirtual && g.RunId == run.Id).ToList();
@@ -331,7 +346,8 @@ public sealed class NativePdfTextService
                             .Concat(run.Glyphs.Skip(insertion).Where((g, i) => !selectedIndexes.Contains(i + insertion))).ToList();
                     }
                     bool unchanged = run.Glyphs.Count == placed.Count && run.Glyphs.Zip(placed).All(pair =>
-                        pair.Second.ReplacementFontObjectNumber == 0 && pair.First.Code.SequenceEqual(pair.Second.Code) && Math.Abs(pair.First.Origin.X - pair.Second.Origin.X) < .00001 &&
+                        pair.Second.ReplacementFontObjectNumber == 0 && pair.Second.StyleFontSize == null && pair.Second.StyleColor == null && pair.Second.StyleSlantDelta == 0 &&
+                        pair.First.Code.SequenceEqual(pair.Second.Code) && Math.Abs(pair.First.Origin.X - pair.Second.Origin.X) < .00001 &&
                         Math.Abs(pair.First.Origin.Y - pair.Second.Origin.Y) < .00001);
                     if (unchanged) continue;
                     if (replacements.TryGetValue(run.Id, out var prior))
@@ -369,11 +385,19 @@ public sealed class NativePdfTextService
                 if (sourceFonts != null) foreach (var name in sourceFonts.KeySet()) pageFonts.Put(name, sourceFonts.Get(name));
             }
             pageResources.Put(PdfName.Font, pageFonts);
+            foreach (var category in new[] { PdfName.ColorSpace, PdfName.Pattern })
+            {
+                var entries = CopyDictionary(pageResources.GetAsDictionary(category) ?? new PdfDictionary());
+                foreach (var source in data.Sources)
+                    if (source.Resources.GetResource(category) is { } added)
+                        foreach (var name in added.KeySet()) entries.Put(name, added.Get(name));
+                if (!entries.IsEmpty()) pageResources.Put(category, entries);
+            }
             page.GetPdfObject().Put(PdfName.Resources, pageResources);
             // A trailing line break/space changes the live caret layout without
             // painting any glyph. Keep that edit buffer and the exact source
             // bytes until a subsequent input actually changes painted content.
-            if (!modified) return new(bytes, layout!);
+            if (!modified) return new(bytes, layout!) { Layouts = layouts };
             page.GetPdfObject().Put(PdfName.Contents, contents);
             page.SetModified();
         }
@@ -381,7 +405,19 @@ public sealed class NativePdfTextService
         using var finalDoc = new PdfDocument(new PdfReader(new MemoryStream(resultBytes)));
         var finalPage = finalDoc.GetPage(pageIndex + 1); var finalBox = finalPage.GetCropBox();
         var finalMap = new PageMap(finalBox.GetX(), finalBox.GetY(), finalBox.GetWidth(), finalBox.GetHeight(), ((finalPage.GetRotation() % 360) + 360) % 360);
-        layout = ApplyInkBounds(resultBytes, pageIndex, new() { layout! }, finalMap)[0];
+        layouts = ApplyInkBounds(resultBytes, pageIndex, layouts, finalMap);
+        layout = layouts[^1];
+        if (edits.Any(e => e.Style is { } style && (style.FontSize != null || style.FontFamily != null || style.IsBold != null || style.IsItalic != null)))
+        {
+            bool SelectedForStyle(NativePdfGlyph glyph) => edits.SelectMany(e => e.Block.Glyphs).Any(s => !s.IsVirtual &&
+                s.RunId == glyph.RunId && s.Code.SequenceEqual(glyph.Code) && Math.Abs(s.Origin.X - glyph.Origin.X) < .001 && Math.Abs(s.Origin.Y - glyph.Origin.Y) < .001);
+            var other = Extract(bytes, pageIndex).SelectMany(b => b.Glyphs)
+                .Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text) && !SelectedForStyle(g)).ToList();
+            foreach (var glyph in layouts.SelectMany(b => b.Glyphs).Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text)))
+                if (other.Any(g => Math.Min(g.Bounds.Right, glyph.Bounds.Right) - Math.Max(g.Bounds.X, glyph.Bounds.X) > .25 &&
+                    Math.Min(g.Bounds.Bottom, glyph.Bounds.Bottom) - Math.Max(g.Bounds.Y, glyph.Bounds.Y) > .25))
+                    throw new InvalidOperationException("변경한 스타일이 주변 텍스트와 겹칩니다. 크기를 줄이거나 더 넓은 텍스트 영역을 선택해 주세요.");
+        }
         if (edits.Count == 1 && edits[0].Text != edits[0].Block.Text)
         {
             var original = edits[0].Block;
@@ -394,7 +430,7 @@ public sealed class NativePdfTextService
                     Math.Min(g.Bounds.Bottom, glyph.Bounds.Bottom) - Math.Max(g.Bounds.Y, glyph.Bounds.Y) > .25))
                     throw new InvalidOperationException("추가한 줄이 다른 원본 텍스트와 겹칩니다. 내용을 줄이거나 텍스트 영역을 먼저 이동해 주세요.");
         }
-        return new(resultBytes, layout);
+        return new(resultBytes, layout) { Layouts = layouts };
     }
 
     private static List<NativePdfTextBlock> ApplyInkBounds(byte[] bytes, int pageIndex, List<NativePdfTextBlock> blocks, PageMap map)
@@ -673,7 +709,9 @@ public sealed class NativePdfTextService
                 fontNames[number] = name;
             }
             resources.Put(PdfName.Font, fontResources);
-            patches[op] = RewriteOperation(op, runs, replacements, data.Map, fontResources, fontNames);
+            foreach (var category in new[] { PdfName.ColorSpace, PdfName.Pattern })
+                if (resources.GetAsDictionary(category) is { } entries) resources.Put(category, CopyDictionary(entries));
+            patches[op] = RewriteOperation(op, runs, replacements, data, doc, new PdfResources(resources), fontResources, fontNames);
         }
         if (patches.Count == 0) return null;
         using var buffer = new MemoryStream(); int position = 0;
@@ -733,7 +771,8 @@ public sealed class NativePdfTextService
     }
 
     private static byte[] RewriteOperation(Operation op, List<NativePdfRun> runs,
-        Dictionary<string, List<NativePdfGlyph>> replacements, PageMap map, PdfDictionary fontResources, Dictionary<int, PdfName> fontNames)
+        Dictionary<string, List<NativePdfGlyph>> replacements, PageData data, PdfDocument doc,
+        PdfResources resources, PdfDictionary fontResources, Dictionary<int, PdfName> fontNames)
     {
         using var buffer = new MemoryStream();
         var output = new PdfOutputStream(buffer);
@@ -753,6 +792,15 @@ public sealed class NativePdfTextService
             var originalFontName = fontResources.KeySet().First(name =>
                 fontResources.GetAsDictionary(name)?.GetIndirectReference()?.GetObjNumber() == run.FontObjectNumber);
             var activeFontName = originalFontName;
+            double activeFontSize = run.FontSize;
+            string? activeColor = null;
+            void SetColor(string? color)
+            {
+                if (color == activeColor) return;
+                var colors = data.Colors[run.Id];
+                buffer.Write(ColorCommands(doc, resources, color, colors.Fill, colors.Stroke));
+                activeColor = color;
+            }
             double cursor = 0;
             double rise = run.Rise;
             var matrix = MatrixOf(run.TextMatrix).Multiply(MatrixOf(run.Ctm));
@@ -762,7 +810,7 @@ public sealed class NativePdfTextService
             foreach (var glyph in glyphs)
             {
                 var originalOrigin = run.Glyphs[0].Origin;
-                var delta = map.UnmapVector(glyph.Origin.X - originalOrigin.X, glyph.Origin.Y - originalOrigin.Y);
+                var delta = data.Map.UnmapVector(glyph.Origin.X - originalOrigin.X, glyph.Origin.Y - originalOrigin.Y);
                 double textX = (delta.X * d - delta.Y * c) / determinant;
                 double textY = (delta.Y * a - delta.X * b) / determinant;
                 // Position with text operators only. Windows.Data.Pdf restores
@@ -770,16 +818,37 @@ public sealed class NativePdfTextService
                 // putting every glyph inside q/cm/Tj/Q collapses text there.
                 // TJ advances the actual text cursor and Ts places the baseline
                 // without replacing the original text or line matrix.
-                double shift = -(textX - cursor) * 1000 / (run.FontSize * run.HorizontalScale);
+                double shift = -(textX - cursor) * 1000 / (activeFontSize * run.HorizontalScale);
                 if (Math.Abs(shift) > .000001) Write($"[{N(shift)}] TJ\n");
                 double nextRise = run.Rise + textY;
                 if (Math.Abs(nextRise - rise) > .000001) { Write($"{N(nextRise)} Ts\n"); rise = nextRise; }
                 var fontName = glyph.ReplacementFontObjectNumber > 0 ? fontNames[glyph.ReplacementFontObjectNumber] : originalFontName;
-                if (!fontName.Equals(activeFontName)) { Write($"{fontName} {N(run.FontSize)} Tf\n"); activeFontName = fontName; }
+                double fontSize = glyph.StyleFontSize ?? run.FontSize;
+                if (!fontName.Equals(activeFontName) || fontSize != activeFontSize)
+                { Write($"{fontName} {N(fontSize)} Tf\n"); activeFontName = fontName; activeFontSize = fontSize; }
+                SetColor(glyph.StyleColor);
+                void Slant(double shear)
+                {
+                    if (Math.Abs(shear) < .000001) return;
+                    // Conjugate the text-space shear into the current user space,
+                    // anchored at this baseline. Invert with cm immediately after
+                    // painting; text and line matrices keep their normal advance.
+                    var tm = run.TextMatrix;
+                    double ta = tm[0], tb = tm[1], tc = tm[2], td = tm[3];
+                    double det = ta * td - tb * tc;
+                    if (Math.Abs(det) < 1e-12) throw new InvalidOperationException("역변환할 수 없는 PDF 텍스트 행렬입니다.");
+                    double x = tm[4] + textX * ta + nextRise * tc, y = tm[5] + textX * tb + nextRise * td;
+                    double sa = 1 - shear * ta * tb / det, sb = -shear * tb * tb / det;
+                    double sc = shear * ta * ta / det, sd = 1 + shear * ta * tb / det;
+                    Write($"{N(sa)} {N(sb)} {N(sc)} {N(sd)} {N(x - x * sa - y * sc)} {N(y - x * sb - y * sd)} cm\n");
+                }
+                Slant(glyph.StyleSlantDelta);
                 Write($"<{Convert.ToHexString(glyph.Code)}> Tj\n");
+                Slant(-glyph.StyleSlantDelta);
                 cursor = textX + glyph.Advance;
             }
-            if (!activeFontName.Equals(originalFontName)) Write($"{originalFontName} {N(run.FontSize)} Tf\n");
+            if (!activeFontName.Equals(originalFontName) || activeFontSize != run.FontSize) Write($"{originalFontName} {N(run.FontSize)} Tf\n");
+            SetColor(null);
             if (Math.Abs(rise - run.Rise) > .000001) Write($"{N(run.Rise)} Ts\n");
             // Leave following strings, relative positioning and T* at exactly
             // their original origin, independently of the replacement's length.

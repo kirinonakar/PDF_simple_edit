@@ -151,12 +151,12 @@ public static class InstalledFontService
     }
 
     // Rank installed faces by family, typographic class, weight and slant.
-    internal static IReadOnlyList<string> GetSimilarFontFiles(string originalName, int weight)
+    internal static IReadOnlyList<string> GetSimilarFontFiles(string originalName, int weight, bool? requestedItalic = null)
     {
         static int Kind(string name) => name.Contains("mono") || name.Contains("courier") || name.Contains("consolas") ? 2
             : !name.Contains("sans") && (name.Contains("serif") || name.Contains("times") || name.Contains("mincho") || name.Contains("batang") || name.Contains("명조") || name.Contains("바탕")) ? 1 : 0;
         string family = NormalizeFamily(originalName);
-        bool italic = originalName.Contains("italic", StringComparison.OrdinalIgnoreCase) || originalName.Contains("oblique", StringComparison.OrdinalIgnoreCase);
+        bool italic = requestedItalic ?? (originalName.Contains("italic", StringComparison.OrdinalIgnoreCase) || originalName.Contains("oblique", StringComparison.OrdinalIgnoreCase));
         var candidates = new List<(string Path, int Score)>();
         foreach (var root in new[] { Registry.CurrentUser, Registry.LocalMachine })
         {

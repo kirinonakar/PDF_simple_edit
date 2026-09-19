@@ -23,7 +23,7 @@
                 <ComboBoxItem Content="원본 보존 방식"/>
             </ComboBox>
             <TextBlock x:Name="TextEditingModeDescription" x:FieldModifier="public" VerticalAlignment="Center" FontSize="12"
-                       Text="원래 글꼴과 줄 위치를 유지하여 편집"/>
+                       Text="원본 유지 · 글꼴·크기·색상·굵게·기울임 변경 · Alt+드래그 이동"/>
         </StackPanel>
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2">
             <Button x:Name="OpenButton" x:FieldModifier="public" ToolTipService.ToolTip="열기 (Ctrl+O)" Padding="8,6" Background="Transparent" BorderThickness="0">

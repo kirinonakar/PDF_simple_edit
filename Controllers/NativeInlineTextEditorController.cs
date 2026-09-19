@@ -52,6 +52,7 @@ public sealed class NativeInlineTextEditorController
     private bool _caretVisible = true;
     private Task _pending = Task.CompletedTask;
     private Task? _finishing;
+    private bool _restoreFocusOnFinish;
     private Action<string>? _status;
     private Action? _overlays;
     private Func<Task>? _render;
@@ -89,7 +90,7 @@ public sealed class NativeInlineTextEditorController
         _input.TextChanged += TextChanged;
         _input.SelectionChanged += (_, _) => { _caretVisible = true; DrawSelection(); };
         _input.PreviewKeyDown += KeyDown;
-        _input.LostFocus += async (_, _) => { if (_session?.IsFinishing != true) await FinishAsync(); };
+        _input.LostFocus += async (_, _) => { if (_session?.IsFinishing != true) await FinishAsync(restoreFocus: false); };
         _input.Loaded += (_, _) =>
         {
             _input?.Focus(FocusState.Programmatic);
@@ -263,9 +264,10 @@ public sealed class NativeInlineTextEditorController
         }
     }
 
-    public Task FinishAsync()
+    public Task FinishAsync(bool restoreFocus = true)
     {
         if (_finishing?.IsCompleted == true && _session?.IsFinishing == false) _finishing = null;
+        if (_finishing == null) _restoreFocusOnFinish = restoreFocus;
         return _finishing ??= FinishCoreAsync();
     }
 
@@ -275,18 +277,28 @@ public sealed class NativeInlineTextEditorController
         _session.IsFinishing = true;
         try
         {
+            int start = Math.Min(_input.Document.Selection.StartPosition, _input.Document.Selection.EndPosition);
+            int length = Math.Abs(_input.Document.Selection.EndPosition - _input.Document.Selection.StartPosition);
             await _pending;
             if (_preview == null || _snapshot == null) return;
+            var annotation = _session.Annotation;
+            // Preserve the highlighted characters for a subsequent toolbar
+            // command. A caret alone keeps the entire edited text selected.
+            var selection = await Task.Run(() => _service.RefreshSelection(_preview.Bytes, _pageIndex,
+                _preview.Layout, length > 0 ? start : 0, length > 0 ? length : int.MaxValue));
             if (!ReferenceEquals(_preview.Bytes, _snapshot))
             {
                 _manager!.CommitNativeTextEdit(_snapshot, _preview.Bytes);
                 // Stream operation indexes change after replacement. Discard stale
                 // handles; the next selection is extracted from committed bytes.
-                foreach (var item in _annotations!.Where(a => a.PageIndex == _pageIndex && a.NativeText != null).ToList())
+                foreach (var item in _annotations!.Where(a => a.PageIndex == _pageIndex && a.NativeText != null &&
+                    (a != annotation || selection == null)).ToList())
                 { _annotations!.Remove(item); _selected!.Remove(item); _removed?.Invoke(item); }
             }
+            if (selection != null) NativePdfTextService.UpdateAnnotation(annotation, selection);
             string? substitution = _preview.FontSubstitutionStatus;
-            Cleanup(); if (_render != null) await _render(); _overlays?.Invoke(); _restoreFocus?.Invoke(false);
+            Cleanup(); if (_render != null) await _render(); _overlays?.Invoke();
+            if (_restoreFocusOnFinish) _restoreFocus?.Invoke(false);
             if (substitution != null) _status?.Invoke("텍스트 편집 완료 · " + substitution);
         }
         catch (Exception error)

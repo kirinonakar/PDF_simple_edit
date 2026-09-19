@@ -124,7 +124,8 @@ internal static class NativePdfParagraphLayout
 
     public static NativePdfTextBlock Place(NativePdfTextBlock block, string text, List<NativePdfGlyph> tokens,
         Func<NativePdfGlyph, double> width, Func<NativePdfGlyph, NativePdfGlyph, double> kerning,
-        Func<NativePdfGlyph, double> trailingSpacing, double deltaX, double deltaY)
+        Func<NativePdfGlyph, double> trailingSpacing, double deltaX, double deltaY, bool preservePlacement = true,
+        double minimumLeading = 0)
     {
         var originalLines = block.Glyphs.Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text))
             .GroupBy(g => Math.Round(g.Origin.Y, 1)).Select(g => g.ToList()).OrderBy(g => g[0].Origin.Y).ToList();
@@ -135,7 +136,19 @@ internal static class NativePdfParagraphLayout
         // selection reflows at its right edge; explicit newlines still work below.
         bool wrap = block.Lines.Count > 1;
         double leading = Math.Max(block.LineHeight, block.Runs.Max(r => r.DisplayFontSize) * .9);
-        double Baseline(int i) => i < anchors.Count ? anchors[i].Y : anchors[^1].Y + (i - anchors.Count + 1) * leading;
+        var flowBaselines = new List<double> { anchors[0].Y };
+        double Baseline(int i)
+        {
+            if (preservePlacement)
+                return i < anchors.Count ? anchors[i].Y : anchors[^1].Y + (i - anchors.Count + 1) * leading;
+            while (flowBaselines.Count <= i)
+            {
+                int next = flowBaselines.Count;
+                double gap = next < anchors.Count ? Math.Max(anchors[next].Y - anchors[next - 1].Y, minimumLeading) : leading;
+                flowBaselines.Add(flowBaselines[^1] + gap);
+            }
+            return flowBaselines[i];
+        }
         bool White(NativePdfGlyph glyph) => string.IsNullOrWhiteSpace(glyph.Text);
         bool BreakAfter(NativePdfGlyph glyph) => White(glyph) || glyph.Text.EndsWith('-') || glyph.Text.EndsWith('\u2010') ||
             glyph.Text.EnumerateRunes().Any(r => r.Value is >= 0x2E80 and <= 0xA4CF or >= 0xAC00 and <= 0xD7AF);
@@ -190,7 +203,7 @@ internal static class NativePdfParagraphLayout
             }
             // Preserve exact original placement if reflow leaves a line's glyph
             // sequence unchanged. This also retains original justification.
-            if (lineIndex < originalLines.Count)
+            if (preservePlacement && lineIndex < originalLines.Count)
             {
                 var source = originalLines[lineIndex];
                 var indexes = Enumerable.Range(placedStart, placed.Count - placedStart).Where(i => !placed[i].IsVirtual && !White(placed[i])).ToList();

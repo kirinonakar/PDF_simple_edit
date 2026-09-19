@@ -29,6 +29,9 @@ public sealed record NativePdfGlyph
     public string RunId { get; init; } = "";
     public int ReplacementFontObjectNumber { get; init; }
     public string? ReplacementFontName { get; init; }
+    public double? StyleFontSize { get; init; }
+    public string? StyleColor { get; init; }
+    public double StyleSlantDelta { get; init; }
     public double Advance { get; init; }
     public PdfTextPoint Origin { get; init; }
     public PdfTextPoint End { get; init; }
@@ -47,6 +50,9 @@ public sealed record NativePdfRun
     public int FontObjectNumber { get; init; }
     public string FontName { get; init; } = "";
     public string Color { get; init; } = "#000000";
+    public bool IsBold { get; init; }
+    public bool IsItalic { get; init; }
+    public double Slant { get; init; }
     public double FontSize { get; init; }
     public double DisplayFontSize { get; init; }
     public double HorizontalScale { get; init; }
@@ -71,9 +77,14 @@ public sealed record NativePdfTextBlock
     public double LineHeight { get; init; }
 }
 
-public sealed record NativePdfTextEdit(NativePdfTextBlock Block, string Text, double DeltaX = 0, double DeltaY = 0);
+public sealed record NativePdfTextStyle(string? Color = null, double? FontSize = null,
+    bool? IsBold = null, bool? IsItalic = null, string? FontFamily = null);
+
+public sealed record NativePdfTextEdit(NativePdfTextBlock Block, string Text, double DeltaX = 0, double DeltaY = 0,
+    NativePdfTextStyle? Style = null);
 public sealed record NativePdfTextResult(byte[] Bytes, NativePdfTextBlock Layout)
 {
+    public IReadOnlyList<NativePdfTextBlock> Layouts { get; init; } = new[] { Layout };
     public string? FontSubstitutionStatus => Layout.Glyphs.Any(g => !g.IsVirtual && g.ReplacementFontName != null)
         ? "글리프 누락으로 글꼴 대체: " + string.Join(", ", Layout.Glyphs.Where(g => !g.IsVirtual)
             .Select(g => g.ReplacementFontName).Where(n => n != null).Distinct()) : null;

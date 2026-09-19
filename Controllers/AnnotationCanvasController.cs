@@ -117,6 +117,8 @@ public sealed class AnnotationCanvasController
 
     public List<PdfAnnotation> SelectedAnnotations { get; } = new();
 
+    public void RefreshSelectionControls() => PrimarySelectionChanged?.Invoke(PrimarySelection);
+
     public bool IsInlineEditing => _inlineTextEditorController.IsEditing;
 
     public Task FinishActiveInlineEditAsync() =>

@@ -97,7 +97,7 @@ public sealed class EditorFontController
         var mode = (TextEditingMode)_toolbar.TextEditingModeComboBox.SelectedIndex;
         if (!Enum.IsDefined(mode)) return;
         _toolbar.TextEditingModeDescription.Text = mode == TextEditingMode.PreserveOriginal
-            ? "원본 글꼴로 문단 편집 · 드래그 범위 선택 · Alt+드래그 이동"
+            ? "원본 유지 · 글꼴·크기·색상·굵게·기울임 변경 · Alt+드래그 이동"
             : "글꼴·크기 변경 가능 · 원본 텍스트를 교체하여 편집";
         if (_fontSettings.TextEditingMode == mode) return;
         _changingTextMode = true;
@@ -198,6 +198,8 @@ public sealed class EditorFontController
                 BtnItalic.IsChecked = isItalic;
             if (FontColorIndicator != null)
                 FontColorIndicator.Background = new SolidColorBrush(EditorColorService.Parse(color));
+            ColorPalette.SelectedItem = ColorPalette.Items.OfType<Border>()
+                .FirstOrDefault(item => string.Equals(item.Tag as string, color, StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -249,6 +251,7 @@ public sealed class EditorFontController
 
     private async void FontColor_Changed(object sender, SelectionChangedEventArgs e)
     {
+        if (_isSyncingFontControls) return;
         if (ColorPalette.SelectedItem is Border border && border.Tag is string color)
         {
             FontColorIndicator.Background = new SolidColorBrush(EditorColorService.Parse(color));

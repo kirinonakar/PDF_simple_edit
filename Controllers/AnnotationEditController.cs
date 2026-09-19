@@ -5,6 +5,7 @@ using PDF_simple_edit.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PDF_simple_edit.Controllers;
@@ -23,6 +24,7 @@ public sealed class AnnotationEditController
     private readonly Func<List<PdfAnnotation>> _getAnnotations;
     private readonly Func<int> _getCurrentPageIndex;
     private readonly Func<Task> _renderCurrentPageAsync;
+    private readonly SemaphoreSlim _styleGate = new(1, 1);
 
     public AnnotationEditController(
         AnnotationCanvasController canvasController,
@@ -128,6 +130,7 @@ public sealed class AnnotationEditController
     public async Task ApplyFontFamilyAsync(string fontFamily)
     {
         _fontSettings.FontFamily = fontFamily;
+        if (await ApplyNativeStyleAsync(new(FontFamily: fontFamily))) return;
         PdfAnnotation? annotation = GetSelectedTextAnnotation();
         if (annotation == null || !await PrepareTextReplacementAsync(annotation))
             return;
@@ -147,6 +150,7 @@ public sealed class AnnotationEditController
     public async Task ApplyFontSizeAsync(double fontSize)
     {
         _fontSettings.FontSize = fontSize;
+        if (await ApplyNativeStyleAsync(new(FontSize: fontSize))) return;
         PdfAnnotation? annotation = GetSelectedTextAnnotation();
         if (annotation == null || !await PrepareTextReplacementAsync(annotation))
             return;
@@ -159,6 +163,7 @@ public sealed class AnnotationEditController
     public async Task ApplyBoldAsync(bool isBold)
     {
         _fontSettings.IsBold = isBold;
+        if (await ApplyNativeStyleAsync(new(IsBold: isBold))) return;
         PdfAnnotation? annotation = GetSelectedTextAnnotation();
         if (annotation == null || !await PrepareTextReplacementAsync(annotation))
             return;
@@ -173,6 +178,7 @@ public sealed class AnnotationEditController
     public async Task ApplyItalicAsync(bool isItalic)
     {
         _fontSettings.IsItalic = isItalic;
+        if (await ApplyNativeStyleAsync(new(IsItalic: isItalic))) return;
         PdfAnnotation? annotation = GetSelectedTextAnnotation();
         if (annotation == null || !await PrepareTextReplacementAsync(annotation))
             return;
@@ -186,6 +192,7 @@ public sealed class AnnotationEditController
     public async Task ApplyColorAsync(string color)
     {
         _fontSettings.Color = color;
+        if (await ApplyNativeStyleAsync(new(Color: color))) return;
         PdfAnnotation? annotation = _canvasController.PrimarySelection;
         if (annotation == null)
             return;
@@ -230,6 +237,50 @@ public sealed class AnnotationEditController
         _alignmentService.Align(selection, alignment);
         _getManager().MarkModified();
         _canvasController.Render();
+    }
+
+    private async Task<bool> ApplyNativeStyleAsync(NativePdfTextStyle style)
+    {
+        var requestedSelection = _canvasController.PrimarySelection;
+        if (requestedSelection?.NativeText == null) return false;
+        var requestedManager = _getManager();
+        int requestedPage = _getCurrentPageIndex();
+        await _styleGate.WaitAsync();
+        try
+        {
+            if (!ReferenceEquals(requestedSelection, _canvasController.PrimarySelection) ||
+                !ReferenceEquals(requestedManager, _getManager()) || requestedPage != _getCurrentPageIndex()) return true;
+            await _canvasController.FinishActiveInlineEditAsync();
+            if (_canvasController.IsInlineEditing) return true;
+            var targets = _canvasController.SelectedAnnotations.Where(a => a.NativeText != null).ToList();
+            if (targets.Count == 0 && _canvasController.PrimarySelection?.NativeText != null)
+                targets.Add(_canvasController.PrimarySelection);
+            if (targets.Count == 0) return true;
+            var manager = _getManager();
+            var annotations = _getAnnotations();
+            int pageIndex = _getCurrentPageIndex();
+            byte[] snapshot = manager.GetPdfBytes() ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+            var edits = targets.Select(a => new NativePdfTextEdit(a.NativeText!, a.NativeText!.Text, Style: style)).ToList();
+            var prepared = await Task.Run(() =>
+            {
+                var service = new NativePdfTextService();
+                var result = service.EditMany(snapshot, pageIndex, edits);
+                var selections = result.Layouts.Select(layout => service.RefreshSelection(result.Bytes, pageIndex, layout)
+                    ?? throw new InvalidOperationException("수정한 텍스트 영역을 다시 찾을 수 없습니다.")).ToList();
+                return (result, selections);
+            });
+            manager.CommitNativeTextEdit(snapshot, prepared.result.Bytes);
+            for (int i = 0; i < targets.Count; i++)
+                NativePdfTextService.UpdateAnnotation(targets[i], prepared.selections[i]);
+            annotations.RemoveAll(a => a.PageIndex == pageIndex && a.NativeText != null && !targets.Contains(a));
+            if (!ReferenceEquals(manager, _getManager()) || pageIndex != _getCurrentPageIndex()) return true;
+            await _renderCurrentPageAsync();
+            _canvasController.Render();
+            _statusText.Text = "원본 텍스트 스타일이 변경되었습니다.";
+            return true;
+        }
+        catch (Exception error) { _statusText.Text = error.Message; return true; }
+        finally { _canvasController.RefreshSelectionControls(); _styleGate.Release(); }
     }
 
     private PdfAnnotation? GetSelectedTextAnnotation()

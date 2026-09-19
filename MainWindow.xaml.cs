@@ -573,6 +573,10 @@ namespace PDF_simple_edit
                         _activeTab.Annotations.Add(ann);
                     }
 
+                    // Native selections contain stream indexes from the previous
+                    // revision. They cannot be reused after undo/redo.
+                    _annotationCanvasController.ClearSelection();
+
                     // UI 갱신
                     RenderAnnotationOverlays();
 
