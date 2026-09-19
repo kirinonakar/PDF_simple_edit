@@ -78,6 +78,7 @@ public sealed class PdfOperationService
         // 병합 결과는 원본 문서의 보호 설정을 유지한다. 병합된 파일을 다시 열
         // 때도 같은 암호가 필요하므로 미리 기억해 둔다.
         string? savedPassword = manager.SavePassword;
+        var savedProtection = manager.Protection;
 
         string outputPath;
         if (request.Target == PdfMergeTarget.CurrentDocument)
@@ -99,6 +100,10 @@ public sealed class PdfOperationService
         bool success = await manager.MergeFilesAsync(request.SourcePaths.ToList(), outputPath);
         if (!success || await manager.OpenWithPasswordAsync(outputPath, savedPassword) != PdfOpenStatus.Success)
             return null;
+        // Reopening with one password cannot recover the other. Both are already
+        // known for the output we just created, so keep that complete configuration.
+        manager.SetProtection(savedProtection);
+        manager.MarkModified(false);
         return outputPath;
     }
 

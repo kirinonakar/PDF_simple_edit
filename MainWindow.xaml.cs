@@ -313,32 +313,35 @@ namespace PDF_simple_edit
         private async void DocTabView_TabCloseRequested(TabView sender, TabViewTabCloseRequestedEventArgs args)
         {
             if (args.Item is PdfDocumentTab tab)
-            {
-                if (tab.IsModified)
-                {
-                    var dialog = new ContentDialog
-                    {
-                        Title = "변경 사항 저장",
-                        Content = $"'{tab.Header}'의 내용이 변경되었습니다. 저장하시겠습니까?",
-                        PrimaryButtonText = "저장",
-                        SecondaryButtonText = "저장하지 않음",
-                        CloseButtonText = "취소",
-                        XamlRoot = this.Content.XamlRoot
-                    };
+                await CloseDocumentTabAsync(tab);
+        }
 
-                    var result = await dialog.ShowAsync();
-                    if (result == ContentDialogResult.Primary)
-                    {
-                        _activeTab = tab; // Temporarily set as active to save
-                        SaveFile_Click(this, null);
-                    }
-                    else if (result == ContentDialogResult.None)
-                    {
-                        return; // Cancel close
-                    }
+        private async Task CloseDocumentTabAsync(PdfDocumentTab tab)
+        {
+            if (tab.IsModified)
+            {
+                var dialog = new ContentDialog
+                {
+                    Title = "변경 사항 저장",
+                    Content = $"'{tab.Header}'의 내용이 변경되었습니다. 저장하시겠습니까?",
+                    PrimaryButtonText = "저장",
+                    SecondaryButtonText = "저장하지 않음",
+                    CloseButtonText = "취소",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var result = await dialog.ShowAsync();
+                if (result == ContentDialogResult.Primary)
+                {
+                    DocTabView.SelectedItem = tab;
+                    if (!await _fileController.SaveAsync()) return;
                 }
-                _tabs.Remove(tab);
+                else if (result == ContentDialogResult.None)
+                {
+                    return; // Cancel close
+                }
             }
+            _tabs.Remove(tab);
         }
 
         private async void DocTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -417,6 +420,8 @@ namespace PDF_simple_edit
                 case EditorMenuCommand.MergePdf: MergePdf_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.SplitPdf: SplitPdf_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.DeletePage: DeletePage_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.ProtectionSettings: ProtectionSettings_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.RemoveProtection: RemoveProtection_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.Settings: Settings_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.About: About_Click(EditorMenu, new RoutedEventArgs()); break;
             }
@@ -600,7 +605,7 @@ namespace PDF_simple_edit
         private void UpdateUIState()
         {
             bool hasDoc = _pdfManager.IsLoaded;
-            EditorMenu.UpdateDocumentState(hasDoc, _pdfManager.CanUndo, _pdfManager.CanRedo);
+            EditorMenu.UpdateDocumentState(hasDoc, _pdfManager.CanUndo, _pdfManager.CanRedo, _pdfManager.IsPasswordProtected);
 
             WelcomePanel.Visibility = hasDoc ? Visibility.Collapsed : Visibility.Visible;
             PdfScrollViewer.Visibility = hasDoc ? Visibility.Visible : Visibility.Collapsed;
@@ -685,11 +690,8 @@ namespace PDF_simple_edit
                 {
                     foreach (var tab in modifiedTabs)
                     {
-                        var oldActive = _activeTab;
-                        _activeTab = tab;
-                        SaveFile_Click(this, null);
-                        // Restoring _activeTab might be tricky if we are closing,
-                        // but since we close after the loop it's fine.
+                        DocTabView.SelectedItem = tab;
+                        if (!await _fileController.SaveAsync()) return;
                     }
                     _isBypassingClosingCheck = true;
                     this.Close();
@@ -731,6 +733,8 @@ namespace PDF_simple_edit
         private async void SaveFile_Click(object sender, RoutedEventArgs? e) => await _fileController.SaveAsync();
         private async void SaveAsFile_Click(object sender, RoutedEventArgs? e) => await _fileController.SaveAsAsync();
         private async void Print_Click(object sender, RoutedEventArgs? e) => await _fileController.PrintAsync();
+        private async void ProtectionSettings_Click(object sender, RoutedEventArgs? e) => await _fileController.EditProtectionAsync();
+        private async void RemoveProtection_Click(object sender, RoutedEventArgs? e) => await _fileController.EditProtectionAsync(removeAll: true);
 
         #region File Operations
 
@@ -794,11 +798,11 @@ namespace PDF_simple_edit
             }
         }
 
-        private void CloseFile_Click(object sender, RoutedEventArgs? e)
+        private async void CloseFile_Click(object sender, RoutedEventArgs? e)
         {
             if (_activeTab != null)
             {
-                _tabs.Remove(_activeTab);
+                await CloseDocumentTabAsync(_activeTab);
             }
         }
 

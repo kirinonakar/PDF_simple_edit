@@ -4,6 +4,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using PDF_simple_edit.Models;
 
 namespace PDF_simple_edit.Services;
 
@@ -21,7 +22,8 @@ public sealed record PdfOpenResult(
     string? Password = null,
     bool WasEncrypted = false,
     bool PasswordRequiredToOpen = false,
-    int Permissions = -1)
+    int Permissions = -1,
+    PdfProtectionSettings? Protection = null)
 {
     public bool IsSuccess => Status == PdfOpenStatus.Success;
 }
@@ -53,6 +55,9 @@ public sealed class PdfSecurityService
 
         bool encrypted;
         int permissions = -1;
+        bool openedAsOwner = false;
+        int cryptoMode = EncryptionConstants.ENCRYPTION_AES_256;
+        string? recoveredOpenPassword = null;
         try
         {
             // iText는 문서를 실제로 열 때 암호를 검사하므로, 읽기 모드로 한 번 열어
@@ -62,7 +67,13 @@ public sealed class PdfSecurityService
             using var document = new PdfDocument(reader);
             encrypted = reader.IsEncrypted();
             if (encrypted)
+            {
                 permissions = reader.GetPermissions();
+                openedAsOwner = reader.IsOpenedWithFullPermission();
+                cryptoMode = reader.GetCryptoMode();
+                if (openedAsOwner && reader.ComputeUserPassword() is { } recovered)
+                    recoveredOpenPassword = Encoding.UTF8.GetString(recovered);
+            }
         }
         catch (BadPasswordException)
         {
@@ -81,7 +92,19 @@ public sealed class PdfSecurityService
         {
             bool passwordRequired = RequiresPasswordToOpen(source);
             byte[] plainBytes = Decrypt(source, password);
-            return new PdfOpenResult(PdfOpenStatus.Success, plainBytes, password, true, passwordRequired, permissions);
+            var protection = new PdfProtectionSettings
+            {
+                Enabled = true,
+                Algorithm = (cryptoMode & 7) == EncryptionConstants.ENCRYPTION_AES_128
+                    ? PdfEncryptionAlgorithm.Aes128 : PdfEncryptionAlgorithm.Aes256,
+                EncryptMetadata = (cryptoMode & EncryptionConstants.DO_NOT_ENCRYPT_METADATA) == 0,
+                RequireOpenPassword = passwordRequired,
+                OpenPassword = passwordRequired ? (openedAsOwner ? recoveredOpenPassword : password) : null,
+                RequireOwnerPassword = true,
+                OwnerPassword = openedAsOwner ? password : null,
+                Permissions = permissions
+            };
+            return new PdfOpenResult(PdfOpenStatus.Success, plainBytes, password, true, passwordRequired, permissions, protection);
         }
         catch (Exception ex)
         {
@@ -91,12 +114,22 @@ public sealed class PdfSecurityService
     }
 
     public static byte[] Encrypt(byte[] plainBytes, string? userPassword, string? ownerPassword, int permissions)
+        => Encrypt(plainBytes, new PdfProtectionSettings
+        {
+            Enabled = true,
+            RequireOpenPassword = !string.IsNullOrEmpty(userPassword), OpenPassword = userPassword,
+            RequireOwnerPassword = !string.IsNullOrEmpty(ownerPassword), OwnerPassword = ownerPassword,
+            Permissions = permissions == -1 ? AllPermissions : permissions
+        });
+
+    public static byte[] Encrypt(byte[] plainBytes, PdfProtectionSettings settings)
     {
         ArgumentNullException.ThrowIfNull(plainBytes);
+        if (!settings.Enabled) return plainBytes;
 
         using var reader = new PdfReader(new MemoryStream(plainBytes));
         using var output = new MemoryStream();
-        using (var writer = new PdfWriter(output, CreateEncryptionProperties(userPassword, ownerPassword, permissions)))
+        using (var writer = new PdfWriter(output, CreateEncryptionProperties(settings)))
         using (var document = new PdfDocument(reader, writer, new StampingProperties()))
         {
         }
@@ -104,13 +137,24 @@ public sealed class PdfSecurityService
     }
 
     public static WriterProperties CreateEncryptionProperties(string? userPassword, string? ownerPassword, int permissions)
+        => CreateEncryptionProperties(new PdfProtectionSettings
+        {
+            Enabled = true,
+            RequireOpenPassword = !string.IsNullOrEmpty(userPassword), OpenPassword = userPassword,
+            RequireOwnerPassword = !string.IsNullOrEmpty(ownerPassword), OwnerPassword = ownerPassword,
+            Permissions = permissions == -1 ? AllPermissions : permissions
+        });
+
+    public static WriterProperties CreateEncryptionProperties(PdfProtectionSettings settings)
     {
         var properties = new WriterProperties();
+        if (!settings.Enabled) return properties;
+        if (settings.GetValidationError() is { } error) throw new InvalidOperationException(error);
         properties.SetStandardEncryption(
-            ToPasswordBytes(userPassword),
-            ToPasswordBytes(ownerPassword),
-            permissions >= 0 ? permissions : AllPermissions,
-            EncryptionConstants.ENCRYPTION_AES_256);
+            ToPasswordBytes(settings.RequireOpenPassword ? settings.OpenPassword : null),
+            ToPasswordBytes(settings.RequireOwnerPassword ? settings.OwnerPassword : null),
+            settings.Permissions,
+            settings.CryptoMode);
         return properties;
     }
 

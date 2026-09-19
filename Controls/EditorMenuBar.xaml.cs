@@ -31,6 +31,8 @@ public enum EditorMenuCommand
     MergePdf,
     SplitPdf,
     DeletePage,
+    ProtectionSettings,
+    RemoveProtection,
     Settings,
     About,
 }
@@ -60,7 +62,7 @@ public sealed partial class EditorMenuBar : UserControl
     private void ToolAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args) =>
         ToolAcceleratorInvoked?.Invoke(sender, args);
 
-    public void UpdateDocumentState(bool hasDoc, bool canUndo, bool canRedo)
+    public void UpdateDocumentState(bool hasDoc, bool canUndo, bool canRedo, bool isProtected = false)
     {
         MenuSave.IsEnabled = hasDoc;
         MenuSaveAs.IsEnabled = hasDoc;
@@ -75,6 +77,8 @@ public sealed partial class EditorMenuBar : UserControl
         MenuExtractImages.IsEnabled = hasDoc;
         MenuSplitPdf.IsEnabled = hasDoc;
         MenuDeletePage.IsEnabled = hasDoc;
+        MenuProtectionSettings.IsEnabled = hasDoc;
+        MenuRemoveProtection.IsEnabled = hasDoc && isProtected;
 
         MenuUndo.IsEnabled = hasDoc && canUndo;
         MenuRedo.IsEnabled = hasDoc && canRedo;

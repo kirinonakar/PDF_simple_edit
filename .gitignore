@@ -15,6 +15,7 @@ output/
 tests/*
 !tests/PdfOpenPerformance/
 !tests/NativeTextStyles/
+!tests/PdfProtection/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs

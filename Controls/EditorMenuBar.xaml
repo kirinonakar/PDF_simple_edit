@@ -117,6 +117,13 @@
             </MenuFlyoutItem>
         </MenuBarItem>
 
+        <MenuBarItem Title="보호">
+            <MenuFlyoutItem Text="암호화 및 비밀번호 설정·변경..." x:Name="MenuProtectionSettings" Tag="ProtectionSettings" Click="Command_Click" IsEnabled="False">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72E;"/></MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="모든 비밀번호 삭제 / 보호 해제..." x:Name="MenuRemoveProtection" Tag="RemoveProtection" Click="Command_Click" IsEnabled="False"/>
+        </MenuBarItem>
+
         <MenuBarItem Title="설정">
             <MenuFlyoutItem Text="환경 설정..." Tag="Settings" Click="Command_Click">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE713;"/></MenuFlyoutItem.Icon>

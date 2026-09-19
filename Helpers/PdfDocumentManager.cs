@@ -36,10 +36,7 @@ namespace PDF_simple_edit.Helpers
         private readonly PdfAnnotationTargetResolver _annotationTargetResolver = new();
         private readonly PdfFileOperationService _fileOperationService = new();
         private readonly PdfSecurityService _securityService = new();
-        private string? _openPassword;
-        private bool _sourceEncrypted;
-        private bool _passwordRequiredToOpen;
-        private int _sourcePermissions = -1;
+        private PdfProtectionSettings _protection = new();
         private const int MaxUndoSteps = 30;
 
         public bool CanUndo => _undoStack.Count > 0;
@@ -48,8 +45,25 @@ namespace PDF_simple_edit.Helpers
         public string? FilePath => _filePath;
         public void SetFilePath(string path) => _filePath = path;
 
-        public bool IsPasswordProtected => _sourceEncrypted;
-        public string? SavePassword => _openPassword;
+        public bool IsPasswordProtected => _protection.Enabled;
+        public string? SavePassword => _protection.OpenPassword ?? _protection.OwnerPassword;
+        public PdfProtectionSettings Protection => _protection;
+
+        public void SetProtection(PdfProtectionSettings settings)
+        {
+            ArgumentNullException.ThrowIfNull(settings);
+            if (settings.GetValidationError() is { } error)
+                throw new InvalidOperationException(error);
+            lock (_docLock)
+            {
+                if (_pdfBytes == null) throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+                if (!settings.Enabled) settings = new PdfProtectionSettings();
+                if (_protection == settings) return;
+                _protection = settings;
+                _isModified = true;
+            }
+            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+        }
         
         public bool IsModified => _isModified;
         public void MarkModified(bool modified = true)
@@ -144,10 +158,7 @@ namespace PDF_simple_edit.Helpers
                         _contentCache.Clear();
                         _undoStack.Clear();
                         _redoStack.Clear();
-                        _openPassword = result.Password;
-                        _sourceEncrypted = result.WasEncrypted;
-                        _passwordRequiredToOpen = result.PasswordRequiredToOpen;
-                        _sourcePermissions = result.Permissions;
+                        _protection = result.Protection ?? new PdfProtectionSettings();
 
                         DocumentChanged?.Invoke(this, EventArgs.Empty);
                         PageStructureChanged?.Invoke(this, EventArgs.Empty);
@@ -203,19 +214,13 @@ namespace PDF_simple_edit.Helpers
 
         /// <summary>
         /// 사용자 저장(디스크 기록)용 바이트를 만든다. 암호로 보호된 문서는 원래의
-        /// 열기 암호와 권한 설정을 유지한 채 AES-256으로 다시 암호화하며, 메모리의
+        /// 열기·권한 비밀번호와 선택한 암호화 설정을 적용하며, 메모리의
         /// 문서는 계속 평문으로 유지된다.
         /// </summary>
         public byte[] ProtectBytesForSave(byte[] content)
         {
-            if (!_sourceEncrypted)
-                return content;
-
-            return PdfSecurityService.Encrypt(
-                content,
-                _passwordRequiredToOpen ? _openPassword : null,
-                _openPassword,
-                _sourcePermissions);
+            lock (_docLock)
+                return PdfSecurityService.Encrypt(content, _protection);
         }
 
         /// <summary>
@@ -224,13 +229,8 @@ namespace PDF_simple_edit.Helpers
         /// </summary>
         public WriterProperties? CreateProtectedWriterProperties()
         {
-            if (!_sourceEncrypted)
-                return null;
-
-            return PdfSecurityService.CreateEncryptionProperties(
-                _passwordRequiredToOpen ? _openPassword : null,
-                _openPassword,
-                _sourcePermissions);
+            lock (_docLock)
+                return _protection.Enabled ? PdfSecurityService.CreateEncryptionProperties(_protection) : null;
         }
 
         public void ApplyBatchEdit(Action<PdfDocument> editAction)
@@ -607,10 +607,7 @@ namespace PDF_simple_edit.Helpers
                 _pdfBytes = ms.ToArray();
                 _filePath = null;
                 _isModified = false;
-                _openPassword = null;
-                _sourceEncrypted = false;
-                _passwordRequiredToOpen = false;
-                _sourcePermissions = -1;
+                _protection = new PdfProtectionSettings();
                 _undoStack.Clear();
                 _redoStack.Clear();
                 DocumentChanged?.Invoke(this, EventArgs.Empty);
@@ -626,10 +623,7 @@ namespace PDF_simple_edit.Helpers
             _cachedPageCount = 0;
             _filePath = null;
             _isModified = false;
-            _openPassword = null;
-            _sourceEncrypted = false;
-            _passwordRequiredToOpen = false;
-            _sourcePermissions = -1;
+            _protection = new PdfProtectionSettings();
             _undoStack.Clear();
             _redoStack.Clear();
             DocumentChanged?.Invoke(this, EventArgs.Empty);
