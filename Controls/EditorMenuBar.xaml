@@ -88,7 +88,7 @@
                 </ToggleMenuFlyoutItem.KeyboardAccelerators>
             </ToggleMenuFlyoutItem>
             <ToggleMenuFlyoutItem Text="그래픽 선택" x:Name="MenuSelectGraphics" Tag="SelectGraphicsTool" Click="Command_Click" IsEnabled="False">
-                <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xEF50;"/></ToggleMenuFlyoutItem.Icon>
+                <ToggleMenuFlyoutItem.Icon><PathIcon Data="M1,1 H15 V3 H1 Z M1,13 H15 V15 H1 Z M1,3 H3 V13 H1 Z M13,3 H15 V13 H13 Z M6,3 H7 V13 H6 Z M10,3 H11 V13 H10 Z M3,6 H13 V7 H3 Z M3,10 H13 V11 H3 Z" /></ToggleMenuFlyoutItem.Icon>
                 <ToggleMenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="G" Invoked="ToolAccelerator_Invoked"/>
                 </ToggleMenuFlyoutItem.KeyboardAccelerators>

@@ -46,7 +46,50 @@ public sealed class PdfSaveService
         await WriteAtomicallyAsync(filePath, manager.ProtectBytesForSave(editedBytes));
 
         manager.ReplacePdfBytesAfterSave(editedBytes, filePath);
-        foreach (PdfAnnotation annotation in annotations.Where(annotation =>
+        foreach (var pageGroup in annotations.Where(a => a.Type == AnnotationType.Image && !a.IsOriginalImageReplacement).GroupBy(a => a.PageIndex))
+        {
+            var contents = await manager.ExtractPageContentsAsync(pageGroup.Key);
+            var used = new System.Collections.Generic.HashSet<PdfPageContent>();
+            foreach (var annotation in pageGroup)
+            {
+                var box = new PdfTextBox(annotation.X, annotation.Y, annotation.Width, annotation.Height);
+                var expected = PdfAffineTransform.Between(box, box, annotation.Rotation).Map(box);
+                var match = contents.Where(c => c.Type == PageContentType.Image && !used.Contains(c))
+                    .OrderBy(c => Math.Abs(c.X - expected.X) + Math.Abs(c.Y - expected.Y) +
+                        Math.Abs(c.Width - expected.Width) + Math.Abs(c.Height - expected.Height)).FirstOrDefault();
+                annotation.IsApplied = true;
+                if (match == null) continue;
+                used.Add(match);
+                annotation.X = match.X; annotation.Y = match.Y; annotation.Width = match.Width; annotation.Height = match.Height;
+                annotation.Rotation = 0; annotation.IsOriginalImageReplacement = true;
+                annotation.OriginalImageName = match.ImageId; annotation.OriginalPdfX = match.OriginalPdfX; annotation.OriginalPdfY = match.OriginalPdfY;
+                annotation.GraphicCtm = match.GraphicCtm;
+                annotation.ContentStreamIndex = match.ContentStreamIndex; annotation.ContentStreamObjectNumber = match.ContentStreamObjectNumber;
+                annotation.OperationIndex = match.OperationIndex;
+            }
+        }
+        foreach (var annotation in annotations.Where(a => a.NativeText == null && !a.IsApplied &&
+            !a.IsOriginalTextReplacement && a.Type is AnnotationType.Text or AnnotationType.FreeText && Math.Abs(a.Rotation) > .0001))
+        {
+            var textService = new NativePdfTextService();
+            var box = new PdfTextBox(annotation.X, annotation.Y, annotation.Width, annotation.Height);
+            var expected = PdfAffineTransform.Between(box, box, annotation.Rotation).Map(box);
+            var blocks = NativePdfTextService.SelectRegion(textService.Extract(editedBytes, annotation.PageIndex),
+                new(expected.X - 2, expected.Y - 2, expected.Width + 4, expected.Height + 4));
+            if (blocks.Count == 0) continue;
+            var selection = new NativePdfTextBlock
+            {
+                Text = annotation.Content,
+                Runs = blocks.SelectMany(b => b.Runs).DistinctBy(r => r.Id).ToList(),
+                Glyphs = blocks.SelectMany(b => b.Glyphs).ToList(),
+                Lines = blocks.SelectMany(b => b.Lines).ToList(),
+                Bounds = PdfTextBox.Union(blocks.Select(b => b.Bounds)),
+                LineHeight = annotation.LineHeight
+            };
+            NativePdfTextService.UpdateAnnotation(annotation, selection);
+            annotation.Rotation = 0;
+        }
+        foreach (PdfAnnotation annotation in annotations.Where(annotation => annotation.NativeText == null &&
             annotation.Type is AnnotationType.Text or AnnotationType.FreeText))
         {
             annotation.IsApplied = true;

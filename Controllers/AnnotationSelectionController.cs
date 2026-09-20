@@ -50,7 +50,8 @@ public sealed class AnnotationSelectionController
         double y,
         bool controlPressed,
         Action analysisStarted,
-        EditToolMode selectionMode = EditToolMode.Select)
+        EditToolMode selectionMode = EditToolMode.Select,
+        Func<bool>? isCurrent = null)
     {
         PdfAnnotation? found = _contentService.FindAnnotationAt(
             annotations, pageIndex, x, y, selectionMode);
@@ -59,6 +60,7 @@ public sealed class AnnotationSelectionController
         {
             analysisStarted();
             List<PdfPageContent> pageContents = await manager.ExtractPageContentsAsync(pageIndex);
+            if (isCurrent?.Invoke() == false) return new(primarySelection, false, null);
             PdfPageContent? content = _contentService.FindEditableContent(pageContents, x, y, selectionMode);
             if (_contentService.ShouldPreferPageContent(found, content) && content != null)
             {

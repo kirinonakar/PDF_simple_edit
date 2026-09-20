@@ -166,7 +166,22 @@ public sealed partial class NativePdfTextService
             w.Text == g.Text && Math.Abs(w.Origin.X - g.Origin.X) < .01 && Math.Abs(w.Origin.Y - g.Origin.Y) < .01)).ToList() })
             .Where(r => r.Glyphs.Count > 0).OrderBy(r => Math.Round(r.Glyphs[0].Origin.Y, 1)).ThenBy(r => r.Glyphs[0].Origin.X).ToList();
         if (slices.Count == 0) return null;
-        var selected = BuildBlock(slices) with { Runs = slices.Select(s => data.Runs.Single(r => r.Id == s.Id)).ToList() };
+        NativePdfTextBlock selected;
+        if (layout.Glyphs.Any(g => g.ShapeTransform.HasValue))
+        {
+            // Geometric edits keep logical reading order even when rotation puts
+            // each glyph at a different visual baseline (or reverses screen X).
+            var available = slices.SelectMany(r => r.Glyphs).ToList();
+            var ordered = layout.Glyphs.Select(w => w.IsVirtual ? w : available.First(g =>
+                w.Text == g.Text && Math.Abs(w.Origin.X - g.Origin.X) < .01 &&
+                Math.Abs(w.Origin.Y - g.Origin.Y) < .01) with { TextIndex = w.TextIndex }).ToList();
+            selected = layout with
+            {
+                Glyphs = ordered,
+                Runs = ordered.Where(g => !g.IsVirtual).Select(g => data.Runs.Single(r => r.Id == g.RunId)).DistinctBy(r => r.Id).ToList()
+            };
+        }
+        else selected = BuildBlock(slices) with { Runs = slices.Select(s => data.Runs.Single(r => r.Id == s.Id)).ToList() };
         return ApplyInkBounds(bytes, pageIndex, new() { selected }, data.Map)[0];
     }
 

@@ -137,7 +137,9 @@ public sealed class AnnotationCanvasController
         _regionStart = null;
         if (_regionPreview != null) _canvas.Children.Remove(_regionPreview);
         _regionPreview = null;
-        if (_interactionController.CancelMove()) CancelNativeMovePreview();
+        bool cancelled = _interactionController.CancelMove();
+        cancelled |= _interactionController.CancelResize();
+        if (cancelled) CancelNativeMovePreview();
         _canvas.ReleasePointerCaptures();
     }
 
@@ -198,7 +200,7 @@ public sealed class AnnotationCanvasController
                     }
                 }
                 if ((toolMode == EditToolMode.SelectGraphics || _fontSettings.TextEditingMode == TextEditingMode.PreserveOriginal) && !alt &&
-                    !(e.OriginalSource is Rectangle { Tag: string }) && (hit == null || hit.NativeText != null))
+                    !(e.OriginalSource is Rectangle { Tag: string }) && (toolMode == EditToolMode.SelectGraphics || hit == null || hit.NativeText != null))
                 {
                     _regionStart = position;
                     _canvas.CapturePointer(e.Pointer);
@@ -274,7 +276,8 @@ public sealed class AnnotationCanvasController
             SelectedAnnotations))
         {
             Render();
-            if (_interactionController.IsMoving && SelectedAnnotations.Any(a => a.NativeText != null))
+            if ((_interactionController.IsMoving || _interactionController.IsResizing) &&
+                SelectedAnnotations.Any(a => a.NativeText != null || a.IsOriginalImageReplacement))
                 _ = PreviewNativeMoveAsync(++_movePreviewVersion);
         }
     }
@@ -441,6 +444,11 @@ public sealed class AnnotationCanvasController
         bool controlPressed = InputKeyboardSource
             .GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
             .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+        var selectionManager = _getManager();
+        int selectionPage = _getPageIndex();
+        var selectionMode = _getToolMode();
+        bool IsCurrent() => selectPressSequence == _selectPointerPressSequence && selectionManager == _getManager() &&
+            selectionPage == _getPageIndex() && selectionMode == _getToolMode();
         AnnotationSelectionResult selection = await _selectionController.SelectAtAsync(
             _getManager(),
             _getAnnotations(),
@@ -451,7 +459,8 @@ public sealed class AnnotationCanvasController
             pdfY,
             controlPressed,
             () => _statusText.Text = "페이지 콘텐츠 분석 중...",
-            _getToolMode());
+            selectionMode, IsCurrent);
+        if (!IsCurrent()) return;
 
         PrimarySelection = selection.PrimarySelection;
         if (selection.AddedFromPageContent is PdfAnnotation added)
@@ -461,7 +470,7 @@ public sealed class AnnotationCanvasController
                     ? "대체 텍스트 편집 구역 선택됨 (더블클릭: 편집, 드래그: 이동)"
                     : "텍스트 편집 구역 선택됨 (더블클릭: 편집, Alt+드래그: 이동)"
                 : added.IsOriginalVectorGraphic
-                    ? "그래픽 선택됨 (Ctrl+클릭: 다중 선택, Delete: 삭제)"
+                    ? "그래픽 선택됨 (Alt+드래그: 이동, 핸들: 크기/회전, Delete: 삭제)"
                     : "이미지가 선택되었습니다. 드래그하여 이동하거나 핸들로 크기를 조정하세요.";
         }
 
@@ -472,7 +481,8 @@ public sealed class AnnotationCanvasController
         PdfAnnotation? moveTarget = PrimarySelection;
         bool canStartMove = moveTarget != null &&
             _getToolMode() is EditToolMode.Select or EditToolMode.SelectGraphics &&
-            !SelectedAnnotations.Any(annotation => annotation.IsOriginalVectorGraphic) &&
+            (_getToolMode() != EditToolMode.SelectGraphics ||
+                InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Menu).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down)) &&
             _pendingSelectPointerId == e.Pointer.PointerId &&
             selectPressSequence == _selectPointerPressSequence &&
             currentPointerPoint.Properties.IsLeftButtonPressed;
@@ -602,22 +612,29 @@ public sealed class AnnotationCanvasController
         PdfDocumentManager manager,
         AnnotationResizeResult result)
     {
+        ++_movePreviewVersion;
         _canvas.ReleasePointerCapture(e.Pointer);
         if (result == AnnotationResizeResult.OriginalTextRemovalFailed)
         {
-            _statusText.Text = "이 PDF의 텍스트는 배경을 보존한 상태로 크기를 조정할 수 없습니다.";
+            CancelNativeMovePreview();
+            _statusText.Text = "이 PDF의 텍스트는 배경을 보존한 상태로 변환할 수 없습니다.";
             Render();
             return;
         }
         if (result == AnnotationResizeResult.OriginalImageRemovalFailed)
         {
-            _statusText.Text = "이 PDF의 이미지는 원본을 보존한 상태로 크기를 조정할 수 없습니다.";
+            CancelNativeMovePreview();
+            _statusText.Text = "이 PDF의 그래픽은 원본을 보존한 상태로 변환할 수 없습니다.";
             Render();
             return;
         }
 
         manager.MarkModified();
-        _statusText.Text = "크기 조정됨 (저장 시 반영)";
+        _moveOriginalImage = null;
+        if (SelectedAnnotations.Any(a => a.NativeText != null))
+            _getAnnotations().RemoveAll(a => a.PageIndex == _getPageIndex() && a.NativeText != null && !SelectedAnnotations.Contains(a));
+        RefreshSelectionControls();
+        _statusText.Text = "크기/회전 변경됨";
         if (!IsInlineEditing)
             await _renderCurrentPageAsync();
         Render();
@@ -679,19 +696,29 @@ public sealed class AnnotationCanvasController
         await _movePreviewGate.WaitAsync();
         try
         {
-            if (version != _movePreviewVersion || !_interactionController.IsMoving) return;
+            if (version != _movePreviewVersion || (!_interactionController.IsMoving && !_interactionController.IsResizing)) return;
             byte[]? bytes = _getManager().GetPdfBytes();
             if (bytes == null) return;
             int pageIndex = _getPageIndex();
-            var edits = SelectedAnnotations.Where(a => a.NativeText != null).Select(a =>
-                new NativePdfTextEdit(a.NativeText!, a.NativeText!.Text, a.X - a.NativeText.Bounds.X, a.Y - a.NativeText.Bounds.Y)).ToList();
-            var result = await Task.Run(() => new NativePdfTextService().EditMany(bytes, pageIndex, edits));
+            var requests = _interactionController.GetTransformPreview();
+            var nativeEdits = requests.Where(e => e.Source.NativeText != null).Select(e =>
+                new NativePdfTextEdit(e.Source.NativeText!, e.Source.NativeText!.Text, Transform: PdfAffineTransform.Between(
+                    new(e.Source.X, e.Source.Y, e.Source.Width, e.Source.Height),
+                    new(e.Target.X, e.Target.Y, e.Target.Width, e.Target.Height), e.Target.Rotation - e.Source.Rotation))).ToList();
+            var graphicEdits = requests.Where(e => e.Source.IsOriginalImageReplacement).Select(e =>
+                (e.Source, PdfAffineTransform.Between(new(e.Source.X, e.Source.Y, e.Source.Width, e.Source.Height),
+                    new(e.Target.X, e.Target.Y, e.Target.Width, e.Target.Height), e.Target.Rotation - e.Source.Rotation))).ToList();
+            byte[] previewBytes = await Task.Run(() =>
+            {
+                byte[] result = nativeEdits.Count > 0 ? new NativePdfTextService().EditMany(bytes, pageIndex, nativeEdits).Bytes : bytes;
+                return graphicEdits.Count > 0 ? PdfGraphicTransformService.Transform(result, pageIndex, graphicEdits) : result;
+            });
             if (version != _movePreviewVersion) return;
-            using var input = new MemoryStream(result.Bytes);
+            using var input = new MemoryStream(previewBytes);
             using var rendered = await PdfRenderHelper.RenderPageWithWindowsPdfStreamAsync(input.AsRandomAccessStream(), pageIndex, 2);
             if (rendered == null || version != _movePreviewVersion) return;
             var bitmap = new BitmapImage(); await bitmap.SetSourceAsync(rendered.AsRandomAccessStream());
-            if (version == _movePreviewVersion && _interactionController.IsMoving) _pageImage.Source = bitmap;
+            if (version == _movePreviewVersion && (_interactionController.IsMoving || _interactionController.IsResizing)) _pageImage.Source = bitmap;
         }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
         finally { _movePreviewGate.Release(); }

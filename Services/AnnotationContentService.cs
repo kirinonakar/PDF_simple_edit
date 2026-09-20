@@ -21,9 +21,12 @@ public sealed class AnnotationContentService
             if (annotation.PageIndex != pageIndex || !MatchesSelectionMode(annotation, selectionMode))
                 continue;
 
+            var box = new PdfTextBox(annotation.X, annotation.Y, annotation.Width, annotation.Height);
+            var local = PdfAffineTransform.Between(box, box, -annotation.Rotation).Map(x, y);
+            double hitX = local.X, hitY = local.Y;
             if (annotation.IsOriginalVectorGraphic)
             {
-                if (annotation.GraphicHitBounds.Any(bounds => bounds.Contains(x, y, 3)))
+                if (annotation.GraphicHitBounds.Any(bounds => bounds.Contains(hitX, hitY, 3)))
                     originalImage ??= annotation;
                 continue;
             }
@@ -32,7 +35,7 @@ public sealed class AnnotationContentService
             {
                 double dx = annotation.X - annotation.NativeText.Bounds.X;
                 double dy = annotation.Y - annotation.NativeText.Bounds.Y;
-                if (annotation.NativeText.Lines.Any(line => line.Contains(x - dx, y - dy, 1))) return annotation;
+                if (annotation.NativeText.Lines.Any(line => line.Contains(hitX - dx, hitY - dy, 1))) return annotation;
                 continue;
             }
 
@@ -42,21 +45,21 @@ public sealed class AnnotationContentService
                     ? annotation.Width
                     : (annotation.Content.Length * annotation.FontSize * 0.8) + 10;
                 double height = annotation.Height > 0 ? annotation.Height : annotation.FontSize * 1.4;
-                if (x >= annotation.X - 5 && x <= annotation.X + width &&
-                    y >= annotation.Y - 5 && y <= annotation.Y + height)
+                if (hitX >= annotation.X - 5 && hitX <= annotation.X + width &&
+                    hitY >= annotation.Y - 5 && hitY <= annotation.Y + height)
                     return annotation;
             }
             else if (annotation.Type == AnnotationType.Signature)
             {
                 double tolerance = Math.Max(annotation.LineWidth * 2, 8);
-                if (x >= annotation.X - tolerance &&
-                    x <= annotation.X + Math.Max(annotation.Width, 1) + tolerance &&
-                    y >= annotation.Y - tolerance &&
-                    y <= annotation.Y + Math.Max(annotation.Height, 1) + tolerance)
+                if (hitX >= annotation.X - tolerance &&
+                    hitX <= annotation.X + Math.Max(annotation.Width, 1) + tolerance &&
+                    hitY >= annotation.Y - tolerance &&
+                    hitY <= annotation.Y + Math.Max(annotation.Height, 1) + tolerance)
                     return annotation;
             }
-            else if (x >= annotation.X && x <= annotation.X + annotation.Width &&
-                     y >= annotation.Y && y <= annotation.Y + annotation.Height)
+            else if (hitX >= annotation.X && hitX <= annotation.X + annotation.Width &&
+                     hitY >= annotation.Y && hitY <= annotation.Y + annotation.Height)
             {
                 if (annotation.IsOriginalImageReplacement)
                 {
@@ -166,6 +169,7 @@ public sealed class AnnotationContentService
         return new PdfAnnotation
         {
             NativeText = content.NativeText,
+            GraphicCtm = content.GraphicCtm,
             Type = isText ? AnnotationType.Text : AnnotationType.Image,
             PageIndex = pageIndex,
             X = content.X,

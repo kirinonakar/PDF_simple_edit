@@ -215,9 +215,21 @@ public sealed class AnnotationEditController
     public async Task AlignSelectionAsync(AnnotationAlignment alignment)
     {
         List<PdfAnnotation> selection = _canvasController.SelectedAnnotations;
-        if (selection.Any(annotation => annotation.IsOriginalVectorGraphic))
+        if (selection.Any(annotation => annotation.IsOriginalImageReplacement))
         {
-            _statusText.Text = "원본 그래픽은 선택 및 삭제할 수 있습니다.";
+            var aligned = selection.Select(a => a.Clone()).ToList();
+            if (aligned.Count < 2) return;
+            _alignmentService.Align(aligned, alignment);
+            try
+            {
+                await _getManager().TransformAnnotationsAsync(_getCurrentPageIndex(),
+                    selection.Select((source, i) => (source.Clone(), aligned[i])).ToList());
+                _getAnnotations().RemoveAll(a => selection.Contains(a));
+                _getAnnotations().AddRange(aligned);
+                _canvasController.ClearSelection();
+                await _renderCurrentPageAsync();
+            }
+            catch (Exception ex) { _statusText.Text = ex.Message; }
             return;
         }
         if (selection.Any(a => a.NativeText != null))

@@ -16,8 +16,11 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
     - If the original font is not available, a fallback font is used instead.
   - **Replace Mode**: After activating the Select tool, click to select and drag to move.
     - `Ctrl+Enter` or right-click confirms, `Esc` cancels.
-    - If characters are clipped or letter spacing looks too tight after editing, select the box and enlarge it.
+    - Drag a corner handle to scale the text box and its font together.
 - **Add Text**: Press `A` to switch to the Add Text tool, then add text with custom font family, size, color, bold, and italic. `Enter` inserts a line break, `Ctrl+Enter` confirms, and `Esc` cancels.
+- **Selection & transforms**: The original selection icon selects text (`S`). The adjacent table icon selects graphics (`G`): table borders, lines, shapes, images, highlights, and signatures. Click or enclose objects with a drag, `Ctrl+Click` to select several, and `Delete` to remove them.
+  - Use `Alt+Drag` to move graphics. Drag box handles to resize text, images, and graphics; corner handles preserve proportions and text scales with its box.
+  - Drag the round handle above a selection to rotate it; hold `Shift` for 15-degree increments. Changes to original text and graphics support undo/redo and preserve surrounding page content.
 - **Images**: Insert images, save a selected image as a file, or extract all embedded images to a folder.
 
 ### 🖋️ Annotation & Highlighting
@@ -36,7 +39,8 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 - **Drag & Drop**: Open files instantly by dragging them into the application.
 - **Text Search**: Powerful search functionality to find specific phrases within the document.
 - **Keyboard Shortcuts**:
-  - `S`: Switch to **Select Tool**
+  - `S`: Switch to **Text Selection**
+  - `G`: Switch to **Graphic Selection**
   - `A`: Switch to **Add Text Tool**
   - `Ctrl+O`: Open File
   - `Ctrl+S`: Save File

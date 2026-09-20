@@ -53,7 +53,7 @@
                 <FontIcon Glyph="&#xEF20;" FontSize="16"/>
             </ToggleButton>
             <ToggleButton x:Name="SelectGraphicsButton" x:FieldModifier="public" ToolTipService.ToolTip="그래픽 선택 (G) · 표 테두리, 선, 도형, 이미지" AutomationProperties.Name="그래픽 선택" IsEnabled="False" Padding="8,6">
-                <FontIcon Glyph="&#xEF50;" FontSize="16"/>
+                <PathIcon Data="M1,1 H15 V3 H1 Z M1,13 H15 V15 H1 Z M1,3 H3 V13 H1 Z M13,3 H15 V13 H13 Z M6,3 H7 V13 H6 Z M10,3 H11 V13 H10 Z M3,6 H13 V7 H3 Z M3,10 H13 V11 H3 Z" />
             </ToggleButton>
             <ToggleButton x:Name="AddTextButton" x:FieldModifier="public" ToolTipService.ToolTip="텍스트 추가 (A)" IsEnabled="False" Padding="8,6">
                 <FontIcon Glyph="&#xE8D2;" FontSize="16"/>

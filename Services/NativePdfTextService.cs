@@ -305,7 +305,7 @@ public sealed partial class NativePdfTextService
     {
         ArgumentNullException.ThrowIfNull(bytes);
         if (edits.Count == 0) throw new ArgumentException("편집할 텍스트가 없습니다.", nameof(edits));
-        if (edits.All(e => e.Style == null && e.Text == e.Block.Text && e.DeltaX == 0 && e.DeltaY == 0))
+        if (edits.All(e => e.Transform == null && e.Style == null && e.Text == e.Block.Text && e.DeltaX == 0 && e.DeltaY == 0))
             return new(bytes, edits[0].Block);
         using var input = new MemoryStream(bytes);
         using var output = new MemoryStream();
@@ -331,6 +331,19 @@ public sealed partial class NativePdfTextService
                     throw new InvalidOperationException("세로쓰기 또는 클리핑 텍스트의 원본 보존 편집은 아직 지원하지 않습니다.");
                 layout = Layout(doc, data, edit);
                 if (edit.Style != null) layout = ApplyStyle(doc, data, layout, edit.Style);
+                if (edit.Transform is { } transform)
+                    layout = layout with
+                    {
+                        Glyphs = layout.Glyphs.Select(g => g with
+                        {
+                            Origin = transform.Map(g.Origin.X, g.Origin.Y),
+                            End = transform.Map(g.End.X, g.End.Y),
+                            Bounds = transform.Map(g.Bounds),
+                            ShapeTransform = transform with { E = 0, F = 0 }
+                        }).ToList(),
+                        Bounds = transform.Map(layout.Bounds),
+                        Lines = layout.Lines.Select(transform.Map).ToList()
+                    };
                 layouts.Add(layout);
                 foreach (var run in original)
                 {
@@ -346,7 +359,7 @@ public sealed partial class NativePdfTextService
                             .Concat(run.Glyphs.Skip(insertion).Where((g, i) => !selectedIndexes.Contains(i + insertion))).ToList();
                     }
                     bool unchanged = run.Glyphs.Count == placed.Count && run.Glyphs.Zip(placed).All(pair =>
-                        pair.Second.ReplacementFontObjectNumber == 0 && pair.Second.StyleFontSize == null && pair.Second.StyleColor == null && pair.Second.StyleSlantDelta == 0 &&
+                        pair.Second.ShapeTransform == null && pair.Second.ReplacementFontObjectNumber == 0 && pair.Second.StyleFontSize == null && pair.Second.StyleColor == null && pair.Second.StyleSlantDelta == 0 &&
                         pair.First.Code.SequenceEqual(pair.Second.Code) && Math.Abs(pair.First.Origin.X - pair.Second.Origin.X) < .00001 &&
                         Math.Abs(pair.First.Origin.Y - pair.Second.Origin.Y) < .00001);
                     if (unchanged) continue;
@@ -842,9 +855,25 @@ public sealed partial class NativePdfTextService
                     double sc = shear * ta * ta / det, sd = 1 + shear * ta * tb / det;
                     Write($"{N(sa)} {N(sb)} {N(sc)} {N(sd)} {N(x - x * sa - y * sc)} {N(y - x * sb - y * sd)} cm\n");
                 }
+                PdfAffineTransform? shapeTransform = null;
+                if (glyph.ShapeTransform is { } displayTransform)
+                {
+                    var p0 = data.Map.Map(0, 0); var px = data.Map.Map(1, 0); var py = data.Map.Map(0, 1);
+                    var map = new PdfAffineTransform(px.X - p0.X, px.Y - p0.Y, py.X - p0.X, py.Y - p0.Y, p0.X, p0.Y);
+                    var pageLinear = map.Inverse().After(displayTransform).After(map) with { E = 0, F = 0 };
+                    var cm = run.Ctm;
+                    var current = new PdfAffineTransform(cm[0], cm[1], cm[2], cm[3], cm[4], cm[5]);
+                    var local = current.Inverse().After(pageLinear).After(current);
+                    var tm = run.TextMatrix;
+                    double x = tm[4] + textX * tm[0] + nextRise * tm[2];
+                    double y = tm[5] + textX * tm[1] + nextRise * tm[3];
+                    shapeTransform = local with { E = x - local.A * x - local.C * y, F = y - local.B * x - local.D * y };
+                    Write(shapeTransform.Value.Command);
+                }
                 Slant(glyph.StyleSlantDelta);
                 Write($"<{Convert.ToHexString(glyph.Code)}> Tj\n");
                 Slant(-glyph.StyleSlantDelta);
+                if (shapeTransform.HasValue) Write(shapeTransform.Value.Inverse().Command);
                 cursor = textX + glyph.Advance;
             }
             if (!activeFontName.Equals(originalFontName) || activeFontSize != run.FontSize) Write($"{originalFontName} {N(run.FontSize)} Tf\n");

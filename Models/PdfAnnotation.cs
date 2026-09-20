@@ -22,6 +22,8 @@ namespace PDF_simple_edit.Models
     /// </summary>
     public class PdfAnnotation
     {
+        public double Rotation { get; set; }
+        public PdfAffineTransform GraphicCtm { get; set; } = PdfAffineTransform.Identity;
         public NativePdfTextBlock? NativeText { get; set; }
         public string Id { get; set; } = Guid.NewGuid().ToString();
         public AnnotationType Type { get; set; }
@@ -73,6 +75,8 @@ namespace PDF_simple_edit.Models
             return new PdfAnnotation
             {
                 NativeText = NativeText,
+                Rotation = Rotation,
+                GraphicCtm = GraphicCtm,
                 Id = this.Id, // Keep same ID for matching if needed, or Guid.NewGuid() if new object
                 Type = this.Type,
                 PageIndex = this.PageIndex,
@@ -293,13 +297,24 @@ namespace PDF_simple_edit.Models
 
     public class PdfGraphicOperationTarget
     {
+        public PdfAffineTransform Ctm { get; set; } = PdfAffineTransform.Identity;
+        public double LineWidth { get; set; }
+        public PdfTextBox Bounds { get; set; }
+        public List<PdfTextBox> HitBounds { get; set; } = new();
+        public bool IsClipping { get; set; }
+        public bool IsImageOperation { get; set; }
         public int StreamIndex { get; set; } = -1;
         public int StreamObjectNumber { get; set; } = -1;
         public int OperationIndex { get; set; } = -1;
         public bool IsTextOperation { get; set; }
         public bool IsShadingOperation { get; set; }
 
-        public PdfGraphicOperationTarget Clone() => (PdfGraphicOperationTarget)MemberwiseClone();
+        public PdfGraphicOperationTarget Clone()
+        {
+            var clone = (PdfGraphicOperationTarget)MemberwiseClone();
+            clone.HitBounds = new(HitBounds);
+            return clone;
+        }
     }
 
     /// <summary>
@@ -307,6 +322,7 @@ namespace PDF_simple_edit.Models
     /// </summary>
     public class PdfPageContent
     {
+        public PdfAffineTransform GraphicCtm { get; set; } = PdfAffineTransform.Identity;
         public NativePdfTextBlock? NativeText { get; set; }
         public PageContentType Type { get; set; }
         public double X { get; set; } // UI coordinates (Top-Left)

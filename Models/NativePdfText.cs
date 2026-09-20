@@ -32,6 +32,7 @@ public sealed record NativePdfGlyph
     public double? StyleFontSize { get; init; }
     public string? StyleColor { get; init; }
     public double StyleSlantDelta { get; init; }
+    public PdfAffineTransform? ShapeTransform { get; init; }
     public double Advance { get; init; }
     public PdfTextPoint Origin { get; init; }
     public PdfTextPoint End { get; init; }
@@ -81,7 +82,7 @@ public sealed record NativePdfTextStyle(string? Color = null, double? FontSize =
     bool? IsBold = null, bool? IsItalic = null, string? FontFamily = null);
 
 public sealed record NativePdfTextEdit(NativePdfTextBlock Block, string Text, double DeltaX = 0, double DeltaY = 0,
-    NativePdfTextStyle? Style = null);
+    NativePdfTextStyle? Style = null, PdfAffineTransform? Transform = null);
 public sealed record NativePdfTextResult(byte[] Bytes, NativePdfTextBlock Layout)
 {
     public IReadOnlyList<NativePdfTextBlock> Layouts { get; init; } = new[] { Layout };

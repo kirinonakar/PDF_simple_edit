@@ -715,6 +715,94 @@ namespace PDF_simple_edit.Helpers
         }
 
 
+        public async Task TransformAnnotationsAsync(int pageIndex,
+            IReadOnlyList<(PdfAnnotation Source, PdfAnnotation Target)> edits)
+        {
+            byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+            byte[] transformed = snapshot;
+            var graphics = edits.Where(e => e.Source.IsOriginalImageReplacement).ToList();
+            if (graphics.Count > 0)
+            {
+                var contents = await ExtractPageContentsAsync(pageIndex);
+                var sources = _annotationTargetResolver.ResolveImages(graphics.Select(e => e.Source).ToList(), contents)
+                    ?? throw new InvalidOperationException("그래픽을 다시 선택해 주세요.");
+                var requests = graphics.Select((e, i) => (sources[i], PdfAffineTransform.Between(
+                    new(e.Source.X, e.Source.Y, e.Source.Width, e.Source.Height),
+                    new(e.Target.X, e.Target.Y, e.Target.Width, e.Target.Height), e.Target.Rotation - e.Source.Rotation))).ToList();
+                transformed = await Task.Run(() => PdfGraphicTransformService.Transform(snapshot, pageIndex, requests));
+            }
+            var texts = edits.Where(e => e.Source.NativeText != null || e.Source.IsOriginalTextReplacement ||
+                (e.Source.IsApplied && e.Source.Type is AnnotationType.Text or AnnotationType.FreeText)).ToList();
+            var refreshedText = new List<NativePdfTextBlock>();
+            if (texts.Count > 0)
+            {
+                byte[] textSource = transformed;
+                var result = await Task.Run(() =>
+                {
+                    var service = new NativePdfTextService();
+                    var allText = texts.Any(e => e.Source.NativeText == null) ? service.Extract(textSource, pageIndex) : new();
+                    var requests = texts.Select(e =>
+                    {
+                        var source = e.Source;
+                        var box = new PdfTextBox(source.X, source.Y, source.Width, source.Height);
+                        var selected = source.NativeText == null ? NativePdfTextService.SelectRegion(allText,
+                            PdfAffineTransform.Between(box, box, source.Rotation).Map(box)) : new();
+                        var block = source.NativeText ?? (selected.Count == 1 ? selected[0] : new NativePdfTextBlock
+                        {
+                            Text = string.Join("\n", selected.Select(b => b.Text)),
+                            Runs = selected.SelectMany(b => b.Runs).DistinctBy(r => r.Id).ToList(),
+                            Glyphs = selected.SelectMany(b => b.Glyphs).ToList(),
+                            Lines = selected.SelectMany(b => b.Lines).ToList(),
+                            Bounds = PdfTextBox.Union(selected.Select(b => b.Bounds))
+                        });
+                        if (block.Glyphs.Count == 0) throw new InvalidOperationException("텍스트를 다시 선택해 주세요.");
+                        return new NativePdfTextEdit(block, block.Text, Transform: PdfAffineTransform.Between(
+                            new(source.X, source.Y, source.Width, source.Height),
+                            new(e.Target.X, e.Target.Y, e.Target.Width, e.Target.Height), e.Target.Rotation - source.Rotation));
+                    }).ToList();
+                    var result = service.EditMany(textSource, pageIndex, requests);
+                    foreach (var layout in result.Layouts)
+                        refreshedText.Add(service.RefreshSelection(result.Bytes, pageIndex, layout) ?? layout);
+                    return result;
+                });
+                transformed = result.Bytes;
+            }
+            List<PdfPageContent>? refreshedGraphics = graphics.Count > 0
+                ? await _contentExtractor.ExtractAsync(transformed, pageIndex, TextEditingMode) : null;
+            CommitNativeTextEdit(snapshot, transformed);
+            for (int i = 0; i < texts.Count; i++)
+            {
+                NativePdfTextService.UpdateAnnotation(texts[i].Target, refreshedText[i]);
+                texts[i].Target.Rotation = 0;
+            }
+            if (refreshedGraphics != null)
+            {
+                var used = new HashSet<PdfPageContent>();
+                foreach (var edit in graphics)
+                {
+                    var expected = PdfAffineTransform.Between(
+                        new(edit.Source.X, edit.Source.Y, edit.Source.Width, edit.Source.Height),
+                        new(edit.Target.X, edit.Target.Y, edit.Target.Width, edit.Target.Height),
+                        edit.Target.Rotation - edit.Source.Rotation).Map(new PdfTextBox(edit.Source.X, edit.Source.Y, edit.Source.Width, edit.Source.Height));
+                    var content = PdfAnnotationTargetResolver.FindGraphicOperations(edit.Source, refreshedGraphics) ??
+                        refreshedGraphics.Where(c => c.Type == PageContentType.Image && !used.Contains(c))
+                        .OrderBy(c => Math.Abs(c.X - expected.X) + Math.Abs(c.Y - expected.Y) +
+                            Math.Abs(c.Width - expected.Width) + Math.Abs(c.Height - expected.Height)).FirstOrDefault();
+                    if (content == null) continue;
+                    used.Add(content);
+                    var target = edit.Target;
+                    target.X = content.X; target.Y = content.Y; target.Width = content.Width; target.Height = content.Height;
+                    target.OriginalPdfX = content.OriginalPdfX; target.OriginalPdfY = content.OriginalPdfY;
+                    target.OriginalImageName = content.ImageId; target.GraphicCtm = content.GraphicCtm;
+                    target.GraphicOperations = content.GraphicOperations.Select(op => op.Clone()).ToList();
+                    target.GraphicHitBounds = new(content.GraphicHitBounds);
+                    target.ContentStreamIndex = content.ContentStreamIndex; target.ContentStreamObjectNumber = content.ContentStreamObjectNumber;
+                    target.OperationIndex = content.OperationIndex; target.Rotation = 0;
+                    target.IsOriginalImageReplacement = true; target.IsApplied = false;
+                }
+            }
+        }
+
         public async Task<bool> RemoveOriginalImageAnnotationsAsync(
             int pageIndex,
             IReadOnlyCollection<PdfAnnotation> annotations)

@@ -33,6 +33,9 @@ public sealed class AnnotationInteractionController
 {
     private const double PdfToPixels = 96.0 / 72.0;
     private readonly Dictionary<PdfAnnotation, Point> _moveStartPositions = new();
+    private readonly Dictionary<PdfAnnotation, PdfAnnotation> _moveSources = new();
+    private PdfAnnotation? _resizeSource;
+    private Point _resizePointer;
     private readonly Dictionary<PdfAnnotation, bool> _moveStartAppliedStates = new();
     private bool _hasMoved;
     private string? _resizeHandle;
@@ -45,11 +48,19 @@ public sealed class AnnotationInteractionController
 
     public bool IsMoving { get; private set; }
     public bool IsResizing { get; private set; }
+    public IReadOnlyList<(PdfAnnotation Source, PdfAnnotation Target)> GetTransformPreview() =>
+        IsResizing && _resizeSource != null && _resizeAnnotation != null
+            ? new[] { (_resizeSource, _resizeAnnotation.Clone()) }
+            : IsMoving ? _moveSources.Select(pair => (pair.Value, pair.Key.Clone())).ToList()
+            : Array.Empty<(PdfAnnotation, PdfAnnotation)>();
+
     public bool IsDrawingHighlight => _highlightRectangle != null;
 
     public void BeginResize(PdfAnnotation annotation, string direction, Point position)
     {
         IsResizing = true;
+        _resizeSource = annotation.Clone();
+        _resizePointer = position;
         _resizeAnnotation = annotation;
         _resizeStartBounds = (annotation.X, annotation.Y, annotation.Width, annotation.Height);
         _resizeWasApplied = annotation.IsApplied;
@@ -62,13 +73,24 @@ public sealed class AnnotationInteractionController
         IsMoving = true;
         _hasMoved = false;
         _moveStartPositions.Clear();
+        _moveSources.Clear();
         _moveStartAppliedStates.Clear();
         foreach (PdfAnnotation annotation in annotations)
         {
             _moveStartPositions[annotation] = new Point(annotation.X, annotation.Y);
+            _moveSources[annotation] = annotation.Clone();
             _moveStartAppliedStates[annotation] = annotation.IsApplied;
         }
         _lastPointerPosition = position;
+    }
+
+    public bool CancelResize()
+    {
+        if (!IsResizing) return false;
+        if (_resizeAnnotation != null && _resizeSource != null) RestoreBounds(_resizeAnnotation, _resizeSource);
+        IsResizing = false; _resizeAnnotation = null; _resizeSource = null;
+        _resizeHandle = null; _resizeStartBounds = null; _resizeWasApplied = false;
+        return true;
     }
 
     public bool CancelMove()
@@ -153,6 +175,28 @@ public sealed class AnnotationInteractionController
 
         PdfAnnotation? annotation = _resizeAnnotation;
         _resizeAnnotation = null;
+        if (annotation != null && _resizeSource is { } source &&
+            (source.NativeText != null || source.IsOriginalImageReplacement || source.IsOriginalTextReplacement ||
+                (source.IsApplied && source.Type is AnnotationType.Text or AnnotationType.FreeText)))
+        {
+            try
+            {
+                // Snapshot UI state at the beginning, not at the preview position.
+                var target = annotation.Clone();
+                RestoreBounds(annotation, source);
+                await manager.TransformAnnotationsAsync(pageIndex, new[] { (source, target) });
+                CopyTransformed(annotation, target);
+                _resizeSource = null; _resizeStartBounds = null; _resizeWasApplied = false;
+                return AnnotationResizeResult.Completed;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+                RestoreBounds(annotation, source);
+                _resizeSource = null; _resizeStartBounds = null; _resizeWasApplied = false;
+                return source.IsOriginalImageReplacement ? AnnotationResizeResult.OriginalImageRemovalFailed : AnnotationResizeResult.OriginalTextRemovalFailed;
+            }
+        }
         if (annotation != null && _resizeWasApplied &&
             annotation.Type is AnnotationType.Text or AnnotationType.FreeText &&
             _resizeStartBounds is { } savedBounds &&
@@ -218,6 +262,24 @@ public sealed class AnnotationInteractionController
             return AnnotationMoveResult.NotMoved;
         }
 
+        var originalGraphics = selectedAnnotations.Where(a => a.IsOriginalImageReplacement).ToList();
+        if (originalGraphics.Count > 0)
+        {
+            try
+            {
+                var targets = originalGraphics.Select(a => (Source: _moveSources[a], Target: a.Clone())).ToList();
+                foreach (var annotation in originalGraphics) RestoreBounds(annotation, _moveSources[annotation]);
+                await manager.TransformAnnotationsAsync(pageIndex, targets);
+                for (int i = 0; i < originalGraphics.Count; i++) CopyTransformed(originalGraphics[i], targets[i].Target);
+                _moveStartPositions.Clear(); _moveStartAppliedStates.Clear(); _moveSources.Clear();
+                return AnnotationMoveResult.Completed;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex); RestoreMoveStartPositions();
+                return AnnotationMoveResult.OriginalImageRemovalFailed;
+            }
+        }
         var native = selectedAnnotations.Where(a => a.NativeText != null).ToList();
         if (native.Count > 0)
         {
@@ -344,9 +406,20 @@ public sealed class AnnotationInteractionController
 
     private void Resize(PdfAnnotation annotation, Point position)
     {
+        if (_resizeHandle == "Rotate" && _resizeSource is { } original)
+        {
+            double cx = (original.X + original.Width / 2) * PdfToPixels, cy = (original.Y + original.Height / 2) * PdfToPixels;
+            double start = Math.Atan2(_resizePointer.Y - cy, _resizePointer.X - cx);
+            double end = Math.Atan2(position.Y - cy, position.X - cx);
+            annotation.Rotation = original.Rotation + (end - start) * 180 / Math.PI;
+            if (KeyboardStateService.IsShiftDown()) annotation.Rotation = Math.Round(annotation.Rotation / 15) * 15;
+            return;
+        }
         double dx = (position.X - _lastPointerPosition.X) / PdfToPixels;
         double dy = (position.Y - _lastPointerPosition.Y) / PdfToPixels;
-        const double minimumSize = 10;
+        double radians = annotation.Rotation * Math.PI / 180;
+        (dx, dy) = (dx * Math.Cos(radians) + dy * Math.Sin(radians), -dx * Math.Sin(radians) + dy * Math.Cos(radians));
+        const double minimumSize = 1;
         if (annotation.Type == AnnotationType.Signature)
         {
             ResizeSignature(annotation, dx, dy, minimumSize);
@@ -381,6 +454,13 @@ public sealed class AnnotationInteractionController
             case "SE":
                 ResizeCorner(annotation, dx, dy, moveLeft: false, moveTop: false, minimumSize: minimumSize);
                 break;
+        }
+        if (_resizeSource is { } source && annotation.Type is AnnotationType.Text or AnnotationType.FreeText)
+        {
+            double scale = Math.Min(annotation.Width / Math.Max(source.Width, .001), annotation.Height / Math.Max(source.Height, .001));
+            annotation.FontSize = Math.Max(.1, source.FontSize * scale);
+            annotation.LineHeight = source.LineHeight * scale;
+            annotation.BaselineOffset = source.BaselineOffset * scale;
         }
         // The original applied state is kept separately until completion so the
         // pointer preview can render at its temporary bounds without losing the
@@ -477,7 +557,7 @@ public sealed class AnnotationInteractionController
         bool moveTop,
         double minimumSize)
     {
-        if (annotation.Type != AnnotationType.Image)
+        if (annotation.Type is not (AnnotationType.Image or AnnotationType.Text or AnnotationType.FreeText))
         {
             double resizedWidth = annotation.Width + (moveLeft ? -dx : dx);
             if (resizedWidth > minimumSize)
@@ -551,6 +631,26 @@ public sealed class AnnotationInteractionController
         }
         _lastPointerPosition = position;
         return true;
+    }
+
+    private static void RestoreBounds(PdfAnnotation target, PdfAnnotation source)
+    {
+        target.X = source.X; target.Y = source.Y; target.Width = source.Width; target.Height = source.Height;
+        target.Rotation = source.Rotation; target.FontSize = source.FontSize; target.LineHeight = source.LineHeight;
+        target.BaselineOffset = source.BaselineOffset; target.IsApplied = source.IsApplied;
+    }
+
+    private static void CopyTransformed(PdfAnnotation target, PdfAnnotation source)
+    {
+        RestoreBounds(target, source);
+        target.NativeText = source.NativeText; target.Content = source.Content;
+        target.IsOriginalTextReplacement = source.IsOriginalTextReplacement;
+        target.IsOriginalImageReplacement = source.IsOriginalImageReplacement;
+        target.OriginalPdfX = source.OriginalPdfX; target.OriginalPdfY = source.OriginalPdfY;
+        target.OriginalImageName = source.OriginalImageName; target.GraphicCtm = source.GraphicCtm;
+        target.GraphicOperations = source.GraphicOperations; target.GraphicHitBounds = source.GraphicHitBounds;
+        target.ContentStreamIndex = source.ContentStreamIndex; target.ContentStreamObjectNumber = source.ContentStreamObjectNumber;
+        target.OperationIndex = source.OperationIndex;
     }
 
     private static void ShiftSignaturePoints(PdfAnnotation annotation, double dx, double dy)

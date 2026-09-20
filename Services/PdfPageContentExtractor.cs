@@ -80,6 +80,21 @@ namespace PDF_simple_edit.Services
                     extractedContents.AddRange(listener.Contents.Where(content => content.Type == PageContentType.Image));
                     extractedContents.AddRange(GroupVectorPathsIntoGraphics(
                         listener.VectorPaths, pageSize.GetWidth(), pageSize.GetHeight()));
+                    // Extraction above uses media-height coordinates; selection uses
+                    // the displayed CropBox, including page rotation.
+                    var map = PdfPageCoordinates.ToDisplay(page).After(new(1, 0, 0, -1, 0, pageSize.GetHeight()));
+                    foreach (var graphic in extractedContents.Where(c => c.Type == PageContentType.Image))
+                    {
+                        var bounds = map.Map(new PdfTextBox(graphic.X, graphic.Y, graphic.Width, graphic.Height));
+                        graphic.X = bounds.X; graphic.Y = bounds.Y;
+                        graphic.Width = bounds.Width; graphic.Height = bounds.Height;
+                        graphic.GraphicHitBounds = graphic.GraphicHitBounds.Select(map.Map).ToList();
+                        foreach (var operation in graphic.GraphicOperations)
+                        {
+                            operation.Bounds = map.Map(operation.Bounds);
+                            operation.HitBounds = operation.HitBounds.Select(map.Map).ToList();
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -341,6 +356,9 @@ namespace PDF_simple_edit.Services
         private sealed class VectorPathFragment
         {
             public List<PdfTextBox> HitBounds { get; init; } = new();
+            public PdfAffineTransform Ctm { get; init; } = PdfAffineTransform.Identity;
+            public double LineWidth { get; init; }
+            public bool IsClipping { get; init; }
             public double X { get; init; }
             public double Y { get; init; }
             public double Width { get; init; }
@@ -805,6 +823,8 @@ namespace PDF_simple_edit.Services
             return regions;
         }
 
+        private static PdfTextBox GetVectorBounds(VectorPathFragment path) => new(path.X, path.Y, path.Width, path.Height);
+
         private static List<PdfPageContent> GroupVectorPathsIntoGraphics(
             IReadOnlyCollection<VectorPathFragment> rawPaths,
             double pageWidth,
@@ -845,16 +865,16 @@ namespace PDF_simple_edit.Services
                 double bottom = component.Max(path => path.Y + path.Height);
                 double width = right - left;
                 double height = bottom - top;
-                const double cropPadding = 1.0;
-                left -= cropPadding;
-                top -= cropPadding;
-                width += cropPadding * 2;
-                height += cropPadding * 2;
                 List<PdfGraphicOperationTarget> operationTargets = component
                     .Select(GetVectorTargetKey)
                     .Distinct()
                     .Select(key => new PdfGraphicOperationTarget
                     {
+                        Bounds = GetVectorBounds(component.First(path => GetVectorTargetKey(path) == key)),
+                        HitBounds = new(component.First(path => GetVectorTargetKey(path) == key).HitBounds),
+                        Ctm = component.First(path => GetVectorTargetKey(path) == key).Ctm,
+                        LineWidth = component.First(path => GetVectorTargetKey(path) == key).LineWidth,
+                        IsClipping = component.First(path => GetVectorTargetKey(path) == key).IsClipping,
                         StreamObjectNumber = key.StreamObjectNumber,
                         StreamIndex = key.StreamIndex,
                         OperationIndex = key.OperationIndex,
@@ -1360,6 +1380,9 @@ namespace PDF_simple_edit.Services
                 VectorPaths.Add(new VectorPathFragment
                 {
                     HitBounds = hitBounds,
+                    Ctm = new(a, b, c, d, e, f),
+                    LineWidth = pathInfo.GetLineWidth(),
+                    IsClipping = isClippingPath,
                     X = left,
                     Y = _pageHeight - top,
                     Width = right - left,
@@ -1454,6 +1477,7 @@ namespace PDF_simple_edit.Services
                         // page renderer rebuilds the image with its transparency.
                         Text = imagePath,
                         ImageId = target.ResourceName,
+                        GraphicCtm = new(a, b, c, d, e, f),
                         ContentStreamIndex = target.StreamIndex,
                         ContentStreamObjectNumber = target.StreamObjectNumber,
                         OperationIndex = target.OperationIndex

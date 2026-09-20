@@ -8,6 +8,27 @@ namespace PDF_simple_edit.Services;
 
 internal sealed class PdfAnnotationTargetResolver
 {
+    public static PdfPageContent? FindGraphicOperations(PdfAnnotation annotation, IReadOnlyList<PdfPageContent> contents)
+    {
+        if (!annotation.IsOriginalVectorGraphic) return null;
+        bool Same(PdfGraphicOperationTarget a, PdfGraphicOperationTarget b) =>
+            a.StreamObjectNumber == b.StreamObjectNumber && a.StreamIndex == b.StreamIndex &&
+            a.OperationIndex == b.OperationIndex && a.IsTextOperation == b.IsTextOperation && a.IsShadingOperation == b.IsShadingOperation;
+        var operations = contents.SelectMany(c => c.GraphicOperations)
+            .Where(op => annotation.GraphicOperations.Any(source => Same(source, op))).ToList();
+        if (operations.Count != annotation.GraphicOperations.Count) return null;
+        var bounds = PdfTextBox.Union(operations.Select(op => op.Bounds));
+        return new PdfPageContent
+        {
+            Type = PageContentType.Image, X = bounds.X, Y = bounds.Y, Width = bounds.Width, Height = bounds.Height,
+            // The caller preserves/resolves PDF coordinates from the original group.
+            ImageId = annotation.OriginalImageName, GraphicOperations = operations,
+            GraphicHitBounds = operations.SelectMany(op => op.HitBounds.Count > 0 ? op.HitBounds : new() { op.Bounds }).ToList(),
+            ContentStreamObjectNumber = operations[0].StreamObjectNumber, ContentStreamIndex = operations[0].StreamIndex,
+            OperationIndex = operations[0].OperationIndex
+        };
+    }
+
     public List<PdfAnnotation>? ResolveImages(
         IReadOnlyCollection<PdfAnnotation> annotations,
         IReadOnlyList<PdfPageContent> pageContents)
@@ -23,6 +44,18 @@ internal sealed class PdfAnnotationTargetResolver
 
         foreach (PdfAnnotation annotation in annotations)
         {
+            // A moved object may now touch another graphic. Preserve its selected
+            // operations instead of absorbing the neighbour's connected component.
+            var precise = FindGraphicOperations(annotation, pageContents);
+            if (precise != null && Math.Abs(precise.X - annotation.X) < 2 && Math.Abs(precise.Y - annotation.Y) < 2 &&
+                Math.Abs(precise.Width - annotation.Width) < 2 && Math.Abs(precise.Height - annotation.Height) < 2)
+            {
+                var target = annotation.Clone();
+                target.GraphicOperations = precise.GraphicOperations.Select(op => op.Clone()).ToList();
+                target.GraphicHitBounds = new(precise.GraphicHitBounds);
+                resolvedAnnotations.Add(target);
+                continue;
+            }
             PdfPageContent? match = availableImages
                 .Where(content =>
                     !usedImages.Contains(content) &&
@@ -48,6 +81,7 @@ internal sealed class PdfAnnotationTargetResolver
             resolved.ContentStreamIndex = match.ContentStreamIndex;
             resolved.ContentStreamObjectNumber = match.ContentStreamObjectNumber;
             resolved.OperationIndex = match.OperationIndex;
+            resolved.GraphicCtm = match.GraphicCtm;
             resolved.OriginalImageName = match.ImageId;
             resolved.GraphicOperationIndexes = new List<int>(match.GraphicOperationIndexes);
             resolved.GraphicTextOperationIndexes =

@@ -45,26 +45,21 @@ public sealed class AnnotationOverlayController
             if (annotation.IsOriginalTextReplacement && !selectedAnnotations.Contains(annotation))
                 continue;
 
-            if (annotation.IsOriginalVectorGraphic)
+            if (annotation.IsOriginalImageReplacement || (annotation.IsApplied && annotation.Type == AnnotationType.Image))
             {
                 if (selectedAnnotations.Contains(annotation))
+                {
                     AddSelectionBorder(canvas, annotation, ref insertIndex);
+                    if (annotation == primarySelection) AddResizeHandles(canvas, annotation, ref insertIndex, resizeStarted, cursorChanged);
+                }
                 continue;
             }
 
             if (annotation.NativeText != null)
             {
                 if (!selectedAnnotations.Contains(annotation)) continue;
-                double dx = annotation.X - annotation.NativeText.Bounds.X;
-                double dy = annotation.Y - annotation.NativeText.Bounds.Y;
-                var line = annotation.NativeText.Bounds;
-                {
-                    var outline = new Border { Width = Math.Max(line.Width * PdfToPixels, 1),
-                        Height = Math.Max(line.Height * PdfToPixels, 1), BorderThickness = new(0.75),
-                        BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue), IsHitTestVisible = false };
-                    Canvas.SetLeft(outline, (line.X + dx) * PdfToPixels); Canvas.SetTop(outline, (line.Y + dy) * PdfToPixels);
-                    canvas.Children.Insert(insertIndex++, outline);
-                }
+                AddSelectionBorder(canvas, annotation, ref insertIndex);
+                if (annotation == primarySelection) AddResizeHandles(canvas, annotation, ref insertIndex, resizeStarted, cursorChanged);
                 continue;
             }
 
@@ -96,6 +91,11 @@ public sealed class AnnotationOverlayController
             if (element == null)
                 continue;
 
+            element.RenderTransformOrigin = new Point(.5, .5);
+            var transforms = new TransformGroup();
+            if (element.RenderTransform is Transform existingTransform) transforms.Children.Add(existingTransform);
+            transforms.Children.Add(new RotateTransform { Angle = annotation.Rotation });
+            element.RenderTransform = transforms;
             Canvas.SetLeft(element, annotation.X * PdfToPixels);
             Canvas.SetTop(element, annotation.Y * PdfToPixels);
             if (!selectedAnnotations.Contains(annotation))
@@ -154,12 +154,14 @@ public sealed class AnnotationOverlayController
         {
             BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
             BorderThickness = new Thickness(1),
-            Width = Math.Max(editorWidth, 1) + 4,
-            Height = Math.Max(editorHeight, 1) + 4,
+            Width = Math.Max(editorWidth, 1),
+            Height = Math.Max(editorHeight, 1),
+            RenderTransformOrigin = new Point(.5, .5),
+            RenderTransform = new RotateTransform { Angle = annotation.Rotation },
             IsHitTestVisible = false
         };
-        Canvas.SetLeft(border, editorLeft - 2);
-        Canvas.SetTop(border, editorTop - 2);
+        Canvas.SetLeft(border, editorLeft);
+        Canvas.SetTop(border, editorTop);
         canvas.Children.Insert(insertIndex++, border);
     }
 
@@ -337,7 +339,8 @@ public sealed class AnnotationOverlayController
             ["E"] = new(x + width - offset, y + height / 2 - offset),
             ["SW"] = new(x - offset, y + height - offset),
             ["S"] = new(x + width / 2 - offset, y + height - offset),
-            ["SE"] = new(x + width - offset, y + height - offset)
+            ["SE"] = new(x + width - offset, y + height - offset),
+            ["Rotate"] = new(x + width / 2 - offset, y - 24 - offset)
         };
 
         foreach ((string direction, Point position) in handles)
@@ -352,8 +355,16 @@ public sealed class AnnotationOverlayController
                 Tag = direction,
                 IsHitTestVisible = true
             };
-            Canvas.SetLeft(handle, position.X);
-            Canvas.SetTop(handle, position.Y);
+            var bounds = new PdfTextBox(x, y, width, height);
+            var rotated = PdfAffineTransform.Between(bounds, bounds, annotation.Rotation).Map(position.X + offset, position.Y + offset);
+            Canvas.SetLeft(handle, rotated.X - offset);
+            Canvas.SetTop(handle, rotated.Y - offset);
+            if (direction == "Rotate")
+            {
+                handle.RadiusX = size / 2; handle.RadiusY = size / 2;
+                handle.Fill = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue);
+                ToolTipService.SetToolTip(handle, "드래그하여 회전 · Shift: 15° 단위");
+            }
             handle.PointerPressed += (_, args) =>
             {
                 canvas.CapturePointer(args.Pointer);

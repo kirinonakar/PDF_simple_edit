@@ -1,5 +1,7 @@
 using iText.Kernel.Colors;
 using iText.Kernel.Pdf;
+using iText.Kernel.Pdf.Canvas;
+using iText.Kernel.Geom;
 using PDF_simple_edit.Helpers;
 using PDF_simple_edit.Models;
 using System.Linq;
@@ -10,7 +12,32 @@ public sealed class PdfAnnotationDocumentService
 {
     public void Apply(PdfDocumentManager manager, PdfDocument document, PdfAnnotation annotation)
     {
-        if (annotation.NativeText != null) return;
+        if (annotation.NativeText != null || (annotation.IsApplied && annotation.Type == AnnotationType.Image)) return;
+        if (System.Math.Abs(annotation.Rotation) > .0001 && !annotation.IsOriginalImageReplacement &&
+            !annotation.IsOriginalTextReplacement && !(annotation.IsApplied && annotation.Type is AnnotationType.Text or AnnotationType.FreeText))
+        {
+            var page = document.GetPage(annotation.PageIndex + 1);
+            // Isolate just this overlay before transforming it; surrounding page
+            // content is never included in the rotated form.
+            using var buffer = new System.IO.MemoryStream();
+            using (var temporaryDocument = new PdfDocument(new PdfWriter(buffer)))
+            {
+                var temporary = temporaryDocument.AddNewPage(new PageSize(page.GetMediaBox()));
+                temporary.SetCropBox(page.GetCropBox());
+                var unrotated = annotation.Clone(); unrotated.Rotation = 0;
+                unrotated.PageIndex = 0;
+                Apply(manager, temporaryDocument, unrotated);
+            }
+            // Finalize subset font dictionaries before importing their resources.
+            using var sourceDocument = new PdfDocument(new PdfReader(new System.IO.MemoryStream(buffer.ToArray())));
+            var form = sourceDocument.GetPage(1).CopyAsFormXObject(document);
+            var display = PdfPageCoordinates.ToDisplay(page);
+            var bounds = new PdfTextBox(annotation.X, annotation.Y, annotation.Width, annotation.Height);
+            var rotation = display.Inverse().After(PdfAffineTransform.Between(bounds, bounds, annotation.Rotation)).After(display);
+            new PdfCanvas(page.NewContentStreamAfter(), page.GetResources(), document).AddXObjectWithTransformationMatrix(
+                form, (float)rotation.A, (float)rotation.B, (float)rotation.C, (float)rotation.D, (float)rotation.E, (float)rotation.F);
+            return;
+        }
         Color color = ParseColor(annotation.Color);
         switch (annotation.Type)
         {
@@ -87,7 +114,7 @@ public sealed class PdfAnnotationDocumentService
                     annotation.LineWidth,
                     PdfSignatureMetadata.Serialize(annotation));
                 break;
-            case AnnotationType.Image when annotation.IsOriginalImageReplacement:
+            case AnnotationType.Image when annotation.IsOriginalImageReplacement || annotation.IsApplied:
                 // Merely selecting an existing PDF image must not duplicate it on save.
                 // Move/resize removes the original Do operation and clears this flag first.
                 break;
