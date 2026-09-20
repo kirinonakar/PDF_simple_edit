@@ -77,9 +77,13 @@ namespace PDF_simple_edit.Services
                         : new NativePdfTextService().Extract(pdfSnapshot, pageIndex)
                         .Where(block => !string.IsNullOrWhiteSpace(block.Text))
                         .Select(NativePdfTextService.ToPageContent).ToList();
-                    extractedContents.AddRange(listener.Contents.Where(content => content.Type == PageContentType.Image));
+                    var sharedForms = PdfRepeatedFormExtractor.Extract(page);
+                    extractedContents.AddRange(listener.Contents.Where(content => content.Type == PageContentType.Image &&
+                        !sharedForms.SharedStreams.Contains(content.ContentStreamObjectNumber)));
                     extractedContents.AddRange(GroupVectorPathsIntoGraphics(
-                        listener.VectorPaths, pageSize.GetWidth(), pageSize.GetHeight()));
+                        listener.VectorPaths.Where(path => !sharedForms.SharedStreams.Contains(GetVectorTargetKey(path).StreamObjectNumber)).ToList(),
+                        pageSize.GetWidth(), pageSize.GetHeight()));
+                    extractedContents.AddRange(sharedForms.Contents);
                     // Extraction above uses media-height coordinates; selection uses
                     // the displayed CropBox, including page rotation.
                     var map = PdfPageCoordinates.ToDisplay(page).After(new(1, 0, 0, -1, 0, pageSize.GetHeight()));

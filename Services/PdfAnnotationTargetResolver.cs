@@ -13,7 +13,8 @@ internal sealed class PdfAnnotationTargetResolver
         if (!annotation.IsOriginalVectorGraphic) return null;
         bool Same(PdfGraphicOperationTarget a, PdfGraphicOperationTarget b) =>
             a.StreamObjectNumber == b.StreamObjectNumber && a.StreamIndex == b.StreamIndex &&
-            a.OperationIndex == b.OperationIndex && a.IsTextOperation == b.IsTextOperation && a.IsShadingOperation == b.IsShadingOperation;
+            a.OperationIndex == b.OperationIndex && a.IsImageOperation == b.IsImageOperation &&
+            a.IsTextOperation == b.IsTextOperation && a.IsShadingOperation == b.IsShadingOperation;
         var operations = contents.SelectMany(c => c.GraphicOperations)
             .Where(op => annotation.GraphicOperations.Any(source => Same(source, op))).ToList();
         if (operations.Count != annotation.GraphicOperations.Count) return null;

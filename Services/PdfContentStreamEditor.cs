@@ -694,7 +694,9 @@ namespace PDF_simple_edit.Services
                         removals[key] = removal;
                     }
 
-                    if (operation.IsShadingOperation)
+                    if (operation.IsImageOperation)
+                        removal.ImageOperationIndexes.Add(operation.OperationIndex);
+                    else if (operation.IsShadingOperation)
                         removal.ShadingOperationIndexes.Add(operation.OperationIndex);
                     else if (operation.IsTextOperation)
                         removal.TextOperationIndexes.Add(operation.OperationIndex);
