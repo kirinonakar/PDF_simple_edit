@@ -30,12 +30,10 @@
 
   <!-- Embed the manifest version so packaged and unpackaged apps share one source. -->
   <Target Name="ReadAppManifestVersion" BeforeTargets="GetAssemblyVersion">
-    <XmlPeek XmlInputPath="$(MSBuildProjectDirectory)\Package.appxmanifest"
-             Query="/*[local-name()='Package']/*[local-name()='Identity']/@Version">
+    <XmlPeek XmlInputPath="$(MSBuildProjectDirectory)\Package.appxmanifest" Query="/*[local-name()='Package']/*[local-name()='Identity']/@Version">
       <Output TaskParameter="Result" PropertyName="AppManifestVersion" />
     </XmlPeek>
-    <Error Condition="'$(AppManifestVersion)' == ''"
-           Text="Package.appxmanifest must specify Identity/@Version." />
+    <Error Condition="'$(AppManifestVersion)' == ''" Text="Package.appxmanifest must specify Identity/@Version." />
     <PropertyGroup>
       <Version>$(AppManifestVersion)</Version>
       <AssemblyVersion>$(AppManifestVersion)</AssemblyVersion>
@@ -62,7 +60,7 @@
     <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated.png" />
     <Content Include="Assets\StoreLogo.png" />
     <Content Include="Assets\Wide310x150Logo.scale-200.png" />
-    <Content Include="Assets\app.ico" >
+    <Content Include="Assets\app.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
@@ -76,12 +74,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="itext" Version="9.5.0" />
-    <PackageReference Include="PDFiumCore" Version="154.0.8035" />
-    <PackageReference Include="itext.bouncy-castle-adapter" Version="9.5.0" />
-    <PackageReference Include="itext.pdfsweep" Version="5.0.5" NoWarn="NU1701" />
-    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />
+    <PackageReference Include="itext" Version="9.7.0" />
+    <PackageReference Include="PDFiumCore" Version="155.0.8057" />
+    <PackageReference Include="itext.bouncy-castle-adapter" Version="9.7.0" />
+    <PackageReference Include="itext.pdfsweep" Version="5.0.7" NoWarn="NU1701" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
 
   </ItemGroup>

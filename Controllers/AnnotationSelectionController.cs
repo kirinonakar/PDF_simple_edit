@@ -22,6 +22,24 @@ public sealed class AnnotationSelectionController
         _contentService = contentService;
     }
 
+    public List<PdfAnnotation> SelectGraphicsInRegion(
+        List<PdfAnnotation> annotations, IReadOnlyList<PdfPageContent> contents,
+        int pageIndex, PdfTextBox region)
+    {
+        bool Contains(double x, double y, double width, double height) =>
+            region.Contains(x, y, 2) && region.Contains(x + width, y + height, 2);
+        foreach (var content in contents.Where(content => content.Type == PageContentType.Image &&
+            Contains(content.X, content.Y, content.Width, content.Height)))
+        {
+            if (annotations.Any(a => a.PageIndex == pageIndex && a.IsOriginalImageReplacement &&
+                a.OriginalImageName == content.ImageId)) continue;
+            annotations.Add(_contentService.ConvertToAnnotation(content, pageIndex));
+        }
+        return annotations.Where(a => a.PageIndex == pageIndex &&
+            AnnotationContentService.MatchesSelectionMode(a, EditToolMode.SelectGraphics) &&
+            Contains(a.X, a.Y, a.Width, a.Height)).ToList();
+    }
+
     public async Task<AnnotationSelectionResult> SelectAtAsync(
         PdfDocumentManager manager,
         List<PdfAnnotation> annotations,
@@ -31,16 +49,17 @@ public sealed class AnnotationSelectionController
         double x,
         double y,
         bool controlPressed,
-        Action analysisStarted)
+        Action analysisStarted,
+        EditToolMode selectionMode = EditToolMode.Select)
     {
         PdfAnnotation? found = _contentService.FindAnnotationAt(
-            annotations, pageIndex, x, y);
+            annotations, pageIndex, x, y, selectionMode);
         PdfAnnotation? addedFromPageContent = null;
         if (found == null || found.IsOriginalImageReplacement)
         {
             analysisStarted();
             List<PdfPageContent> pageContents = await manager.ExtractPageContentsAsync(pageIndex);
-            PdfPageContent? content = _contentService.FindEditableContent(pageContents, x, y);
+            PdfPageContent? content = _contentService.FindEditableContent(pageContents, x, y, selectionMode);
             if (_contentService.ShouldPreferPageContent(found, content) && content != null)
             {
                 PdfAnnotation? converted = _contentService.ConvertToAnnotation(content, pageIndex);

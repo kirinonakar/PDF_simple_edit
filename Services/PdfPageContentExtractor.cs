@@ -101,6 +101,7 @@ namespace PDF_simple_edit.Services
             const double pdfToPixels = 96.0 / 72.0;
             foreach (PdfPageContent content in contents.Where(content =>
                 content.Type == PageContentType.Image &&
+                content.GraphicOperations.Count == 0 &&
                 string.IsNullOrEmpty(content.Text)))
             {
                 using var input = new MemoryStream(pdfBytes);
@@ -339,6 +340,7 @@ namespace PDF_simple_edit.Services
 
         private sealed class VectorPathFragment
         {
+            public List<PdfTextBox> HitBounds { get; init; } = new();
             public double X { get; init; }
             public double Y { get; init; }
             public double Width { get; init; }
@@ -843,33 +845,6 @@ namespace PDF_simple_edit.Services
                 double bottom = component.Max(path => path.Y + path.Height);
                 double width = right - left;
                 double height = bottom - top;
-                if (component.Sum(path => path.ShapeCount) < 3 || width < 8 || height < 5)
-                    continue;
-
-                // Page furniture (borders, crop marks and rules) can connect
-                // through their bounding boxes into a page-sized component.
-                // Its raster preview would include unrelated text and images.
-                // Keep these paths in the PDF, but never expose that whole-page
-                // crop as an editable graphic. Real image XObjects are unaffected.
-                if (width >= pageWidth * 0.8 && height >= pageHeight * 0.8)
-                    continue;
-
-                // Connected table borders can span most of a page. Exposing their
-                // bounding box as one editable image makes a click on any border
-                // select the whole form and then intercept later text clicks.
-                // Keep layout grids in the page background instead.
-                int horizontalRules = component.Sum(path => path.HorizontalRuleCount);
-                int verticalRules = component.Sum(path => path.VerticalRuleCount);
-                double longestHorizontalRule = component.Max(path => path.LongestHorizontalRule);
-                double longestVerticalRule = component.Max(path => path.LongestVerticalRule);
-                if (horizontalRules >= 2 && verticalRules >= 2 &&
-                    horizontalRules + verticalRules >= 6 &&
-                    longestHorizontalRule >= width * 0.25 &&
-                    longestVerticalRule >= height * 0.25)
-                {
-                    continue;
-                }
-
                 const double cropPadding = 1.0;
                 left -= cropPadding;
                 top -= cropPadding;
@@ -906,7 +881,9 @@ namespace PDF_simple_edit.Services
                     ContentStreamIndex = firstTarget.StreamIndex,
                     ContentStreamObjectNumber = firstTarget.StreamObjectNumber,
                     OperationIndex = firstTarget.OperationIndex,
-                    GraphicOperations = operationTargets
+                    GraphicOperations = operationTargets,
+                    GraphicHitBounds = component.SelectMany(path => path.HitBounds.Count > 0
+                        ? path.HitBounds : new List<PdfTextBox> { new(path.X, path.Y, path.Width, path.Height) }).ToList()
                 });
             }
 
@@ -944,11 +921,13 @@ namespace PDF_simple_edit.Services
             VectorPathFragment first,
             VectorPathFragment second)
         {
-            const double maximumGap = 10;
-            return first.X <= second.X + second.Width + maximumGap &&
-                first.X + first.Width + maximumGap >= second.X &&
-                first.Y <= second.Y + second.Height + maximumGap &&
-                first.Y + first.Height + maximumGap >= second.Y;
+            const double maximumGap = 2;
+            // Join touching strokes, not everything inside a table's outer box.
+            var firstBounds = first.HitBounds.Count > 0 ? first.HitBounds : new() { new(first.X, first.Y, first.Width, first.Height) };
+            var secondBounds = second.HitBounds.Count > 0 ? second.HitBounds : new() { new(second.X, second.Y, second.Width, second.Height) };
+            return firstBounds.Any(a => secondBounds.Any(b =>
+                a.X <= b.Right + maximumGap && a.Right + maximumGap >= b.X &&
+                a.Y <= b.Bottom + maximumGap && a.Bottom + maximumGap >= b.Y));
         }
 
         private sealed class TextOperationTracker
@@ -1326,7 +1305,9 @@ namespace PDF_simple_edit.Services
                 if (points.Count == 0)
                     return;
 
-                double padding = Math.Max(pathInfo.GetLineWidth() / 2.0, 0.1);
+                double scale = Math.Max(Math.Sqrt(a * a + b * b), Math.Sqrt(c * c + d * d));
+                double padding = (pathInfo.GetOperation() & PathRenderInfo.STROKE) != 0
+                    ? Math.Max(pathInfo.GetLineWidth() * scale / 2.0, 0.1) : 0.1;
                 double left = points.Min(point => point.X) - padding;
                 double right = points.Max(point => point.X) + padding;
                 double bottom = points.Min(point => point.Y) - padding;
@@ -1341,11 +1322,44 @@ namespace PDF_simple_edit.Services
                         _pageHeight - top,
                         right - left,
                         top - bottom);
-                    return;
+                    if (pathInfo.GetOperation() == PathRenderInfo.NO_OP) return;
                 }
 
+                var hitBounds = new List<PdfTextBox>();
+                foreach (var subpath in subpaths)
+                {
+                    var segments = subpath.GetSegments();
+                    // Filled shapes include their interior. Stroked shapes use
+                    // segment bounds so empty table cells stay available for text.
+                    var groups = (pathInfo.GetOperation() & PathRenderInfo.FILL) != 0
+                        ? new[] { segments.SelectMany(segment => segment.GetBasePoints()) }
+                        : segments.Select(segment => (IEnumerable<iText.Kernel.Geom.Point>)segment.GetBasePoints());
+                    foreach (var group in groups)
+                    {
+                        var transformed = group.Select(point => new PdfTextPoint(
+                            a * point.GetX() + c * point.GetY() + e,
+                            _pageHeight - (b * point.GetX() + d * point.GetY() + f))).ToList();
+                        if (transformed.Count == 0) continue;
+                        double x = transformed.Min(point => point.X) - padding;
+                        double y = transformed.Min(point => point.Y) - padding;
+                        hitBounds.Add(new(x, y, transformed.Max(point => point.X) + padding - x,
+                            transformed.Max(point => point.Y) + padding - y));
+                    }
+                    if (subpath.IsClosed() && segments.Count > 0)
+                    {
+                        var first = segments[0].GetBasePoints()[0];
+                        var last = segments[^1].GetBasePoints()[^1];
+                        double x1 = a * first.GetX() + c * first.GetY() + e;
+                        double y1 = _pageHeight - (b * first.GetX() + d * first.GetY() + f);
+                        double x2 = a * last.GetX() + c * last.GetY() + e;
+                        double y2 = _pageHeight - (b * last.GetX() + d * last.GetY() + f);
+                        hitBounds.Add(new(Math.Min(x1, x2) - padding, Math.Min(y1, y2) - padding,
+                            Math.Abs(x2 - x1) + padding * 2, Math.Abs(y2 - y1) + padding * 2));
+                    }
+                }
                 VectorPaths.Add(new VectorPathFragment
                 {
+                    HitBounds = hitBounds,
                     X = left,
                     Y = _pageHeight - top,
                     Width = right - left,

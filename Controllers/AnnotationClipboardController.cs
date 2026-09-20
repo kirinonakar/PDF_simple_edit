@@ -335,10 +335,11 @@ public sealed class AnnotationClipboardController(
         if (pasted.Count == 0)
             return;
 
-        setToolMode(EditToolMode.Select);
+        bool graphics = !IsTextAnnotation(pasted[^1]);
+        setToolMode(graphics ? EditToolMode.SelectGraphics : EditToolMode.Select);
         getAnnotations().AddRange(pasted);
         canvasController.ClearSelection();
-        foreach (PdfAnnotation annotation in pasted)
+        foreach (PdfAnnotation annotation in pasted.Where(a => IsTextAnnotation(a) != graphics))
             canvasController.SelectedAnnotations.Add(annotation);
         canvasController.PrimarySelection = pasted[^1];
         getManager().MarkModified();

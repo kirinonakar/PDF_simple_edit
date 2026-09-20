@@ -56,6 +56,8 @@ namespace PDF_simple_edit.Models
         public List<int> GraphicOperationIndexes { get; set; } = new();
         public List<int> GraphicTextOperationIndexes { get; set; } = new();
         public List<PdfGraphicOperationTarget> GraphicOperations { get; set; } = new();
+        public List<PdfTextBox> GraphicHitBounds { get; set; } = new();
+        public bool IsOriginalVectorGraphic => IsOriginalImageReplacement && GraphicOperations.Count > 0;
         public Guid? OperatorId { get; set; }
         public int ContentStreamIndex { get; set; } = -1;
         public int ContentStreamObjectNumber { get; set; } = -1;
@@ -101,6 +103,7 @@ namespace PDF_simple_edit.Models
                 GraphicOperationIndexes = new List<int>(this.GraphicOperationIndexes),
                 GraphicTextOperationIndexes = new List<int>(this.GraphicTextOperationIndexes),
                 GraphicOperations = this.GraphicOperations.Select(target => target.Clone()).ToList(),
+                GraphicHitBounds = new List<PdfTextBox>(this.GraphicHitBounds),
                 OperatorId = this.OperatorId,
                 ContentStreamIndex = this.ContentStreamIndex,
                 ContentStreamObjectNumber = this.ContentStreamObjectNumber,
@@ -248,7 +251,8 @@ namespace PDF_simple_edit.Models
         Highlight,
         Signature,
         MoveText,
-        ColorPicker
+        ColorPicker,
+        SelectGraphics
     }
 
     /// <summary>
@@ -336,6 +340,7 @@ namespace PDF_simple_edit.Models
         public List<int> GraphicOperationIndexes { get; set; } = new();
         public List<int> GraphicTextOperationIndexes { get; set; } = new();
         public List<PdfGraphicOperationTarget> GraphicOperations { get; set; } = new();
+        public List<PdfTextBox> GraphicHitBounds { get; set; } = new();
     }
 
     /// <summary>

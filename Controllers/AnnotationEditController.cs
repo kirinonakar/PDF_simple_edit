@@ -101,7 +101,7 @@ public sealed class AnnotationEditController
         if (originalImageTargets.Count > 0 &&
             !await manager.RemoveOriginalImageAnnotationsAsync(pageIndex, originalImageTargets))
         {
-            _statusText.Text = "이 PDF의 이미지를 안전하게 삭제할 수 없습니다.";
+            _statusText.Text = "이 PDF의 그래픽을 안전하게 삭제할 수 없습니다.";
             return false;
         }
 
@@ -121,7 +121,9 @@ public sealed class AnnotationEditController
         _canvasController.Render();
         _statusText.Text = targets.Count > 1
             ? $"{targets.Count}개 객체 삭제됨"
-            : targets[0].Type == AnnotationType.Image
+            : targets[0].IsOriginalVectorGraphic
+                ? "그래픽이 삭제되었습니다."
+                : targets[0].Type == AnnotationType.Image
                 ? "이미지가 삭제되었습니다."
                 : "텍스트가 삭제되었습니다.";
         return true;
@@ -213,6 +215,11 @@ public sealed class AnnotationEditController
     public async Task AlignSelectionAsync(AnnotationAlignment alignment)
     {
         List<PdfAnnotation> selection = _canvasController.SelectedAnnotations;
+        if (selection.Any(annotation => annotation.IsOriginalVectorGraphic))
+        {
+            _statusText.Text = "원본 그래픽은 선택 및 삭제할 수 있습니다.";
+            return;
+        }
         if (selection.Any(a => a.NativeText != null))
         {
             if (selection.Count < 2) return;

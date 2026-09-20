@@ -130,6 +130,17 @@ public sealed class AnnotationCanvasController
         SelectedAnnotations.Clear();
     }
 
+    public void CancelSelectionGesture()
+    {
+        _selectPointerPressSequence++;
+        _pendingSelectPointerId = null;
+        _regionStart = null;
+        if (_regionPreview != null) _canvas.Children.Remove(_regionPreview);
+        _regionPreview = null;
+        if (_interactionController.CancelMove()) CancelNativeMovePreview();
+        _canvas.ReleasePointerCaptures();
+    }
+
     public void SelectOnly(PdfAnnotation annotation)
     {
         SelectedAnnotations.Clear();
@@ -154,10 +165,10 @@ public sealed class AnnotationCanvasController
         double pdfY = position.Y / PdfToPixels;
         EditToolMode toolMode = _getToolMode();
 
-        if (!isLeftButton && toolMode is EditToolMode.Select or EditToolMode.Signature)
+        if (!isLeftButton && toolMode is EditToolMode.Select or EditToolMode.SelectGraphics or EditToolMode.Signature)
             return;
 
-        if (isLeftButton && toolMode == EditToolMode.Select)
+        if (isLeftButton && toolMode is EditToolMode.Select or EditToolMode.SelectGraphics)
         {
             if (_interactionController.CancelMove())
                 _canvas.ReleasePointerCapture(e.Pointer);
@@ -168,9 +179,10 @@ public sealed class AnnotationCanvasController
         switch (toolMode)
         {
             case EditToolMode.Select:
+            case EditToolMode.SelectGraphics:
                 bool alt = InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Menu)
                     .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
-                var hit = _contentService.FindAnnotationAt(_getAnnotations(), _getPageIndex(), pdfX, pdfY);
+                var hit = _contentService.FindAnnotationAt(_getAnnotations(), _getPageIndex(), pdfX, pdfY, toolMode);
                 if (hit?.IsOriginalImageReplacement == true && !alt)
                 {
                     int page = _getPageIndex();
@@ -178,14 +190,14 @@ public sealed class AnnotationCanvasController
                     if (selectPressSequence != _selectPointerPressSequence ||
                         manager != _getManager() || page != _getPageIndex()) return;
                     if (_contentService.ShouldPreferPageContent(hit,
-                        _contentService.FindEditableContent(contents, pdfX, pdfY))) hit = null;
+                        _contentService.FindEditableContent(contents, pdfX, pdfY, toolMode))) hit = null;
                     if (!e.GetCurrentPoint(_canvas).Properties.IsLeftButtonPressed)
                     {
                         await BeginSelectionAsync(e, position, pdfX, pdfY, selectPressSequence);
                         return;
                     }
                 }
-                if (_fontSettings.TextEditingMode == TextEditingMode.PreserveOriginal && !alt &&
+                if ((toolMode == EditToolMode.SelectGraphics || _fontSettings.TextEditingMode == TextEditingMode.PreserveOriginal) && !alt &&
                     !(e.OriginalSource is Rectangle { Tag: string }) && (hit == null || hit.NativeText != null))
                 {
                     _regionStart = position;
@@ -283,10 +295,17 @@ public sealed class AnnotationCanvasController
             else
             {
                 var regionManager = _getManager(); int page = _getPageIndex();
+                EditToolMode selectionMode = _getToolMode();
                 var contents = await regionManager.ExtractPageContentsAsync(page);
-                if (sequence != _selectPointerPressSequence || regionManager != _getManager() || page != _getPageIndex()) return;
+                if (sequence != _selectPointerPressSequence || regionManager != _getManager() || page != _getPageIndex() || selectionMode != _getToolMode()) return;
                 var region = new PdfTextBox(Math.Min(start.X, end.X) / PdfToPixels, Math.Min(start.Y, end.Y) / PdfToPixels,
                     Math.Abs(end.X - start.X) / PdfToPixels, Math.Abs(end.Y - start.Y) / PdfToPixels);
+                if (selectionMode == EditToolMode.SelectGraphics)
+                {
+                    SelectGraphicsInRegion(contents, region, page);
+                    Render();
+                    return;
+                }
                 var blocks = NativePdfTextService.SelectRegion(contents.Where(c => c.NativeText != null).Select(c => c.NativeText!), region);
                 _getAnnotations().RemoveAll(a => a.PageIndex == page && a.NativeText != null);
                 ClearSelection();
@@ -347,7 +366,7 @@ public sealed class AnnotationCanvasController
 
     public void DoubleTapped(DoubleTappedRoutedEventArgs e)
     {
-        if (IsInlineEditing)
+        if (IsInlineEditing || _getToolMode() == EditToolMode.SelectGraphics)
             return;
 
         Point position = e.GetPosition(_canvas);
@@ -431,7 +450,8 @@ public sealed class AnnotationCanvasController
             pdfX,
             pdfY,
             controlPressed,
-            () => _statusText.Text = "페이지 콘텐츠 분석 중...");
+            () => _statusText.Text = "페이지 콘텐츠 분석 중...",
+            _getToolMode());
 
         PrimarySelection = selection.PrimarySelection;
         if (selection.AddedFromPageContent is PdfAnnotation added)
@@ -440,7 +460,9 @@ public sealed class AnnotationCanvasController
                 ? _fontSettings.TextEditingMode == TextEditingMode.Legacy
                     ? "대체 텍스트 편집 구역 선택됨 (더블클릭: 편집, 드래그: 이동)"
                     : "텍스트 편집 구역 선택됨 (더블클릭: 편집, Alt+드래그: 이동)"
-                : "이미지가 선택되었습니다. 드래그하여 이동하거나 핸들로 크기를 조정하세요.";
+                : added.IsOriginalVectorGraphic
+                    ? "그래픽 선택됨 (Ctrl+클릭: 다중 선택, Delete: 삭제)"
+                    : "이미지가 선택되었습니다. 드래그하여 이동하거나 핸들로 크기를 조정하세요.";
         }
 
         if (selection.SelectionChanged)
@@ -449,7 +471,8 @@ public sealed class AnnotationCanvasController
         var currentPointerPoint = e.GetCurrentPoint(_canvas);
         PdfAnnotation? moveTarget = PrimarySelection;
         bool canStartMove = moveTarget != null &&
-            _getToolMode() == EditToolMode.Select &&
+            _getToolMode() is EditToolMode.Select or EditToolMode.SelectGraphics &&
+            !SelectedAnnotations.Any(annotation => annotation.IsOriginalVectorGraphic) &&
             _pendingSelectPointerId == e.Pointer.PointerId &&
             selectPressSequence == _selectPointerPressSequence &&
             currentPointerPoint.Properties.IsLeftButtonPressed;
@@ -471,6 +494,20 @@ public sealed class AnnotationCanvasController
             if (PrimarySelection == null)
                 _statusText.Text = "준비";
         }
+    }
+
+    private void SelectGraphicsInRegion(List<PdfPageContent> contents, PdfTextBox region, int page)
+    {
+        bool controlPressed = KeyboardStateService.IsControlDown();
+        var selected = _selectionController.SelectGraphicsInRegion(
+            _getAnnotations(), contents, page, region);
+        if (!controlPressed) ClearSelection();
+        foreach (var annotation in selected)
+            if (!SelectedAnnotations.Contains(annotation)) SelectedAnnotations.Add(annotation);
+        PrimarySelection = SelectedAnnotations.LastOrDefault();
+        _statusText.Text = SelectedAnnotations.Count > 0
+            ? $"{SelectedAnnotations.Count}개 그래픽 선택됨 (Delete: 삭제)"
+            : "범위 안에 그래픽이 없습니다. 객체 전체를 감싸서 선택하세요.";
     }
 
     private void BeginSignature(

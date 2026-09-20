@@ -23,6 +23,7 @@ public enum EditorMenuCommand
     FitToPage,
     TogglePagePanel,
     SelectTool,
+    SelectGraphicsTool,
     AddTextTool,
     HighlightTool,
     SignatureTool,
@@ -70,6 +71,7 @@ public sealed partial class EditorMenuBar : UserControl
         MenuClose.IsEnabled = hasDoc;
         MenuFind.IsEnabled = hasDoc;
         MenuSelect.IsEnabled = hasDoc;
+        MenuSelectGraphics.IsEnabled = hasDoc;
         MenuAddText.IsEnabled = hasDoc;
         MenuHighlight.IsEnabled = hasDoc;
         MenuSignature.IsEnabled = hasDoc;
@@ -87,6 +89,7 @@ public sealed partial class EditorMenuBar : UserControl
     public void SetToolMode(EditToolMode mode)
     {
         MenuSelect.IsChecked = mode == EditToolMode.Select;
+        MenuSelectGraphics.IsChecked = mode == EditToolMode.SelectGraphics;
         MenuAddText.IsChecked = mode == EditToolMode.AddText;
         MenuHighlight.IsChecked = mode == EditToolMode.Highlight;
         MenuSignature.IsChecked = mode == EditToolMode.Signature;

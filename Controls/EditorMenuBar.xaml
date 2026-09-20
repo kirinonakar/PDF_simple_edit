@@ -81,10 +81,16 @@
         </MenuBarItem>
 
         <MenuBarItem Title="도구">
-            <ToggleMenuFlyoutItem Text="선택" x:Name="MenuSelect" Tag="SelectTool" Click="Command_Click" IsEnabled="False">
+            <ToggleMenuFlyoutItem Text="텍스트 선택" x:Name="MenuSelect" Tag="SelectTool" Click="Command_Click" IsEnabled="False">
                 <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xEF20;"/></ToggleMenuFlyoutItem.Icon>
                 <ToggleMenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="S" Invoked="ToolAccelerator_Invoked"/>
+                </ToggleMenuFlyoutItem.KeyboardAccelerators>
+            </ToggleMenuFlyoutItem>
+            <ToggleMenuFlyoutItem Text="그래픽 선택" x:Name="MenuSelectGraphics" Tag="SelectGraphicsTool" Click="Command_Click" IsEnabled="False">
+                <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xEF50;"/></ToggleMenuFlyoutItem.Icon>
+                <ToggleMenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="G" Invoked="ToolAccelerator_Invoked"/>
                 </ToggleMenuFlyoutItem.KeyboardAccelerators>
             </ToggleMenuFlyoutItem>
             <ToggleMenuFlyoutItem Text="텍스트 추가" x:Name="MenuAddText" Tag="AddTextTool" Click="Command_Click" IsEnabled="False">

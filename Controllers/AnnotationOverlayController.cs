@@ -45,6 +45,13 @@ public sealed class AnnotationOverlayController
             if (annotation.IsOriginalTextReplacement && !selectedAnnotations.Contains(annotation))
                 continue;
 
+            if (annotation.IsOriginalVectorGraphic)
+            {
+                if (selectedAnnotations.Contains(annotation))
+                    AddSelectionBorder(canvas, annotation, ref insertIndex);
+                continue;
+            }
+
             if (annotation.NativeText != null)
             {
                 if (!selectedAnnotations.Contains(annotation)) continue;

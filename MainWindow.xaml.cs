@@ -76,6 +76,7 @@ namespace PDF_simple_edit
         private Button BtnUndo => EditorToolbar.UndoButton;
         private Button BtnRedo => EditorToolbar.RedoButton;
         private ToggleButton BtnSelect => EditorToolbar.SelectButton;
+        private ToggleButton BtnSelectGraphics => EditorToolbar.SelectGraphicsButton;
         private ToggleButton BtnAddText => EditorToolbar.AddTextButton;
         private ToggleButton BtnHighlight => EditorToolbar.HighlightButton;
         private ToggleButton BtnSignature => EditorToolbar.SignatureButton;
@@ -412,6 +413,7 @@ namespace PDF_simple_edit
                 case EditorMenuCommand.FitToPage: FitToPage_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.TogglePagePanel: TogglePagePanel_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.SelectTool: SelectTool_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.SelectGraphicsTool: SelectGraphicsTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.AddTextTool: AddTextTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.HighlightTool: HighlightTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.SignatureTool: SignatureTool_Click(EditorMenu, new RoutedEventArgs()); break;
@@ -438,6 +440,7 @@ namespace PDF_simple_edit
             BtnUndo.Click += Undo_Click;
             BtnRedo.Click += Redo_Click;
             BtnSelect.Click += SelectTool_Click;
+            BtnSelectGraphics.Click += SelectGraphicsTool_Click;
             BtnAddText.Click += AddTextTool_Click;
             BtnHighlight.Click += HighlightTool_Click;
             BtnHighlightSettings.Click += HighlightSettings_Click;
@@ -621,6 +624,7 @@ namespace PDF_simple_edit
             BtnUndo.IsEnabled = hasDoc && _pdfManager.CanUndo;
             BtnRedo.IsEnabled = hasDoc && _pdfManager.CanRedo;
             BtnSelect.IsEnabled = hasDoc;
+            BtnSelectGraphics.IsEnabled = hasDoc;
             BtnAddText.IsEnabled = hasDoc;
             BtnHighlight.IsEnabled = hasDoc;
             BtnHighlightSettings.IsEnabled = hasDoc;
@@ -890,6 +894,7 @@ namespace PDF_simple_edit
             EditorMenu.SetToolMode(mode);
 
             BtnSelect.IsChecked = mode == EditToolMode.Select;
+            BtnSelectGraphics.IsChecked = mode == EditToolMode.SelectGraphics;
             BtnAddText.IsChecked = mode == EditToolMode.AddText;
             BtnHighlight.IsChecked = mode == EditToolMode.Highlight;
             BtnSignature.IsChecked = mode == EditToolMode.Signature;
@@ -901,12 +906,14 @@ namespace PDF_simple_edit
                 EditToolMode.Highlight => "도구: 텍스트 강조",
                 EditToolMode.Signature => "도구: 서명 그리기",
                 EditToolMode.AddImage => "도구: 이미지 추가",
-                EditToolMode.Select => "도구: 선택",
+                EditToolMode.Select => "도구: 텍스트 선택",
+                EditToolMode.SelectGraphics => "도구: 그래픽 선택 · 클릭/범위 선택 후 Delete로 삭제",
                 EditToolMode.ColorPicker => "도구: 색상 추출",
                 _ => ""
             };
 
             UpdateCursor(mode);
+            _annotationCanvasController.CancelSelectionGesture();
             _annotationCanvasController.ClearSelection();
             RenderAnnotationOverlays();
         }
@@ -919,6 +926,11 @@ namespace PDF_simple_edit
         private void SelectTool_Click(object sender, RoutedEventArgs e)
         {
             SetToolMode(_currentTool == EditToolMode.Select ? EditToolMode.None : EditToolMode.Select);
+        }
+
+        private void SelectGraphicsTool_Click(object sender, RoutedEventArgs e)
+        {
+            SetToolMode(_currentTool == EditToolMode.SelectGraphics ? EditToolMode.None : EditToolMode.SelectGraphics);
         }
 
         private void AddTextTool_Click(object sender, RoutedEventArgs e)

@@ -69,7 +69,7 @@ public sealed class EditorImageController(
 
             // 이미지를 추가한 뒤 바로 핸들이 보이도록 선택 도구로 전환하고
             // 새 이미지를 선택 상태로 둡니다.
-            setToolMode(EditToolMode.Select);
+            setToolMode(EditToolMode.SelectGraphics);
             canvasController.SelectOnly(imageAnnotation);
             statusText.Text = "이미지가 추가되었습니다 (저장 시 반영)";
             canvasController.Render();
