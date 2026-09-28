@@ -30,6 +30,7 @@ public enum EditorMenuCommand
     AddImageTool,
     ExtractAllImages,
     MergePdf,
+    ImagesToPdf,
     SplitPdf,
     DeletePage,
     ProtectionSettings,

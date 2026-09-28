@@ -30,6 +30,66 @@ public sealed class PdfPageOperationsController(
     Action updateUIState,
     Func<string, string, Task> showErrorAsync)
 {
+    public async Task ImagesToPdfAsync()
+    {
+        var imagePicker = new FileOpenPicker
+        {
+            SuggestedStartLocation = PickerLocationId.PicturesLibrary
+        };
+        foreach (string extension in new[] { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp" })
+            imagePicker.FileTypeFilter.Add(extension);
+        InitializeWithWindow.Initialize(imagePicker, getWindowHandle());
+
+        var images = await imagePicker.PickMultipleFilesAsync();
+        if (images == null || images.Count == 0)
+            return;
+
+        var savePicker = new FileSavePicker
+        {
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+            SuggestedFileName = $"{Path.GetFileNameWithoutExtension(images[0].Name)}.pdf"
+        };
+        savePicker.FileTypeChoices.Add("PDF 파일", new List<string> { ".pdf" });
+        InitializeWithWindow.Initialize(savePicker, getWindowHandle());
+        StorageFile? outputFile = await savePicker.PickSaveFileAsync();
+        if (outputFile == null)
+            return;
+
+        statusText.Text = $"이미지 {images.Count}개를 PDF로 변환 중...";
+        loadingIndicator.IsActive = true;
+        try
+        {
+            await new PdfImageConversionService().CreateAsync(
+                images.Select(image => image.Path).ToList(), outputFile.Path);
+
+            var newTab = new PdfDocumentTab
+            {
+                Header = outputFile.Name,
+                FilePath = outputFile.Path
+            };
+            if (await newTab.PdfManager.OpenAsync(outputFile.Path))
+            {
+                addTab(newTab);
+                statusText.Text = $"PDF 생성 완료: {images.Count}페이지";
+                updateUIState();
+            }
+            else
+            {
+                statusText.Text = "PDF는 저장되었지만 열 수 없습니다.";
+                await showErrorAsync("PDF 열기 오류", $"생성한 PDF를 열 수 없습니다: {outputFile.Path}");
+            }
+        }
+        catch (Exception ex)
+        {
+            statusText.Text = "이미지를 PDF로 변환하지 못했습니다.";
+            await showErrorAsync("이미지 PDF 변환 오류", ex.Message);
+        }
+        finally
+        {
+            loadingIndicator.IsActive = false;
+        }
+    }
+
     public async Task MergeAsync()
     {
         var hwnd = getWindowHandle();
