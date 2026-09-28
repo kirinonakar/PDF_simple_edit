@@ -26,6 +26,7 @@ public sealed class PageViewController
     private readonly ListView _pageListView;
     private readonly Image _pageImage;
     private readonly Canvas _overlayCanvas;
+    private readonly Canvas _formCanvas;
     private readonly ScrollViewer _scrollViewer;
     private readonly TextBlock _statusText;
     private readonly TextBlock _zoomText;
@@ -39,6 +40,7 @@ public sealed class PageViewController
     private readonly Action<double> _setZoomLevel;
     private readonly Func<double> _getRenderScale;
     private readonly Action _renderAnnotationOverlays;
+    private readonly Action _renderFormOverlays;
     private readonly Action _updateUiState;
 
     private CancellationTokenSource? _thumbnailCts;
@@ -56,6 +58,7 @@ public sealed class PageViewController
         ListView pageListView,
         Image pageImage,
         Canvas overlayCanvas,
+        Canvas formCanvas,
         ScrollViewer scrollViewer,
         TextBlock statusText,
         TextBlock zoomText,
@@ -69,12 +72,14 @@ public sealed class PageViewController
         Action<double> setZoomLevel,
         Func<double> getRenderScale,
         Action renderAnnotationOverlays,
+        Action renderFormOverlays,
         Action updateUiState)
     {
         _renderService = renderService;
         _pageListView = pageListView;
         _pageImage = pageImage;
         _overlayCanvas = overlayCanvas;
+        _formCanvas = formCanvas;
         _scrollViewer = scrollViewer;
         _statusText = statusText;
         _zoomText = zoomText;
@@ -88,6 +93,7 @@ public sealed class PageViewController
         _setZoomLevel = setZoomLevel;
         _getRenderScale = getRenderScale;
         _renderAnnotationOverlays = renderAnnotationOverlays;
+        _renderFormOverlays = renderFormOverlays;
         _updateUiState = updateUiState;
     }
 
@@ -120,14 +126,20 @@ public sealed class PageViewController
             _pageImage.VerticalAlignment = VerticalAlignment.Top;
             _overlayCanvas.HorizontalAlignment = HorizontalAlignment.Left;
             _overlayCanvas.VerticalAlignment = VerticalAlignment.Top;
+            _formCanvas.HorizontalAlignment = HorizontalAlignment.Left;
+            _formCanvas.VerticalAlignment = VerticalAlignment.Top;
             _pageImage.Margin = new Thickness(0);
             _overlayCanvas.Margin = new Thickness(0);
+            _formCanvas.Margin = new Thickness(0);
             _pageImage.Width = page.LogicalWidth;
             _pageImage.Height = page.LogicalHeight;
             _overlayCanvas.Width = page.LogicalWidth;
             _overlayCanvas.Height = page.LogicalHeight;
+            _formCanvas.Width = page.LogicalWidth;
+            _formCanvas.Height = page.LogicalHeight;
             _pageImage.Stretch = Stretch.Fill;
             _renderAnnotationOverlays();
+            _renderFormOverlays();
         }
         catch (Exception ex)
         {

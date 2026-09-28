@@ -61,6 +61,7 @@
                         </MenuFlyout>
                     </Canvas.ContextFlyout>
                 </Canvas>
+                <Canvas x:Name="FormCanvas" x:FieldModifier="public" HorizontalAlignment="Center" VerticalAlignment="Top"/>
             </Grid>
         </ScrollViewer>
 

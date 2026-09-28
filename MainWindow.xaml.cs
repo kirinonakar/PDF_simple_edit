@@ -50,6 +50,7 @@ namespace PDF_simple_edit
         private EditorFontController _fontController = null!;
         private PdfPageOperationsController _pageOperationsController = null!;
         private PageViewController _pageViewController = null!;
+        private PdfFormOverlayController _formOverlayController = null!;
         private WindowSettingsController _windowSettingsController = null!;
         private RecentFilesController _recentFilesController = null!;
 
@@ -99,6 +100,7 @@ namespace PDF_simple_edit
         private ScrollViewer PdfScrollViewer => PdfSurface.Viewer;
         private Image PdfPageImage => PdfSurface.PageImage;
         private Canvas OverlayCanvas => PdfSurface.AnnotationCanvas;
+        private Canvas FormCanvas => PdfSurface.FormCanvas;
         private ProgressRing LoadingRing => PdfSurface.LoadingIndicator;
 
         private TextBox TxtFindText => FindPanel.QueryTextBox;
@@ -155,11 +157,15 @@ namespace PDF_simple_edit
                             Content.Focus(FocusState.Programmatic);
                         }
                     });
+                _formOverlayController = new PdfFormOverlayController(
+                    FormCanvas, TxtStatus, () => _pdfManager, () => _currentPageIndex,
+                    () => _currentTool);
                 _pageViewController = new PageViewController(
                     _pageRenderService,
                     PageListView,
                     PdfPageImage,
                     OverlayCanvas,
+                    FormCanvas,
                     PdfScrollViewer,
                     TxtStatus,
                     TxtZoom,
@@ -173,6 +179,7 @@ namespace PDF_simple_edit
                     value => _zoomLevel = value,
                     () => _renderScale,
                     RenderAnnotationOverlays,
+                    _formOverlayController.Render,
                     UpdateUIState);
                 _annotationEditController = new AnnotationEditController(
                     _annotationCanvasController,
@@ -214,7 +221,11 @@ namespace PDF_simple_edit
                     () => _pdfManager, () => _annotations, () => _activeTab,
                     AddDocumentTab, AddToRecentFiles,
                     () => WindowNative.GetWindowHandle(this), () => Content.XamlRoot,
-                    _annotationCanvasController.FinishActiveInlineEditAsync,
+                    async () =>
+                    {
+                        await _annotationCanvasController.FinishActiveInlineEditAsync();
+                        await _formOverlayController.FinishActiveEditAsync();
+                    },
                     RenderCurrentPageAsync, UpdateUIState, ShowErrorDialogAsync);
                 _recentFilesController = new RecentFilesController(
                     new RecentFilesService(),
@@ -917,6 +928,7 @@ namespace PDF_simple_edit
             _annotationCanvasController.CancelSelectionGesture();
             _annotationCanvasController.ClearSelection();
             RenderAnnotationOverlays();
+            _formOverlayController.Render();
         }
 
         private void UpdateCursor(EditToolMode mode)
