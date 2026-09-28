@@ -12,6 +12,7 @@ public sealed class PdfSaveService
 {
     private const int FileReplaceAttempts = 5;
     private readonly PdfAnnotationDocumentService _annotationDocumentService;
+    private readonly PdfFormService _formService = new();
 
     public PdfSaveService(PdfAnnotationDocumentService annotationDocumentService)
     {
@@ -26,13 +27,20 @@ public sealed class PdfSaveService
     {
         bool needsAnnotationWrite = annotations.Any(a => a.NativeText == null &&
             (!a.IsApplied && !a.IsOriginalTextReplacement || a.Type == AnnotationType.Signature));
-        byte[] editedBytes = !needsAnnotationWrite
-            ? manager.GetPdfBytes() ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.")
+        byte[] sourceBytes = manager.GetPdfBytes() ??
+            throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+        bool needsFormRepair = _formService.NeedsAppearanceRepair(sourceBytes);
+        byte[] editedBytes = !needsAnnotationWrite && !needsFormRepair
+            ? sourceBytes
             : manager.CreatePdfBytesWithEdits(document =>
         {
-            manager.RemoveSavedSignatureAnnotations(document);
-            foreach (PdfAnnotation annotation in annotations)
-                _annotationDocumentService.Apply(manager, document, annotation);
+            if (needsFormRepair) _formService.RepairAppearances(document);
+            if (needsAnnotationWrite)
+            {
+                manager.RemoveSavedSignatureAnnotations(document);
+                foreach (PdfAnnotation annotation in annotations)
+                    _annotationDocumentService.Apply(manager, document, annotation);
+            }
         });
 
         if (!isUserSave)

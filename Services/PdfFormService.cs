@@ -9,7 +9,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Globalization;
 using System.Text;
 
 namespace PDF_simple_edit.Services;
@@ -22,6 +21,32 @@ public sealed record PdfFormInput(
 
 public sealed class PdfFormService
 {
+    public bool NeedsAppearanceRepair(byte[] pdfBytes)
+    {
+        using var reader = new PdfReader(new MemoryStream(pdfBytes));
+        using var document = new PdfDocument(reader);
+        var form = PdfAcroForm.GetAcroForm(document, false);
+        return form != null && form.GetAllFormFields().Values
+            .OfType<PdfButtonFormField>()
+            .Any(field => !field.IsPushButton() &&
+                field.GetValueAsString() is { Length: > 0 } value && value != "Off" &&
+                field.GetWidgets().Any(widget =>
+                    FindMatchingAuthorAppearance(form, widget, value) != null));
+    }
+
+    public void RepairAppearances(PdfDocument document)
+    {
+        var form = PdfAcroForm.GetAcroForm(document, false);
+        if (form == null) return;
+        foreach (var field in form.GetAllFormFields().Values.OfType<PdfButtonFormField>()
+            .Where(button => !button.IsPushButton()))
+        {
+            string value = field.GetValueAsString();
+            if (!string.IsNullOrEmpty(value) && value != "Off")
+                RestoreOriginalCheckAppearance(form, field, value);
+        }
+    }
+
     public IReadOnlyList<PdfFormInput> ReadPage(byte[] pdfBytes, int pageIndex)
     {
         using var reader = new PdfReader(new MemoryStream(pdfBytes));
@@ -73,7 +98,24 @@ public sealed class PdfFormService
                 ?? throw new InvalidOperationException($"양식 필드를 찾을 수 없습니다: {input.Name}");
             if (field.GetFieldFlag(1))
                 throw new InvalidOperationException("읽기 전용 양식 필드는 수정할 수 없습니다.");
-            if (field is PdfTextFormField && value.Any(character => character > 127))
+            if (field is PdfButtonFormField button && !button.IsPushButton())
+            {
+                // Existing widgets already have the form author's checked and
+                // unchecked artwork. Regenerating it changes the check shape.
+                RestoreOriginalCheckAppearance(PdfAcroForm.GetAcroForm(document, false)!,
+                    field, value);
+                field.SetValue(value, false);
+                foreach (var widget in field.GetWidgets())
+                {
+                    var normal = widget.GetPdfObject().GetAsDictionary(PdfName.AP)?
+                        .GetAsDictionary(PdfName.N);
+                    string onValue = normal?.KeySet()
+                        .FirstOrDefault(name => name.GetValue() != "Off")?.GetValue() ?? value;
+                    widget.GetPdfObject().Put(PdfName.AS,
+                        new PdfName(value == onValue ? onValue : "Off"));
+                }
+            }
+            else if (field is PdfTextFormField && value.Any(character => character > 127))
             {
                 string fontPath = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "malgun.ttf");
@@ -86,30 +128,55 @@ public sealed class PdfFormService
                 else field.SetValue(value);
             }
             else field.SetValue(value);
-            if (field is PdfButtonFormField && value != "Off")
-                AddPortableCheckAppearance(field, value);
         });
     }
 
-    private static void AddPortableCheckAppearance(PdfFormField field, string value)
+    private static void RestoreOriginalCheckAppearance(PdfAcroForm form,
+        PdfFormField field, string value)
     {
+        if (value == "Off") return;
         foreach (var widget in field.GetWidgets())
         {
-            PdfStream? stream = widget.GetPdfObject().GetAsDictionary(PdfName.AP)?
-                .GetAsDictionary(PdfName.N)?.GetAsStream(new PdfName(value));
-            if (stream == null) continue;
-            var box = stream.GetAsArray(PdfName.BBox)?.ToRectangle();
-            if (box == null) continue;
-            double w = box.GetWidth(), h = box.GetHeight();
-            if (w <= 0 || h <= 0) continue;
-            string N(double n) => n.ToString("0.###", CultureInfo.InvariantCulture);
-            // A vector tick remains visible when the PDF's Symbol/ZapfDingbats
-            // font is absent on the machine opening the saved form.
-            string tick = $"\nq 0 0 0 RG {N(Math.Max(.7, Math.Min(w, h) * .11))} w " +
-                $"{N(w * .2)} {N(h * .48)} m {N(w * .42)} {N(h * .25)} l " +
-                $"{N(w * .82)} {N(h * .77)} l S Q\n";
-            byte[] original = stream.GetBytes();
-            stream.SetData(original.Concat(Encoding.ASCII.GetBytes(tick)).ToArray());
+            PdfStream? original = FindMatchingAuthorAppearance(form, widget, value);
+            if (original == null) continue;
+            widget.GetPdfObject().GetAsDictionary(PdfName.AP)!
+                .GetAsDictionary(PdfName.N)!.Put(new PdfName(value), original);
         }
+    }
+
+    private static PdfStream? FindMatchingAuthorAppearance(PdfAcroForm form,
+        iText.Kernel.Pdf.Annot.PdfWidgetAnnotation widget, string value)
+    {
+        PdfStream? current = widget.GetPdfObject().GetAsDictionary(PdfName.AP)?
+            .GetAsDictionary(PdfName.N)?.GetAsStream(new PdfName(value));
+        if (current == null || !IsRegeneratedCheck(current)) return null;
+        var box = current.GetAsArray(PdfName.BBox)?.ToRectangle();
+        if (box == null) return null;
+
+        return form.GetAllFormFields().Values
+                .OfType<PdfButtonFormField>()
+                .SelectMany(button => button.GetWidgets())
+                .Where(other => !ReferenceEquals(other.GetPdfObject(), widget.GetPdfObject()))
+                .Select(other => other.GetPdfObject().GetAsDictionary(PdfName.AP)?
+                    .GetAsDictionary(PdfName.N)?.GetAsStream(new PdfName(value)))
+                .FirstOrDefault(candidate => candidate != null &&
+                    IsAuthorCheck(candidate) &&
+                    candidate.GetAsArray(PdfName.BBox)?.ToRectangle() is { } candidateBox &&
+                    Math.Abs(candidateBox.GetWidth() - box.GetWidth()) < .1 &&
+                    Math.Abs(candidateBox.GetHeight() - box.GetHeight()) < .1);
+    }
+
+    private static bool IsRegeneratedCheck(PdfStream appearance)
+    {
+        string content = Encoding.ASCII.GetString(appearance.GetBytes());
+        return content.Contains("/F1 ", StringComparison.Ordinal) &&
+            content.Contains(")Tj", StringComparison.Ordinal);
+    }
+
+    private static bool IsAuthorCheck(PdfStream appearance)
+    {
+        string content = Encoding.ASCII.GetString(appearance.GetBytes());
+        return content.Contains("/ZaDb ", StringComparison.Ordinal) &&
+            content.Contains("(n) Tj", StringComparison.Ordinal);
     }
 }
