@@ -133,6 +133,8 @@ public sealed class DocumentFileController(
 
             if (status == PdfOpenStatus.Success)
             {
+                if (newTab.PdfManager.HasDigitalSignatures)
+                    await showErrorAsync("전자서명 문서", "이 문서는 전자서명되어 있습니다. 편집한 사본의 전자서명은 유효하지 않으며, 원본을 보호하기 위해 다른 이름으로만 저장할 수 있습니다.");
                 newTab.Annotations.AddRange(await Task.Run(newTab.PdfManager.LoadSavedSignatures));
                 addTab(newTab);
                 addRecentFile(file.Path);
@@ -156,6 +158,7 @@ public sealed class DocumentFileController(
     {
         if (!getManager().IsLoaded || _isSaveInProgress || _isProtectionDialogOpen) return false;
 
+        if (getManager().RequiresSignedCopySave) return await SaveAsAsync();
         if (getManager().FilePath is string filePath)
         {
             if (await PerformSaveAsync(filePath, true))

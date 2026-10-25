@@ -131,7 +131,8 @@ public sealed class PdfAnnotationDocumentService
                     annotation.X,
                     annotation.Y,
                     annotation.Width,
-                    annotation.Height);
+                    annotation.Height,
+                    annotation.Id);
                 break;
         }
     }

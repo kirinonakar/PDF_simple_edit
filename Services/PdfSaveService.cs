@@ -3,6 +3,7 @@ using PDF_simple_edit.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 
 namespace PDF_simple_edit.Services;
@@ -58,6 +59,7 @@ public sealed class PdfSaveService
         long version = manager.EditVersion;
         var protection = manager.Protection;
         var captured = CaptureAnnotations(annotations);
+        var diskVersion = await manager.GetSaveFileVersionAsync(filePath);
         var prepared = await Task.Run(async () =>
         {
             if (!isUserSave) return (Disk: CreateAnnotatedBytes(manager, source, captured), Editor: source);
@@ -75,12 +77,18 @@ public sealed class PdfSaveService
                 }, protection.Enabled ? PdfSecurityService.CreateEncryptionProperties(protection) : null);
             return (Disk: disk, Editor: editor);
         });
-        await WriteAtomicallyAsync(filePath, prepared.Disk);
+        byte[] diskHash = await Task.Run(() =>
+        {
+            PdfSecurityService.Validate(prepared.Disk, isUserSave ? protection : new());
+            return SHA256.HashData(prepared.Disk);
+        });
+        await PdfAtomicFile.WriteAsync(filePath, prepared.Disk, diskVersion);
+        manager.RecordDiskWrite(filePath, diskHash);
         if (!isUserSave) return true;
         if (ReferenceEquals(source, manager.GetPdfBytes()) && version == manager.EditVersion)
         {
             for (int i = 0; i < annotations.Count; i++) CopySavedState(annotations[i], captured[i]);
-            return manager.ReplacePdfBytesAfterSave(source, version, prepared.Editor, filePath);
+            return manager.ReplacePdfBytesAfterSave(source, version, prepared.Editor, filePath, diskHash);
         }
         // Edits made during a save stay modified, with their original byte/UI pair.
         return false;
@@ -110,11 +118,10 @@ public sealed class PdfSaveService
             var used = new System.Collections.Generic.HashSet<PdfPageContent>();
             foreach (var annotation in pageGroup)
             {
-                var box = new PdfTextBox(annotation.X, annotation.Y, annotation.Width, annotation.Height);
-                var expected = PdfAffineTransform.Between(box, box, annotation.Rotation).Map(box);
-                var match = contents.Where(c => c.Type == PageContentType.Image && !used.Contains(c))
-                    .OrderBy(c => Math.Abs(c.X - expected.X) + Math.Abs(c.Y - expected.Y) +
-                        Math.Abs(c.Width - expected.Width) + Math.Abs(c.Height - expected.Height)).FirstOrDefault();
+                var match = contents.FirstOrDefault(c => c.Type == PageContentType.Image &&
+                    !used.Contains(c) && c.OverlayId == annotation.Id);
+                if (match == null && !annotation.IsApplied)
+                    throw new InvalidOperationException("저장한 이미지의 식별자를 찾을 수 없습니다. 원본 파일은 변경되지 않았습니다.");
                 annotation.IsApplied = true;
                 if (match == null) continue;
                 used.Add(match);

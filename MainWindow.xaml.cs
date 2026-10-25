@@ -360,6 +360,8 @@ namespace PDF_simple_edit
                 }
             }
             _tabs.Remove(tab);
+            tab.PdfManager.Close();
+            tab.PageThumbnails.Clear();
         }
 
         private async void DocTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -527,6 +529,8 @@ namespace PDF_simple_edit
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
             _pageViewController.CancelPendingOperations();
+            _documentSearchController.CancelPendingSearch();
+            foreach (var tab in _tabs) tab.PdfManager.Close();
 
             try { SaveWindowPosition(); } catch { }
         }
@@ -540,7 +544,8 @@ namespace PDF_simple_edit
                 if (!ReferenceEquals(sender, _activeTab?.PdfManager)) return;
                 PdfDocumentTab? tab = _activeTab;
                 UpdateUIState();
-                _pageViewController.ScheduleThumbnailRefresh();
+                if (e is not PdfDocumentChange { StructureChanged: true })
+                    _pageViewController.ScheduleThumbnailRefresh((e as PdfDocumentChange)?.Pages);
                 if (_pdfManager.IsLoaded)
                 {
                     await RenderCurrentPageAsync();
@@ -586,8 +591,8 @@ namespace PDF_simple_edit
             DispatcherQueue.TryEnqueue(() => {
                 UpdateTitleBar();
                 UpdateTabHeader();
-                if (ReferenceEquals(sender, _activeTab?.PdfManager))
-                    _pageViewController.ScheduleThumbnailRefresh();
+                if (ReferenceEquals(sender, _activeTab?.PdfManager) && e is PdfDocumentChange change)
+                    _pageViewController.ScheduleThumbnailRefresh(change.Pages);
             });
         }
 
@@ -597,11 +602,14 @@ namespace PDF_simple_edit
             if (tab == null || !ReferenceEquals(sender, tab.PdfManager) || state is not List<PdfAnnotation> savedAnnotations) return;
             DispatcherQueue.TryEnqueue(async () =>
             {
+                var annotationPages = tab.Annotations.Select(a => a.PageIndex)
+                    .Concat(savedAnnotations.Select(a => a.PageIndex)).Distinct().ToArray();
                 tab.Annotations.Clear();
                 tab.Annotations.AddRange(savedAnnotations.Select(annotation => annotation.Clone()));
                 if (!ReferenceEquals(tab, _activeTab)) return;
                 _annotationCanvasController.ClearSelection();
                 RenderAnnotationOverlays();
+                _pageViewController.ScheduleThumbnailRefresh(annotationPages);
                 await RenderCurrentPageAsync();
             });
         }

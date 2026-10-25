@@ -360,7 +360,7 @@ public sealed class AnnotationCanvasController
             if (highlight != null)
             {
                 _getAnnotations().Add(highlight);
-                manager.MarkModified();
+                manager.MarkModified(pageIndex: _getPageIndex());
                 _statusText.Text = "텍스트 강조가 추가되었습니다 (저장 시 반영)";
                 Render();
             }
@@ -582,7 +582,7 @@ public sealed class AnnotationCanvasController
                 SignaturePoints = _signaturePoints.Select(point => point.Clone()).ToList()
             };
             _getAnnotations().Add(signature);
-            _getManager().MarkModified();
+            _getManager().MarkModified(pageIndex: _getPageIndex());
             _statusText.Text = "서명이 추가되었습니다 (저장 시 반영)";
             Render();
         }
@@ -629,7 +629,7 @@ public sealed class AnnotationCanvasController
             return;
         }
 
-        manager.MarkModified();
+        manager.MarkModified(pageIndex: _getPageIndex());
         _moveOriginalImage = null;
         if (SelectedAnnotations.Any(a => a.NativeText != null))
             _getAnnotations().RemoveAll(a => a.PageIndex == _getPageIndex() && a.NativeText != null && !SelectedAnnotations.Contains(a));
@@ -669,7 +669,7 @@ public sealed class AnnotationCanvasController
             return;
         }
 
-        manager.MarkModified();
+        manager.MarkModified(pageIndex: _getPageIndex());
         _moveOriginalImage = null;
         if (SelectedAnnotations.Any(a => a.NativeText != null))
             await RefreshNativeSelectionAsync(pageIndex);

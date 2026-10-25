@@ -319,6 +319,7 @@ namespace PDF_simple_edit.Helpers
 
             // Bitmap pixel density may include display scaling. Page.Size is
             // the logical paper size, independent of preview/print raster quality.
+            if (!ReferenceEquals(renderer, _renderer)) return null;
             var logicalSize = renderer.GetPageSize(pageIndex);
             double documentWidth = logicalSize.Width;
             double documentHeight = logicalSize.Height;
@@ -395,6 +396,7 @@ namespace PDF_simple_edit.Helpers
 
             _pageCache.Clear();
             _printDocument = null;
+            _renderer?.Dispose();
             _renderer = null;
             _printDocumentSource = null;
             _printManager = null;

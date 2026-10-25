@@ -51,7 +51,7 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 ## 🛠️ Technology Stack
 - **Framework**: .NET 10.0
 - **UI Framework**: WinUI 3 (Windows App SDK)
-- **PDF Engine**: iText 9.0 (Core, PdfSweep, BouncyCastle)
+- **PDF Engine**: iText 9.8.0 (Core, BouncyCastle), pdfSweep 5.0.8; PDFium for glyph geometry
 - **Language**: C#
 
 ## ⚙️ Installation
@@ -71,6 +71,8 @@ You can download the latest version from the [Releases Page](https://github.com/
 2. Open the solution in Visual Studio 2022 (or later).
 3. Restore NuGet packages.
 4. Build and run the `PDF_simple_edit` project.
+
+Performance and persistence regression checks are documented in [tests/RegressionTests](tests/RegressionTests/README.md).
 
 ## 📄 License
 This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.

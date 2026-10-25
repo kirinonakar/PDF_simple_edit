@@ -92,10 +92,13 @@ public sealed class PdfFormService
 
     public void SetValue(PdfDocumentManager manager, PdfFormInput input, string value)
     {
+        var affectedPages = new List<int> { input.PageIndex };
         manager.ApplyBatchEdit(document =>
         {
             var field = PdfAcroForm.GetAcroForm(document, false)?.GetField(input.Name)
                 ?? throw new InvalidOperationException($"양식 필드를 찾을 수 없습니다: {input.Name}");
+            foreach (var widget in field.GetWidgets())
+                if (widget.GetPage() is { } widgetPage) affectedPages.Add(document.GetPageNumber(widgetPage) - 1);
             if (field.GetFieldFlag(1))
                 throw new InvalidOperationException("읽기 전용 양식 필드는 수정할 수 없습니다.");
             if (field is PdfButtonFormField button && !button.IsPushButton())
@@ -128,7 +131,7 @@ public sealed class PdfFormService
                 else field.SetValue(value);
             }
             else field.SetValue(value);
-        });
+        }, affectedPages);
     }
 
     private static void RestoreOriginalCheckAppearance(PdfAcroForm form,

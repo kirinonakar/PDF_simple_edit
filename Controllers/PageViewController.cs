@@ -45,6 +45,8 @@ public sealed class PageViewController
     private readonly Action _renderFormOverlays;
     private readonly Action _updateUiState;
 
+    private readonly HashSet<int> _dirtyThumbnailPages = new();
+    private bool _allThumbnailsDirty;
     private CancellationTokenSource? _thumbnailCts;
     private CancellationTokenSource? _liveThumbnailCts;
     private PageThumbnailData? _liveThumbnail;
@@ -179,6 +181,8 @@ public sealed class PageViewController
     public void CancelPendingOperations()
     {
         ++_renderVersion;
+        _dirtyThumbnailPages.Clear();
+        _allThumbnailsDirty = false;
         _thumbnailCts?.Cancel();
         _liveThumbnailCts?.Cancel();
         _liveThumbnail = null;
@@ -198,6 +202,8 @@ public sealed class PageViewController
 
         try
         {
+            _dirtyThumbnailPages.Clear();
+            _allThumbnailsDirty = false;
             thumbnails.Clear();
             byte[] annotated = await _thumbnailSaveService.CreateAnnotatedBytesAsync(manager, _getAnnotations());
             token.ThrowIfCancellationRequested();
@@ -263,8 +269,11 @@ public sealed class PageViewController
         finally { if (ReferenceEquals(_liveThumbnailCts, cts)) _liveThumbnailCts = null; }
     }
 
-    public async void ScheduleThumbnailRefresh()
+    public async void ScheduleThumbnailRefresh(IReadOnlyList<int>? pages = null)
     {
+        if (pages is { Count: 0 }) return;
+        if (pages == null) _allThumbnailsDirty = true;
+        else foreach (int page in pages) _dirtyThumbnailPages.Add(page);
         _thumbnailCts?.Cancel();
         using var cts = new CancellationTokenSource();
         _thumbnailCts = cts;
@@ -284,14 +293,20 @@ public sealed class PageViewController
             long version = manager.EditVersion;
             byte[] annotated = await _thumbnailSaveService.CreateAnnotatedBytesAsync(manager, annotations);
             cts.Token.ThrowIfCancellationRequested();
-            await foreach (var rendered in _renderService.RenderThumbnailsAsync(manager, cts.Token, annotated))
+            int[] refreshPages = _allThumbnailsDirty
+                ? Enumerable.Range(0, thumbnails.Count).ToArray() : _dirtyThumbnailPages.ToArray();
+            foreach (int pageIndex in refreshPages)
             {
+                cts.Token.ThrowIfCancellationRequested();
+                var bitmap = await _renderService.RenderThumbnailAsync(manager, pageIndex, cts.Token, annotated);
                 if (!ReferenceEquals(manager, _getManager()) || !ReferenceEquals(snapshot, manager.GetPdfBytes()) ||
                     version != manager.EditVersion || !ReferenceEquals(thumbnails, _getThumbnails())) return;
-                var target = thumbnails.FirstOrDefault(t => t.PageIndex == rendered.PageIndex);
+                var target = thumbnails.FirstOrDefault(t => t.PageIndex == pageIndex);
                 if (target == null || ReferenceEquals(target, _liveThumbnail) && _isInlineEditing()) continue;
-                target.Thumbnail = rendered.Thumbnail;
+                target.Thumbnail = bitmap;
             }
+            _dirtyThumbnailPages.Clear();
+            _allThumbnailsDirty = false;
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Thumbnail refresh error: {ex.Message}"); }
@@ -399,7 +414,7 @@ public sealed class PageViewController
         _isReordering = true;
     }
 
-    public void DragItemsCompleted()
+    public async void DragItemsCompleted()
     {
         ObservableCollection<PageThumbnailData> thumbnails = _getThumbnails();
         PageThumbnailData? draggedPage = _draggedThumbnail;
@@ -423,30 +438,36 @@ public sealed class PageViewController
             return;
         }
 
+        var manager = _getManager();
+        var annotations = _getAnnotations();
         try
         {
-            _setCurrentPageIndex(GetReorderedPageIndex(
-                pageIndexBeforeReorder, originalIndex, newIndex));
+            _pageListView.CanDragItems = false;
+            // Capture the original byte/UI pair before changing page indices.
+            await manager.MovePageAsync(originalIndex, newIndex);
+            UpdateAnnotationPageIndices(annotations, originalIndex, newIndex);
+            if (!ReferenceEquals(manager, _getManager()) || !ReferenceEquals(thumbnails, _getThumbnails())) return;
+            _setCurrentPageIndex(GetReorderedPageIndex(pageIndexBeforeReorder, originalIndex, newIndex));
             thumbnails.Move(originalIndex, newIndex);
             UpdateThumbnailNumbers();
-            _preserveThumbnailsAfterReorder = true;
-            _getManager().MovePage(originalIndex, newIndex);
-            UpdateAnnotationPageIndices(originalIndex, newIndex);
+            _preserveThumbnailsAfterReorder = thumbnails.Count == manager.PageCount;
+            var pendingPages = _dirtyThumbnailPages.Select(page => GetReorderedPageIndex(page, originalIndex, newIndex)).ToArray();
+            _dirtyThumbnailPages.Clear();
+            foreach (int page in pendingPages) _dirtyThumbnailPages.Add(page);
+            if (_allThumbnailsDirty || pendingPages.Length > 0)
+                ScheduleThumbnailRefresh(_allThumbnailsDirty ? null : pendingPages);
             _statusText.Text = "페이지 순서가 변경되었습니다";
             SyncSelection();
         }
         catch (Exception ex)
         {
-            thumbnails.Move(newIndex, originalIndex);
-            UpdateThumbnailNumbers();
             _preserveThumbnailsAfterReorder = false;
-            _setCurrentPageIndex(pageIndexBeforeReorder);
-            _statusText.Text = "페이지 순서 변경에 실패했습니다";
+            _statusText.Text = "페이지 순서 변경에 실패했습니다: " + ex.Message;
             System.Diagnostics.Debug.WriteLine($"Move page error: {ex.Message}");
-            SyncSelection();
         }
         finally
         {
+            _pageListView.CanDragItems = true;
             ClearDropVisual();
             ResetReorderState();
         }
@@ -653,9 +674,9 @@ public sealed class PageViewController
         return null;
     }
 
-    private void UpdateAnnotationPageIndices(int oldIndex, int newIndex)
+    private static void UpdateAnnotationPageIndices(IEnumerable<PdfAnnotation> annotations, int oldIndex, int newIndex)
     {
-        foreach (PdfAnnotation annotation in _getAnnotations())
+        foreach (PdfAnnotation annotation in annotations)
         {
             annotation.PageIndex = GetReorderedPageIndex(
                 annotation.PageIndex, oldIndex, newIndex);

@@ -187,7 +187,10 @@ public sealed class PdfPageOperationsController(
         if (pageIndices.Count == 0 || pageIndices.Count >= getManager().PageCount)
             return;
 
-        int pageCountBeforeDelete = getManager().PageCount;
+        var requestedManager = getManager();
+        var requestedTab = getActiveTab();
+        long requestedVersion = requestedManager.EditVersion;
+        int pageCountBeforeDelete = requestedManager.PageCount;
         int currentPageBeforeDelete = getCurrentPageIndex();
         string pageDescription = pageIndices.Count == 1
             ? $"페이지 {pageIndices[0] + 1}"
@@ -204,12 +207,23 @@ public sealed class PdfPageOperationsController(
 
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
         {
+            if (!ReferenceEquals(requestedManager, getManager()) || requestedManager.EditVersion != requestedVersion) return;
             int deletedBeforeCurrent = pageIndices.Count(index => index < currentPageBeforeDelete);
-            getManager().DeletePages(pageIndices);
+            var manager = requestedManager;
+            try { await manager.DeletePagesAsync(pageIndices); }
+            catch (Exception ex) { await showErrorAsync("페이지 삭제 오류", ex.Message); return; }
+            if (requestedTab != null)
+            {
+                requestedTab.Annotations.RemoveAll(a => pageIndices.Contains(a.PageIndex));
+                foreach (var annotation in requestedTab.Annotations)
+                    annotation.PageIndex -= pageIndices.Count(index => index < annotation.PageIndex);
+                requestedTab.CurrentPageIndex = Math.Clamp(currentPageBeforeDelete - deletedBeforeCurrent,
+                    0, Math.Max(manager.PageCount - 1, 0));
+            }
+            if (!ReferenceEquals(manager, getManager())) return;
             clearPageSelection();
-            setCurrentPageIndex(Math.Clamp(
-                currentPageBeforeDelete - deletedBeforeCurrent,
-                0, Math.Max(getManager().PageCount - 1, 0)));
+            setCurrentPageIndex(Math.Clamp(currentPageBeforeDelete - deletedBeforeCurrent,
+                0, Math.Max(manager.PageCount - 1, 0)));
 
             // Document events refresh the page image and thumbnails after deletion.
             updateUIState();

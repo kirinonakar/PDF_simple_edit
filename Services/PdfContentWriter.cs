@@ -864,7 +864,7 @@ namespace PDF_simple_edit.Services
         }
 
         public void AddImage(PdfDocument doc, int pageIndex, string imagePath, double x, double y,
-            double width, double height)
+            double width, double height, string? overlayId = null)
         {
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages()) return;
 
@@ -875,8 +875,10 @@ namespace PDF_simple_edit.Services
             var imageToDisplay = new PdfAffineTransform(width, 0, 0, -height, x, y + height);
             var matrix = PdfPageCoordinates.ToDisplay(page).Inverse().After(imageToDisplay);
             var canvas = new PdfCanvas(page, true);
-            canvas.AddImageWithTransformationMatrix(data, (float)matrix.A, (float)matrix.B,
-                (float)matrix.C, (float)matrix.D, (float)matrix.E, (float)matrix.F, false);
+            var image = new iText.Kernel.Pdf.Xobject.PdfImageXObject(data);
+            if (overlayId != null) image.GetPdfObject().Put(new PdfName("PSEOverlayId"), new PdfString(overlayId));
+            canvas.AddXObjectWithTransformationMatrix(image, (float)matrix.A, (float)matrix.B,
+                (float)matrix.C, (float)matrix.D, (float)matrix.E, (float)matrix.F);
             canvas.Release();
         }
 

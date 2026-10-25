@@ -65,7 +65,7 @@ public sealed class EditorImageController(
                 IsApplied = false
             };
             getAnnotations().Add(imageAnnotation);
-            getManager().MarkModified();
+            getManager().MarkModified(pageIndex: getCurrentPageIndex());
 
             // 이미지를 추가한 뒤 바로 핸들이 보이도록 선택 도구로 전환하고
             // 새 이미지를 선택 상태로 둡니다.

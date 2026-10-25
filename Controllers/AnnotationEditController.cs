@@ -112,7 +112,7 @@ public sealed class AnnotationEditController
             _getAnnotations().RemoveAll(a => a.PageIndex == pageIndex && a.NativeText != null);
 
         _canvasController.ClearSelection();
-        manager.MarkModified();
+        manager.MarkModified(pageIndex: _getCurrentPageIndex());
         if (originalTextTargets.Count > 0 || appliedTextTargets.Count > 0 ||
             originalImageTargets.Count > 0)
         {
@@ -208,7 +208,7 @@ public sealed class AnnotationEditController
         annotation.Color = color;
         if (annotation.Type is AnnotationType.Text or AnnotationType.FreeText)
             annotation.IsApplied = false;
-        _getManager().MarkModified();
+        _getManager().MarkModified(pageIndex: _getCurrentPageIndex());
         _canvasController.Render();
     }
 
@@ -254,7 +254,7 @@ public sealed class AnnotationEditController
             return;
 
         _alignmentService.Align(selection, alignment);
-        _getManager().MarkModified();
+        _getManager().MarkModified(pageIndex: _getCurrentPageIndex());
         _canvasController.Render();
     }
 
@@ -288,7 +288,7 @@ public sealed class AnnotationEditController
                     ?? throw new InvalidOperationException("수정한 텍스트 영역을 다시 찾을 수 없습니다.")).ToList();
                 return (result, selections);
             });
-            manager.CommitNativeTextEdit(snapshot, prepared.result.Bytes);
+            manager.CommitNativeTextEdit(snapshot, prepared.result.Bytes, pageIndex);
             for (int i = 0; i < targets.Count; i++)
                 NativePdfTextService.UpdateAnnotation(targets[i], prepared.selections[i]);
             annotations.RemoveAll(a => a.PageIndex == pageIndex && a.NativeText != null && !targets.Contains(a));
@@ -395,7 +395,7 @@ public sealed class AnnotationEditController
     private void MarkChanged(PdfAnnotation annotation)
     {
         annotation.IsApplied = false;
-        _getManager().MarkModified();
+        _getManager().MarkModified(pageIndex: _getCurrentPageIndex());
         _canvasController.Render();
     }
 }

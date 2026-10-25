@@ -336,7 +336,7 @@ public sealed class AnnotationClipboardController(
         foreach (PdfAnnotation annotation in pasted.Where(a => IsTextAnnotation(a) != graphics))
             canvasController.SelectedAnnotations.Add(annotation);
         canvasController.PrimarySelection = pasted[^1];
-        getManager().MarkModified();
+        getManager().MarkModified(pageIndex: getCurrentPageIndex());
         canvasController.Render();
     }
 

@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 
 namespace PDF_simple_edit.Helpers
@@ -21,6 +22,29 @@ namespace PDF_simple_edit.Helpers
         private readonly Dictionary<int, (double width, double height)> _pageSizes = new();
         public long EditVersion { get; private set; }
         private string? _filePath;
+        private PdfFileVersion? _diskVersion;
+        private string? _signedSourcePath;
+
+        internal Task<PdfFileVersion> GetSaveFileVersionAsync(string path)
+        {
+            if (_signedSourcePath != null && SamePath(path, _signedSourcePath))
+                throw new InvalidOperationException("전자서명된 원본은 덮어쓸 수 없습니다. 다른 이름으로 저장해 주세요. 편집한 사본의 전자서명은 유효하지 않습니다.");
+            if (_filePath != null && SamePath(path, _filePath) && _diskVersion != null)
+                return Task.FromResult(_diskVersion);
+            return Task.Run(() => PdfFileVersion.Read(path));
+        }
+
+        internal void RecordDiskWrite(string path, byte[] hash)
+        {
+            if (_filePath != null && SamePath(path, _filePath))
+                _diskVersion = new(hash);
+        }
+
+        private static bool SamePath(string a, string b) => string.Equals(
+            System.IO.Path.GetFullPath(a), System.IO.Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+
+        public bool HasDigitalSignatures => _signedSourcePath != null;
+        public bool RequiresSignedCopySave => _signedSourcePath != null && _filePath != null && SamePath(_signedSourcePath, _filePath);
         private bool _isModified;
         private readonly object _docLock = new();
         private readonly Dictionary<int, List<PdfPageContent>> _contentCache = new();
@@ -31,8 +55,12 @@ namespace PDF_simple_edit.Helpers
             set { lock (_docLock) { if (_textEditingMode != value) { _textEditingMode = value; _contentCache.Clear(); } } }
         }
 
-        private readonly Stack<(byte[] Bytes, object? UIState)> _undoStack = new();
-        private readonly Stack<(byte[] Bytes, object? UIState)> _redoStack = new();
+        private readonly PdfUndoHistory _history = new();
+        private Stack<PdfHistoryEntry> _undoStack => _history.Undo;
+        private Stack<PdfHistoryEntry> _redoStack => _history.Redo;
+        private Guid _stateId = Guid.NewGuid();
+        private Guid _savedStateId;
+        private PdfProtectionSettings _savedProtection = new();
         private readonly PdfContentWriter _contentWriter = new();
         private readonly PdfPageContentExtractor _contentExtractor = new();
         private readonly PdfContentStreamEditor _contentStreamEditor = new();
@@ -40,7 +68,6 @@ namespace PDF_simple_edit.Helpers
         private readonly PdfFileOperationService _fileOperationService = new();
         private readonly PdfSecurityService _securityService = new();
         private PdfProtectionSettings _protection = new();
-        private const int MaxUndoSteps = 30;
 
         public bool CanUndo => _undoStack.Count > 0;
         public bool CanRedo => _redoStack.Count > 0;
@@ -64,17 +91,24 @@ namespace PDF_simple_edit.Helpers
                 if (_protection == settings) return;
                 _protection = settings;
                 EditVersion++;
-                _isModified = true;
+                _isModified = _stateId != _savedStateId || _protection != _savedProtection;
             }
             ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
         }
         
         public bool IsModified => _isModified;
-        public void MarkModified(bool modified = true)
+        public void MarkModified(bool modified = true, int? pageIndex = null)
         {
-            _isModified = modified;
-            EditVersion++;
-            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+            lock (_docLock)
+            {
+                if (modified) _stateId = Guid.NewGuid();
+                else { _savedStateId = _stateId; _savedProtection = _protection; }
+                _isModified = modified;
+                EditVersion++;
+            }
+            ModifiedStateChanged?.Invoke(this, modified
+                ? new PdfDocumentChange(pageIndex.HasValue ? new[] { pageIndex.Value } : null)
+                : EventArgs.Empty);
         }
 
         public int PageCount
@@ -103,36 +137,48 @@ namespace PDF_simple_edit.Helpers
 
         // One native inline session is one undo entry. Previews are detached byte
         // snapshots and never modify document state or pollute undo history.
-        public void CommitNativeTextEdit(byte[] expectedBytes, byte[] editedBytes) =>
-            CommitPdfBytes(expectedBytes, editedBytes, GetUIStateFunc?.Invoke());
+        public void CommitNativeTextEdit(byte[] expectedBytes, byte[] editedBytes, int? pageIndex = null) =>
+            CommitPdfBytes(expectedBytes, editedBytes, GetUIStateFunc?.Invoke(),
+                pageIndex.HasValue ? PdfDocumentChange.Page(pageIndex.Value) : new());
 
-        private void CommitPdfBytes(byte[] expectedBytes, byte[] editedBytes, object? uiState)
+        private void CommitPdfBytes(byte[] expectedBytes, byte[] editedBytes, object? uiState,
+            PdfDocumentChange? change = null, long? expectedVersion = null, int? pageCount = null)
         {
+            change ??= new();
             lock (_docLock)
             {
-                if (!ReferenceEquals(_pdfBytes, expectedBytes))
-                    throw new InvalidOperationException("편집 중 문서가 변경되었습니다. 텍스트를 다시 선택해 주세요.");
+                if (!ReferenceEquals(_pdfBytes, expectedBytes) || expectedVersion.HasValue && EditVersion != expectedVersion)
+                    throw new InvalidOperationException("편집 중 문서가 변경되었습니다. 다시 시도해 주세요.");
                 if (ReferenceEquals(expectedBytes, editedBytes) || expectedBytes.AsSpan().SequenceEqual(editedBytes)) return;
-                _undoStack.Push((_pdfBytes!, uiState));
-                if (_undoStack.Count > MaxUndoSteps)
+                _undoStack.Push(new(_pdfBytes!, uiState, _stateId, change));
+                _redoStack.Clear();
+                _history.Trim(_undoStack);
+                _stateId = Guid.NewGuid();
+                if (pageCount.HasValue || !change.StructureChanged && change.Pages != null && ReferenceEquals(_pageCountSource, expectedBytes))
                 {
-                    var keep = _undoStack.Take(MaxUndoSteps).Reverse().ToArray();
-                    _undoStack.Clear(); foreach (var item in keep) _undoStack.Push(item);
+                    _cachedPageCount = pageCount ?? _cachedPageCount;
+                    _pageCountSource = editedBytes;
                 }
-                _redoStack.Clear(); EditVersion++; _pdfBytes = editedBytes; _isModified = true; _contentCache.Clear();
+                else _pageCountSource = null;
+                if (!change.StructureChanged && change.Pages != null && ReferenceEquals(_geometrySource, expectedBytes))
+                    _geometrySource = editedBytes;
+                else { _geometrySource = null; _pageSizes.Clear(); }
+                EditVersion++; _pdfBytes = editedBytes; _isModified = true; _contentCache.Clear();
             }
             ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-            DocumentChanged?.Invoke(this, EventArgs.Empty);
+            DocumentChanged?.Invoke(this, change);
+            if (change.StructureChanged) PageStructureChanged?.Invoke(this, EventArgs.Empty);
         }
 
         public async Task ApplyNativeTextEditsAsync(int pageIndex, IReadOnlyList<NativePdfTextEdit> edits)
         {
             byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
             var result = await Task.Run(() => new NativePdfTextService().EditMany(snapshot, pageIndex, edits));
-            CommitNativeTextEdit(snapshot, result.Bytes);
+            CommitNativeTextEdit(snapshot, result.Bytes, pageIndex);
         }
 
         public event EventHandler? DocumentChanged;
+        public event EventHandler? Closed;
         public event EventHandler? PageStructureChanged;
         public event EventHandler? ModifiedStateChanged;
         public event EventHandler<object?>? UndoRedoPerformed;
@@ -156,17 +202,23 @@ namespace PDF_simple_edit.Helpers
                     {
                         if (!File.Exists(filePath)) return PdfOpenStatus.Failed;
 
-                        PdfOpenResult result = _securityService.Open(File.ReadAllBytes(filePath), password);
+                        byte[] diskBytes = File.ReadAllBytes(filePath);
+                        PdfOpenResult result = _securityService.Open(diskBytes, password);
                         if (!result.IsSuccess || result.Bytes == null)
                             return result.Status;
 
                         _pdfBytes = result.Bytes;
                         _filePath = filePath;
+                        _diskVersion = new(SHA256.HashData(diskBytes));
+                        _signedSourcePath = result.HasDigitalSignatures ? filePath : null;
                         _isModified = false;
                         _contentCache.Clear();
                         _undoStack.Clear();
                         _redoStack.Clear();
                         _protection = result.Protection ?? new PdfProtectionSettings();
+                        _stateId = _savedStateId = Guid.NewGuid();
+                        _savedProtection = _protection;
+                        EditVersion++;
 
                         DocumentChanged?.Invoke(this, EventArgs.Empty);
                         PageStructureChanged?.Invoke(this, EventArgs.Empty);
@@ -195,9 +247,13 @@ namespace PDF_simple_edit.Helpers
             if (snapshot == null) return false;
             long version = EditVersion;
             var protection = _protection;
+            var diskVersion = await GetSaveFileVersionAsync(filePath);
             byte[] output = await Task.Run(() => isUserSave ? PdfSecurityService.Encrypt(snapshot, protection) : snapshot);
-            await PdfAtomicFile.WriteAsync(filePath, output);
-            if (isUserSave) return ReplacePdfBytesAfterSave(snapshot, version, snapshot, filePath);
+            await Task.Run(() => PdfSecurityService.Validate(output, protection));
+            await PdfAtomicFile.WriteAsync(filePath, output, diskVersion);
+            byte[] diskHash = await Task.Run(() => SHA256.HashData(output));
+            RecordDiskWrite(filePath, diskHash);
+            if (isUserSave) return ReplacePdfBytesAfterSave(snapshot, version, snapshot, filePath, diskHash);
             return true;
         }
 
@@ -222,66 +278,36 @@ namespace PDF_simple_edit.Helpers
                 return _protection.Enabled ? PdfSecurityService.CreateEncryptionProperties(_protection) : null;
         }
 
-        public void ApplyBatchEdit(Action<PdfDocument> editAction)
+        public void ApplyBatchEdit(Action<PdfDocument> editAction, IEnumerable<int>? pages = null) => ApplyEdit(editAction, pages: pages);
+
+        private void ApplyEdit(Action<PdfDocument> editAction, int? pageIndex = null, IEnumerable<int>? pages = null)
         {
-            ApplyEdit(editAction);
+            byte[]? snapshot = _pdfBytes;
+            if (snapshot == null) return;
+            long version = EditVersion;
+            object? state = GetUIStateFunc?.Invoke();
+            byte[] edited = RewritePdfBytes(snapshot, editAction);
+            CommitPdfBytes(snapshot, edited, state,
+                pageIndex.HasValue ? PdfDocumentChange.Page(pageIndex.Value) : new(pages), version);
         }
 
-        private void ApplyEdit(Action<PdfDocument> editAction)
+        private async Task ApplyEditAsync(Action<PdfDocument> editAction, PdfDocumentChange change)
         {
-            if (_pdfBytes == null) return;
-
-            lock (_docLock)
+            byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+            long version = EditVersion;
+            object? state = GetUIStateFunc?.Invoke();
+            var edited = await Task.Run(() =>
             {
-                byte[] previous = _pdfBytes;
-                object? previousUiState = GetUIStateFunc?.Invoke();
-
-                try
+                byte[] bytes = RewritePdfBytes(snapshot, editAction);
+                int? count = null;
+                if (change.StructureChanged)
                 {
-                    using (var msInput = new MemoryStream(_pdfBytes))
-                    using (var msOutput = new MemoryStream())
-                    {
-                        var reader = new PdfReader(msInput);
-                        
-                        // iText 9 에러 방지: WriterProperties 설정 (BouncyCastle 어댑터가 로드된 상태여야 함)
-                        WriterProperties props = new WriterProperties();
-                        var writer = new PdfWriter(msOutput, props);
-                        
-                        // Stamping 모드 사용하여 불필요한 객체 복제 및 직렬화 에러 방지
-                        using (var doc = new PdfDocument(reader, writer, new StampingProperties()))
-                        {
-                            editAction(doc);
-                        }
-                        
-                        byte[] resultBytes = msOutput.ToArray();
-                        if (resultBytes.Length > 0)
-                        {
-                            _undoStack.Push((previous, previousUiState));
-                            TrimUndoHistory();
-                            _redoStack.Clear();
-                            EditVersion++;
-                            _pdfBytes = resultBytes;
-                            _isModified = true;
-                            _contentCache.Clear(); 
-                            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-                            DocumentChanged?.Invoke(this, EventArgs.Empty);
-                        }
-                    }
+                    using var document = new PdfDocument(new PdfReader(new MemoryStream(bytes, writable: false)));
+                    count = document.GetNumberOfPages();
                 }
-                catch (Exception ex)
-                {
-                    // 에러 메시지에 더 자세한 정보 포함
-                    throw new Exception($"PDF 편집 중 에러 발생: {ex.Message}\n타입: {ex.GetType().Name}\n스택: {ex.StackTrace}");
-                }
-            }
-        }
-
-        private void TrimUndoHistory()
-        {
-            if (_undoStack.Count <= MaxUndoSteps) return;
-            var keep = _undoStack.Take(MaxUndoSteps).Reverse().ToArray();
-            _undoStack.Clear();
-            foreach (var entry in keep) _undoStack.Push(entry);
+                return (Bytes: bytes, Count: count);
+            });
+            CommitPdfBytes(snapshot, edited.Bytes, state, change, version, edited.Count);
         }
 
         public byte[] CreatePdfBytesWithEdits(Action<PdfDocument> editAction) =>
@@ -309,18 +335,23 @@ namespace PDF_simple_edit.Helpers
             }
         }
 
-        public bool ReplacePdfBytesAfterSave(byte[] expectedBytes, long expectedVersion, byte[] pdfBytes, string filePath)
+        public bool ReplacePdfBytesAfterSave(byte[] expectedBytes, long expectedVersion, byte[] pdfBytes, string filePath, byte[]? diskHash = null)
         {
             lock (_docLock)
             {
                 if (!ReferenceEquals(_pdfBytes, expectedBytes) || EditVersion != expectedVersion) return false;
+                if (ReferenceEquals(_pageCountSource, expectedBytes)) _pageCountSource = pdfBytes;
+                if (ReferenceEquals(_geometrySource, expectedBytes)) _geometrySource = pdfBytes;
                 _pdfBytes = pdfBytes;
                 _filePath = filePath;
+                if (diskHash != null) _diskVersion = new(diskHash);
+                _savedStateId = _stateId;
+                _savedProtection = _protection;
                 _isModified = false;
                 _contentCache.Clear();
                 // Saving is a checkpoint, not a new document. Retain both stacks.
                 ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-                DocumentChanged?.Invoke(this, EventArgs.Empty);
+                DocumentChanged?.Invoke(this, new PdfDocumentChange(Array.Empty<int>()));
                 return true;
             }
         }
@@ -393,7 +424,7 @@ namespace PDF_simple_edit.Helpers
             bool isBold = false, bool isItalic = false)
         {
             ApplyEdit(document => _contentWriter.AddText(
-                document, pageIndex, x, y, text, fontFamily, fontSize, color, isBold, isItalic));
+                document, pageIndex, x, y, text, fontFamily, fontSize, color, isBold, isItalic), pageIndex);
         }
 
         public void AddTextInternal(PdfDocument doc, int pageIndex, double x, double y, string text,
@@ -439,7 +470,7 @@ namespace PDF_simple_edit.Helpers
             float opacity = 0.5f)
         {
             ApplyEdit(document =>
-                _contentWriter.AddHighlight(document, pageIndex, x, y, width, height, color, opacity));
+                _contentWriter.AddHighlight(document, pageIndex, x, y, width, height, color, opacity), pageIndex);
         }
 
         public void AddHighlightInternal(
@@ -475,7 +506,7 @@ namespace PDF_simple_edit.Helpers
             double height)
         {
             ApplyEdit(document =>
-                _contentWriter.AddImage(document, pageIndex, imagePath, x, y, width, height));
+                _contentWriter.AddImage(document, pageIndex, imagePath, x, y, width, height), pageIndex);
         }
 
         public void AddImageInternal(
@@ -485,32 +516,20 @@ namespace PDF_simple_edit.Helpers
             double x,
             double y,
             double width,
-            double height)
+            double height,
+            string? overlayId = null)
         {
-            _contentWriter.AddImage(doc, pageIndex, imagePath, x, y, width, height);
+            _contentWriter.AddImage(doc, pageIndex, imagePath, x, y, width, height, overlayId);
         }
-        public void DeletePage(int pageIndex)
+        public Task DeletePagesAsync(IEnumerable<int> pageIndices)
         {
-            ApplyEdit(doc => DeletePageInternal(doc, pageIndex));
-            PageStructureChanged?.Invoke(this, EventArgs.Empty);
-        }
-
-        public void DeletePages(IEnumerable<int> pageIndices)
-        {
-            List<int> indices = pageIndices
-                .Distinct()
-                .Where(index => index >= 0 && index < PageCount)
-                .OrderByDescending(index => index)
-                .ToList();
-            if (indices.Count == 0 || indices.Count >= PageCount)
-                return;
-
-            ApplyEdit(doc =>
+            int count = PageCount;
+            int[] indices = pageIndices.Distinct().Where(i => i >= 0 && i < count).OrderByDescending(i => i).ToArray();
+            if (indices.Length == 0 || indices.Length >= count) return Task.CompletedTask;
+            return ApplyEditAsync(doc =>
             {
-                foreach (int pageIndex in indices)
-                    DeletePageInternal(doc, pageIndex);
-            });
-            PageStructureChanged?.Invoke(this, EventArgs.Empty);
+                foreach (int pageIndex in indices) DeletePageInternal(doc, pageIndex);
+            }, new(structureChanged: true));
         }
 
         public void DeletePageInternal(PdfDocument doc, int pageIndex)
@@ -519,12 +538,12 @@ namespace PDF_simple_edit.Helpers
             doc.RemovePage(pageIndex + 1);
         }
 
-        public void MovePage(int fromIndex, int toIndex)
+        public Task MovePageAsync(int fromIndex, int toIndex)
         {
-            if (fromIndex == toIndex) return;
-
-            ApplyEdit(doc => MovePageInternal(doc, fromIndex, toIndex));
-            PageStructureChanged?.Invoke(this, EventArgs.Empty);
+            int count = PageCount;
+            if (fromIndex == toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= count || toIndex >= count)
+                return Task.CompletedTask;
+            return ApplyEditAsync(doc => MovePageInternal(doc, fromIndex, toIndex), new(structureChanged: true));
         }
 
         public void MovePageInternal(PdfDocument doc, int fromIndex, int toIndex)
@@ -552,8 +571,14 @@ namespace PDF_simple_edit.Helpers
                 }
                 _pdfBytes = ms.ToArray();
                 _filePath = null;
+                _diskVersion = null;
+                _signedSourcePath = null;
                 _isModified = false;
                 _protection = new PdfProtectionSettings();
+                _savedProtection = _protection;
+                _stateId = _savedStateId = Guid.NewGuid();
+                EditVersion++;
+                _contentCache.Clear();
                 _undoStack.Clear();
                 _redoStack.Clear();
                 DocumentChanged?.Invoke(this, EventArgs.Empty);
@@ -564,16 +589,24 @@ namespace PDF_simple_edit.Helpers
 
         public void Close()
         {
-            _pdfBytes = null;
-            _pageCountSource = null;
-            _geometrySource = null;
-            _pageSizes.Clear();
-            _cachedPageCount = 0;
-            _filePath = null;
-            _isModified = false;
-            _protection = new PdfProtectionSettings();
-            _undoStack.Clear();
-            _redoStack.Clear();
+            lock (_docLock)
+            {
+                EditVersion++;
+                _contentCache.Clear();
+                _pdfBytes = null;
+                _pageCountSource = null;
+                _geometrySource = null;
+                _pageSizes.Clear();
+                _cachedPageCount = 0;
+                _filePath = null;
+                _diskVersion = null;
+                _signedSourcePath = null;
+                _isModified = false;
+                _protection = _savedProtection = new PdfProtectionSettings();
+                _history.Clear();
+                GetUIStateFunc = null;
+            }
+            Closed?.Invoke(this, EventArgs.Empty);
             DocumentChanged?.Invoke(this, EventArgs.Empty);
             PageStructureChanged?.Invoke(this, EventArgs.Empty);
             ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
@@ -586,19 +619,23 @@ namespace PDF_simple_edit.Helpers
             lock (_docLock)
             {
                 var currentState = GetUIStateFunc?.Invoke();
-                _redoStack.Push((_pdfBytes, currentState));
-
                 var past = _undoStack.Pop();
+                _redoStack.Push(new(_pdfBytes, currentState, _stateId, past.Change));
+                _history.Trim(_redoStack);
+                _stateId = past.StateId;
                 _pdfBytes = past.Bytes;
+                _pageCountSource = null;
+                _geometrySource = null;
+                _pageSizes.Clear();
                 EditVersion++;
 
-                _isModified = true;
+                _isModified = _stateId != _savedStateId || _protection != _savedProtection;
                 _contentCache.Clear();
 
                 ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-                DocumentChanged?.Invoke(this, EventArgs.Empty);
-                PageStructureChanged?.Invoke(this, EventArgs.Empty);
                 UndoRedoPerformed?.Invoke(this, past.UIState);
+                DocumentChanged?.Invoke(this, past.Change);
+                if (past.Change.StructureChanged) PageStructureChanged?.Invoke(this, EventArgs.Empty);
             }
         }
 
@@ -609,19 +646,23 @@ namespace PDF_simple_edit.Helpers
             lock (_docLock)
             {
                 var currentState = GetUIStateFunc?.Invoke();
-                _undoStack.Push((_pdfBytes, currentState));
-
                 var next = _redoStack.Pop();
+                _undoStack.Push(new(_pdfBytes, currentState, _stateId, next.Change));
+                _history.Trim(_undoStack);
+                _stateId = next.StateId;
                 _pdfBytes = next.Bytes;
+                _pageCountSource = null;
+                _geometrySource = null;
+                _pageSizes.Clear();
                 EditVersion++;
 
-                _isModified = true;
+                _isModified = _stateId != _savedStateId || _protection != _savedProtection;
                 _contentCache.Clear();
 
                 ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-                DocumentChanged?.Invoke(this, EventArgs.Empty);
-                PageStructureChanged?.Invoke(this, EventArgs.Empty);
                 UndoRedoPerformed?.Invoke(this, next.UIState);
+                DocumentChanged?.Invoke(this, next.Change);
+                if (next.Change.StructureChanged) PageStructureChanged?.Invoke(this, EventArgs.Empty);
             }
         }
 
@@ -727,7 +768,7 @@ namespace PDF_simple_edit.Helpers
             }
             List<PdfPageContent>? refreshedGraphics = graphics.Count > 0
                 ? await _contentExtractor.ExtractAsync(transformed, pageIndex, TextEditingMode) : null;
-            CommitNativeTextEdit(snapshot, transformed);
+            CommitNativeTextEdit(snapshot, transformed, pageIndex);
             for (int i = 0; i < texts.Count; i++)
             {
                 NativePdfTextService.UpdateAnnotation(texts[i].Target, refreshedText[i]);
@@ -774,13 +815,10 @@ namespace PDF_simple_edit.Helpers
             if (targets == null || targets.Count != annotations.Count)
                 return false;
 
-            return await Task.Run(() =>
-            {
-                bool success = false;
-                ApplyEdit(document =>
-                    success = _contentStreamEditor.RemoveGraphics(document, pageIndex, targets));
-                return success;
-            });
+            bool success = false;
+            await ApplyEditAsync(document =>
+                    success = _contentStreamEditor.RemoveGraphics(document, pageIndex, targets), PdfDocumentChange.Page(pageIndex));
+            return success;
         }
 
 
@@ -800,10 +838,8 @@ namespace PDF_simple_edit.Helpers
             if (contentStreamIndex < 0 || operationIndex < 0)
                 return false;
 
-            return await Task.Run(() =>
-            {
-                bool success = false;
-                ApplyEdit(document =>
+            bool success = false;
+            await ApplyEditAsync(document =>
                 {
                     success = _contentStreamEditor.RemoveTextOperation(
                         document,
@@ -811,9 +847,8 @@ namespace PDF_simple_edit.Helpers
                         contentStreamIndex,
                         operationIndex,
                         textRenderMode);
-                });
-                return success;
-            });
+                }, PdfDocumentChange.Page(pageIndex));
+            return success;
         }
 
         public async Task<bool> RemoveOriginalTextAnnotationsAsync(
@@ -857,18 +892,15 @@ namespace PDF_simple_edit.Helpers
             if (hasInvalidTarget)
                 return false;
 
-            return await Task.Run(() =>
-            {
-                bool success = false;
-                ApplyEdit(document =>
+            bool success = false;
+            await ApplyEditAsync(document =>
                 {
                     success = _contentStreamEditor.RemoveTextAnnotations(
                         document,
                         pageIndex,
                         currentAnnotations);
-                });
-                return success;
-            });
+                }, PdfDocumentChange.Page(pageIndex));
+            return success;
         }
 
         public Task<bool> RemoveAppliedTextAnnotationAsync(
@@ -901,22 +933,17 @@ namespace PDF_simple_edit.Helpers
             if (targets == null || targets.Count == 0)
                 return true;
 
-            return await Task.Run(() =>
-            {
-                bool success = false;
-                ApplyEdit(document =>
+            bool success = false;
+            await ApplyEditAsync(document =>
                     success = _contentStreamEditor.RemoveTextByCleanup(
-                        document, pageIndex, targets));
-                return success;
-            });
+                        document, pageIndex, targets), PdfDocumentChange.Page(pageIndex));
+            return success;
         }
 
         public async Task<bool> MoveTextAsync(int pageIndex, string text, double oldX, double oldY, double width, double height, double newX, double newY, string fontFamily = "맑은 고딕", double fontSize = 12, Color? color = null)
         {
-            return await Task.Run(() =>
-            {
-                bool success = false;
-                ApplyEdit(doc =>
+            bool success = false;
+            await ApplyEditAsync(doc =>
                 {
                     var page = doc.GetPage(pageIndex + 1);
                     var rect = page.GetCropBox();
@@ -948,9 +975,8 @@ namespace PDF_simple_edit.Helpers
                         fontSize,
                         color ?? ColorConstants.BLACK);
                     success = true;
-                });
-                return success;
-            });
+                }, PdfDocumentChange.Page(pageIndex));
+            return success;
         }
 
         public PdfDocument? GetReadOnlyDocument()
@@ -970,18 +996,32 @@ namespace PDF_simple_edit.Helpers
             if (signatures.Count > 0)
                 merged = await Task.Run(() => RewritePdfBytes(merged, RemoveSavedSignatureAnnotations));
             if (version != EditVersion) throw new InvalidOperationException("합치는 동안 문서가 변경되었습니다. 다시 시도해 주세요.");
-            CommitPdfBytes(snapshot, merged, uiState);
-            PageStructureChanged?.Invoke(this, EventArgs.Empty);
+            CommitPdfBytes(snapshot, merged, uiState, new(structureChanged: true), version);
             return signatures;
         }
 
-        public Task<bool> MergeFilesAsync(List<string> sourceFiles, string outputPath, byte[]? annotatedSnapshot) =>
-            _fileOperationService.MergeAsync(annotatedSnapshot, sourceFiles, outputPath, CreateProtectedWriterProperties());
+        private void EnsureDerivedOutputPath(string outputPath)
+        {
+            if (_filePath != null && SamePath(outputPath, _filePath) ||
+                _signedSourcePath != null && SamePath(outputPath, _signedSourcePath))
+                throw new InvalidOperationException("파생 PDF는 원본과 다른 이름으로 저장해 주세요.");
+        }
+
+        public Task<bool> MergeFilesAsync(List<string> sourceFiles, string outputPath, byte[]? annotatedSnapshot)
+        {
+            EnsureDerivedOutputPath(outputPath);
+            if (sourceFiles.Any(source => SamePath(source, outputPath)))
+                throw new InvalidOperationException("병합 결과는 입력 파일과 다른 이름으로 저장해 주세요.");
+            return _fileOperationService.MergeAsync(annotatedSnapshot, sourceFiles, outputPath, CreateProtectedWriterProperties());
+        }
 
         public Task<int> SplitFileAsync(string outputFolder, List<(int start, int end)> ranges, byte[] annotatedSnapshot) =>
             _fileOperationService.SplitAsync(annotatedSnapshot, _filePath, outputFolder, ranges, CreateProtectedWriterProperties());
 
-        public Task<bool> ExportPagesAsync(string outputPath, IEnumerable<int> pageIndices, byte[] annotatedSnapshot) =>
-            _fileOperationService.ExportPagesAsync(annotatedSnapshot, outputPath, pageIndices, CreateProtectedWriterProperties());
+        public Task<bool> ExportPagesAsync(string outputPath, IEnumerable<int> pageIndices, byte[] annotatedSnapshot)
+        {
+            EnsureDerivedOutputPath(outputPath);
+            return _fileOperationService.ExportPagesAsync(annotatedSnapshot, outputPath, pageIndices, CreateProtectedWriterProperties());
+        }
     }
 }

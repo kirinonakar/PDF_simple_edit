@@ -592,7 +592,7 @@ public sealed class InlineTextEditorController
                     _annotations.Remove(existingAnnotation);
                     _selectedAnnotations.Remove(existingAnnotation);
                     _annotationRemoved?.Invoke(existingAnnotation);
-                    _manager.MarkModified();
+                    _manager.MarkModified(pageIndex: _pageIndex);
                     _setStatus?.Invoke("텍스트가 삭제되었습니다");
                 }
                 else if (editSession?.HasLiveChanges == true || existingAnnotation.Content != text)
@@ -637,7 +637,7 @@ public sealed class InlineTextEditorController
                                 text);
                     }
                     existingAnnotation.IsApplied = false;
-                    _manager.MarkModified();
+                    _manager.MarkModified(pageIndex: _pageIndex);
                     _setStatus?.Invoke("텍스트가 수정되었습니다 (저장 시 반영)");
                 }
             }
@@ -669,7 +669,7 @@ public sealed class InlineTextEditorController
                     Height = size.height,
                     IsApplied = false
                 });
-                _manager.MarkModified();
+                _manager.MarkModified(pageIndex: _pageIndex);
                 _setStatus?.Invoke("텍스트가 추가되었습니다 (저장 시 반영)");
             }
 

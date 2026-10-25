@@ -13,6 +13,7 @@
 tmp/
 output/
 tests/*
+!tests/RegressionTests/
 !tests/PdfOpenPerformance/
 !tests/NativeTextStyles/
 !tests/PdfProtection/

@@ -356,6 +356,7 @@ namespace PDF_simple_edit.Models
         
         // For image handling (future use)
         public string? ImageId { get; set; }
+        public string? OverlayId { get; set; }
         public List<int> GraphicOperationIndexes { get; set; } = new();
         public List<int> GraphicTextOperationIndexes { get; set; } = new();
         public List<PdfGraphicOperationTarget> GraphicOperations { get; set; } = new();

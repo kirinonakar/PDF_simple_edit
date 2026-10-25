@@ -23,7 +23,8 @@ public sealed record PdfOpenResult(
     bool WasEncrypted = false,
     bool PasswordRequiredToOpen = false,
     int Permissions = -1,
-    PdfProtectionSettings? Protection = null)
+    PdfProtectionSettings? Protection = null,
+    bool HasDigitalSignatures = false)
 {
     public bool IsSuccess => Status == PdfOpenStatus.Success;
 }
@@ -54,6 +55,7 @@ public sealed class PdfSecurityService
             password = null;
 
         bool encrypted;
+        bool signed;
         int permissions = -1;
         bool openedAsOwner = false;
         int cryptoMode = EncryptionConstants.ENCRYPTION_AES_256;
@@ -65,6 +67,7 @@ public sealed class PdfSecurityService
             // 않으므로 잘못된 암호나 누락된 암호는 반드시 예외가 된다.
             using var reader = new PdfReader(new MemoryStream(source), CreateReaderProperties(password));
             using var document = new PdfDocument(reader);
+            signed = new iText.Signatures.SignatureUtil(document).GetSignatureNames().Count > 0;
             encrypted = reader.IsEncrypted();
             if (encrypted)
             {
@@ -86,7 +89,7 @@ public sealed class PdfSecurityService
         }
 
         if (!encrypted)
-            return new PdfOpenResult(PdfOpenStatus.Success, source);
+            return new PdfOpenResult(PdfOpenStatus.Success, source, HasDigitalSignatures: signed);
 
         try
         {
@@ -104,12 +107,29 @@ public sealed class PdfSecurityService
                 OwnerPassword = openedAsOwner ? password : null,
                 Permissions = permissions
             };
-            return new PdfOpenResult(PdfOpenStatus.Success, plainBytes, password, true, passwordRequired, permissions, protection);
+            return new PdfOpenResult(PdfOpenStatus.Success, plainBytes, password, true, passwordRequired, permissions, protection, signed);
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"PDF 복호화 실패: {ex.Message}");
             return new PdfOpenResult(PdfOpenStatus.Failed);
+        }
+    }
+
+    internal static void Validate(byte[] bytes, PdfProtectionSettings protection)
+    {
+        string? password = protection.Enabled
+            ? (protection.RequireOpenPassword ? protection.OpenPassword : protection.RequireOwnerPassword ? protection.OwnerPassword : null)
+            : null;
+        using var reader = new PdfReader(new MemoryStream(bytes, writable: false), CreateReaderProperties(password));
+        using var document = new PdfDocument(reader);
+        if (document.GetNumberOfPages() == 0) throw new InvalidDataException("저장할 PDF에 페이지가 없습니다.");
+        // Force lazy page-tree/content reads before replacing the destination.
+        for (int i = 1; i <= document.GetNumberOfPages(); i++)
+        {
+            var page = document.GetPage(i);
+            _ = page.GetMediaBox();
+            _ = page.GetContentBytes();
         }
     }
 

@@ -288,7 +288,7 @@ public sealed class NativeInlineTextEditorController
                 _preview.Layout, length > 0 ? start : 0, length > 0 ? length : int.MaxValue));
             if (!ReferenceEquals(_preview.Bytes, _snapshot))
             {
-                _manager!.CommitNativeTextEdit(_snapshot, _preview.Bytes);
+                _manager!.CommitNativeTextEdit(_snapshot, _preview.Bytes, _pageIndex);
                 // Stream operation indexes change after replacement. Discard stale
                 // handles; the next selection is extracted from committed bytes.
                 foreach (var item in _annotations!.Where(a => a.PageIndex == _pageIndex && a.NativeText != null &&

@@ -22,7 +22,7 @@ public sealed class DocumentSearchController
         _searchService = searchService;
     }
 
-    public void CancelPendingSearch() => ++_searchVersion;
+    public void CancelPendingSearch() { ++_searchVersion; _searchService.Dispose(); }
 
     public async Task SearchAsync(
         PdfDocumentManager manager,
@@ -66,12 +66,13 @@ public sealed class DocumentSearchController
 
             if (version != _searchVersion || !ReferenceEquals(pdfBytes, manager.GetPdfBytes())) return;
             ClearHighlights(overlayCanvas);
-            for (int i = 0; i < result.Rectangles.Count; i++)
-                AddHighlight(overlayCanvas, result.Rectangles[i], i == result.SelectedIndex);
-            var selected = result.Rectangles[result.SelectedIndex];
+            for (int i = 0; i < result.Matches.Count; i++)
+                foreach (var rectangle in result.Matches[i])
+                    AddHighlight(overlayCanvas, rectangle, i == result.SelectedIndex);
+            var selected = result.Matches[result.SelectedIndex][0];
             scrollViewer.ChangeView(selected.GetX() * PdfToPixels * zoomLevel,
                 selected.GetY() * PdfToPixels * zoomLevel, null);
-            setStatus($"{result.PageNumber} 페이지: {result.SelectedIndex + 1}/{result.Rectangles.Count} 일치 항목");
+            setStatus($"{result.PageNumber} 페이지: {result.SelectedIndex + 1}/{result.Matches.Count} 일치 항목");
         }
         catch (Exception ex)
         {

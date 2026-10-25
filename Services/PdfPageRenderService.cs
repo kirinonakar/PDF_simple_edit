@@ -16,41 +16,17 @@ public sealed record RenderedPdfPage(
 
 public sealed class PdfPageRenderService
 {
-    private sealed class DocumentCache
-    {
-        public byte[]? Snapshot;
-        public Task<PdfRenderDocument>? Load;
-    }
+    private readonly ConditionalWeakTable<PdfDocumentManager, PdfSnapshotCache<PdfRenderDocument>> _documents = new();
 
-    private readonly ConditionalWeakTable<PdfDocumentManager, DocumentCache> _documents = new();
-
-    private async Task<PdfRenderDocument> GetDocumentAsync(PdfDocumentManager manager, byte[] snapshot)
+    private Task<PdfSnapshotCache<PdfRenderDocument>.Lease> GetDocumentAsync(PdfDocumentManager manager, byte[] snapshot)
     {
-        // Edits, undo/redo, save and signature detachment produce new snapshots.
-        // Retain only the latest renderer per tab, not one per undo entry.
-        DocumentCache cache = _documents.GetValue(manager, _ => new DocumentCache());
-        Task<PdfRenderDocument> load;
-        lock (cache)
+        var cache = _documents.GetValue(manager, owner =>
         {
-            if (!ReferenceEquals(cache.Snapshot, snapshot) || cache.Load == null)
-            {
-                cache.Snapshot = snapshot;
-                cache.Load = PdfRenderDocument.LoadAsync(snapshot);
-            }
-            load = cache.Load;
-        }
-        try
-        {
-            return await load;
-        }
-        catch
-        {
-            lock (cache)
-            {
-                if (ReferenceEquals(cache.Load, load)) cache.Load = null;
-            }
-            throw;
-        }
+            var created = new PdfSnapshotCache<PdfRenderDocument>(PdfRenderDocument.LoadAsync);
+            owner.Closed += (_, _) => created.Clear();
+            return created;
+        });
+        return cache.AcquireAsync(snapshot);
     }
 
     public async Task<RenderedPdfPage?> RenderPageAsync(
@@ -62,7 +38,8 @@ public sealed class PdfPageRenderService
         if (snapshot == null)
             return null;
 
-        PdfRenderDocument document = await GetDocumentAsync(manager, snapshot);
+        using var lease = await GetDocumentAsync(manager, snapshot);
+        PdfRenderDocument document = lease.Value;
         using MemoryStream? stream = await document.RenderAsync(pageIndex, renderScale);
         if (stream == null || !ReferenceEquals(snapshot, manager.GetPdfBytes()))
             return null;
@@ -81,7 +58,8 @@ public sealed class PdfPageRenderService
     {
         byte[]? snapshot = manager.GetPdfBytes();
         if (snapshot == null) return null;
-        var document = await GetDocumentAsync(manager, snapshot);
+        using var lease = await GetDocumentAsync(manager, snapshot);
+        var document = lease.Value;
         using var stream = await document.RenderAsync(pageIndex, scale, cancellationToken, region);
         if (stream == null || !ReferenceEquals(snapshot, manager.GetPdfBytes())) return null;
         var bitmap = new BitmapImage();
@@ -101,7 +79,8 @@ public sealed class PdfPageRenderService
         byte[] snapshot = annotatedSnapshot ?? sourceVersion;
 
         cancellationToken.ThrowIfCancellationRequested();
-        PdfRenderDocument document = await GetDocumentAsync(manager, snapshot);
+        using var lease = await GetDocumentAsync(manager, snapshot);
+        PdfRenderDocument document = lease.Value;
         int pageCount = document.PageCount;
         for (int pageIndex = 0; pageIndex < pageCount; pageIndex++)
         {
@@ -139,7 +118,8 @@ public sealed class PdfPageRenderService
         byte[]? sourceVersion = manager.GetPdfBytes();
         if (sourceVersion == null) return null;
         byte[] snapshot = annotatedSnapshot ?? sourceVersion;
-        var document = await GetDocumentAsync(manager, snapshot);
+        using var lease = await GetDocumentAsync(manager, snapshot);
+        var document = lease.Value;
         using var stream = await document.RenderAsync(pageIndex, 0.4, cancellationToken);
         if (stream == null || !ReferenceEquals(sourceVersion, manager.GetPdfBytes())) return null;
         var bitmap = new BitmapImage();

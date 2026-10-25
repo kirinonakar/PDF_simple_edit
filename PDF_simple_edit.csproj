@@ -17,15 +17,11 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <PublishReadyToRun>true</PublishReadyToRun>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
-    <PublishTrimmed>true</PublishTrimmed>
-    <TrimMode>partial</TrimMode>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
-    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!-- Embed the manifest version so packaged and unpackaged apps share one source. -->
@@ -78,7 +74,7 @@
     <PackageReference Include="itext.webp-image-support" Version="9.8.0" />
     <PackageReference Include="PDFiumCore" Version="157.0.8100" />
     <PackageReference Include="itext.bouncy-castle-adapter" Version="9.8.0" />
-    <PackageReference Include="itext.pdfsweep" Version="5.0.8" NoWarn="NU1701" />
+    <PackageReference Include="itext.pdfsweep" Version="5.0.8" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />

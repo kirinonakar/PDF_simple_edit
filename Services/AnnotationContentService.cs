@@ -246,6 +246,7 @@ public sealed class AnnotationContentService
         OriginalFontObjectNumber = source.OriginalFontObjectNumber,
         TextFragments = source.TextFragments.Select(fragment => fragment.Clone()).ToList(),
         ImageId = source.ImageId,
+        OverlayId = source.OverlayId,
         GraphicOperationIndexes = new List<int>(source.GraphicOperationIndexes),
         GraphicTextOperationIndexes = new List<int>(source.GraphicTextOperationIndexes),
         GraphicOperations = source.GraphicOperations.Select(target => target.Clone()).ToList()

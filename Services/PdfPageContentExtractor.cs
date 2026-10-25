@@ -1480,6 +1480,7 @@ namespace PDF_simple_edit.Services
                         // page renderer rebuilds the image with its transparency.
                         Text = imagePath,
                         ImageId = target.ResourceName,
+                        OverlayId = image.GetPdfObject().GetAsString(new PdfName("PSEOverlayId"))?.ToUnicodeString(),
                         GraphicCtm = new(a, b, c, d, e, f),
                         ContentStreamIndex = target.StreamIndex,
                         ContentStreamObjectNumber = target.StreamObjectNumber,
