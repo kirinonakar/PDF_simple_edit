@@ -534,9 +534,10 @@ namespace PDF_simple_edit.Helpers
                 toIndex < 0 || toIndex >= pageCount || fromIndex == toIndex)
                 return;
 
-            // iText page numbers are one-based. MovePage's second argument is
-            // the new one-based position in the same document.
-            doc.MovePage(fromIndex + 1, toIndex + 1);
+            // iText inserts BEFORE a page in the original ordering. Moving down
+            // must cross the destination page; pageCount + 1 appends at the end.
+            int insertBefore = toIndex + (fromIndex < toIndex ? 2 : 1);
+            doc.MovePage(fromIndex + 1, insertBefore);
         }
 
         public void NewDocument()
