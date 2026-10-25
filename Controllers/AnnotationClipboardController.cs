@@ -310,13 +310,7 @@ public sealed class AnnotationClipboardController(
             await bitmapReference.OpenReadAsync();
         BitmapDecoder decoder = await BitmapDecoder.CreateAsync(sourceStream);
 
-        StorageFolder tempFolder = await StorageFolder.GetFolderFromPathAsync(Path.GetTempPath());
-        StorageFolder appFolder = await tempFolder.CreateFolderAsync(
-            "PDF_simple_edit",
-            CreationCollisionOption.OpenIfExists);
-        StorageFolder clipboardFolder = await appFolder.CreateFolderAsync(
-            "clipboard",
-            CreationCollisionOption.OpenIfExists);
+        StorageFolder clipboardFolder = await StorageFolder.GetFolderFromPathAsync(PdfTemporaryFiles.GetDirectory("clipboard"));
         StorageFile imageFile = await clipboardFolder.CreateFileAsync(
             $"clipboard_{Guid.NewGuid():N}.png",
             CreationCollisionOption.GenerateUniqueName);

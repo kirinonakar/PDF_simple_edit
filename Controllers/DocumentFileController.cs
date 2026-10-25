@@ -198,23 +198,24 @@ public sealed class DocumentFileController(
 
     public async Task PrintAsync()
     {
-        if (!getManager().IsLoaded) return;
-
+        if (!getManager().IsLoaded || _isSaveInProgress || printHelper.IsPrinting) return;
+        string? tempPath = null;
         try
         {
-            // 인쇄 시에는 현재 모든 어노테이션이 반영된 상태여야 하므로 임시 파일로 플래트닝하여 저장
-            string tempPath = Path.Combine(Path.GetTempPath(), $"print_{Guid.NewGuid()}.pdf");
-            if (!await PerformSaveAsync(tempPath, false))
-                return;
-
-            var hwnd = getWindowHandle();
-            // PerformSaveAsync handles iText 9 document flushing
-            await printHelper.PrintAsync(tempPath, hwnd);
+            var manager = getManager();
+            var annotations = getAnnotations();
+            await finishInlineEditAsync();
+            if (!ReferenceEquals(manager, getManager())) return;
+            byte[] bytes = await saveService.CreateAnnotatedBytesAsync(manager, annotations);
+            tempPath = Path.Combine(PdfTemporaryFiles.GetDirectory("print"), $"print_{Guid.NewGuid():N}.pdf");
+            await File.WriteAllBytesAsync(tempPath, bytes);
+            await printHelper.PrintAsync(tempPath, getWindowHandle());
         }
         catch (Exception ex)
         {
             await showErrorAsync("인쇄 오류", $"인쇄 중 오류가 발생했습니다: {ex.Message}");
         }
+        finally { PdfTemporaryFiles.TryDelete(tempPath); }
     }
 
     private async Task<bool> PerformSaveAsync(string filePath, bool isUserSave)
@@ -240,11 +241,12 @@ public sealed class DocumentFileController(
                 !await RequestProtectionAsync(manager))
                 return false;
 
-            await saveService.SaveAsync(
-                manager,
-                annotations,
-                filePath,
-                isUserSave);
+            bool savedCurrent = await saveService.SaveAsync(manager, annotations, filePath, isUserSave);
+            if (!savedCurrent)
+            {
+                await showErrorAsync("추가 저장 필요", "파일은 저장했지만 저장 중 추가된 편집이 있습니다. 다시 저장해 주세요.");
+                return false;
+            }
 
             if (isUserSave)
             {

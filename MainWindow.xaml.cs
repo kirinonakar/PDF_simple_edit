@@ -203,7 +203,12 @@ namespace PDF_simple_edit
                     _fontSettings, TxtStatus, () => _pdfManager, () => _annotations,
                     () => _windowSettingsController?.Save());
                 _pageOperationsController = new PdfPageOperationsController(
-                    new PdfOperationService(), TxtStatus, LoadingRing,
+                    new PdfOperationService(), new PdfSaveService(new PdfAnnotationDocumentService()),
+                    async () =>
+                    {
+                        await _annotationCanvasController.FinishActiveInlineEditAsync();
+                        await _formOverlayController.FinishActiveEditAsync();
+                    }, TxtStatus, LoadingRing,
                     () => _pdfManager, () => _activeTab, () => _currentPageIndex,
                     value => _currentPageIndex = value, GetSelectedPageIndices,
                     () => PageListView.SelectedItems.Clear(),
@@ -359,6 +364,7 @@ namespace PDF_simple_edit
         private async void DocTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             _pageViewController?.CancelPendingOperations();
+            _documentSearchController?.CancelPendingSearch();
             // Unhook old events
             if (_activeTab != null)
             {
@@ -380,9 +386,8 @@ namespace PDF_simple_edit
                 _activeTab.PdfManager.UndoRedoPerformed += PdfManager_UndoRedoPerformed;
 
                 // 설정: 원복 시 복원할 UI 상태(어노테이션 목록) 제공 함수
-                _activeTab.PdfManager.GetUIStateFunc = () => {
-                    return _activeTab.Annotations.Select(a => a.Clone()).ToList();
-                };
+                var selectedTab = _activeTab;
+                selectedTab.PdfManager.GetUIStateFunc = () => selectedTab.Annotations.Select(a => a.Clone()).ToList();
 
                 PageListView.ItemsSource = _pageThumbnails;
 
@@ -584,26 +589,17 @@ namespace PDF_simple_edit
 
         private void PdfManager_UndoRedoPerformed(object? sender, object? state)
         {
-            if (_activeTab != null && state is List<PdfAnnotation> savedAnnotations)
+            var tab = _activeTab;
+            if (tab == null || !ReferenceEquals(sender, tab.PdfManager) || state is not List<PdfAnnotation> savedAnnotations) return;
+            DispatcherQueue.TryEnqueue(async () =>
             {
-                DispatcherQueue.TryEnqueue(async () => {
-                    _activeTab.Annotations.Clear();
-                    foreach (var ann in savedAnnotations)
-                    {
-                        _activeTab.Annotations.Add(ann);
-                    }
-
-                    // Native selections contain stream indexes from the previous
-                    // revision. They cannot be reused after undo/redo.
-                    _annotationCanvasController.ClearSelection();
-
-                    // UI 갱신
-                    RenderAnnotationOverlays();
-
-                    // 만약 Undo로 인해 원본 PDF 데이터가 바뀌었다면 렌더링 다시 수행
-                    await RenderCurrentPageAsync();
-                });
-            }
+                tab.Annotations.Clear();
+                tab.Annotations.AddRange(savedAnnotations.Select(annotation => annotation.Clone()));
+                if (!ReferenceEquals(tab, _activeTab)) return;
+                _annotationCanvasController.ClearSelection();
+                RenderAnnotationOverlays();
+                await RenderCurrentPageAsync();
+            });
         }
 
         private void UpdateTabHeader()
@@ -894,7 +890,7 @@ namespace PDF_simple_edit
         private void FitToPage() => _pageViewController.FitToPage();
 
         private void PdfScrollViewer_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e) =>
-            _pageViewController.ViewChanged();
+            _pageViewController.ViewChanged(e.IsIntermediate);
 
         #endregion
 

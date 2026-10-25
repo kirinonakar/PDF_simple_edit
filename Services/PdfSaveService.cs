@@ -2,7 +2,6 @@ using PDF_simple_edit.Helpers;
 using PDF_simple_edit.Models;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -10,53 +9,104 @@ namespace PDF_simple_edit.Services;
 
 public sealed class PdfSaveService
 {
-    private const int FileReplaceAttempts = 5;
     private readonly PdfAnnotationDocumentService _annotationDocumentService;
     private readonly PdfFormService _formService = new();
 
-    public PdfSaveService(PdfAnnotationDocumentService annotationDocumentService)
-    {
+    public PdfSaveService(PdfAnnotationDocumentService annotationDocumentService) =>
         _annotationDocumentService = annotationDocumentService;
+
+    // Called on the UI thread: only font measurement touches WinUI. PDF parsing,
+    // writing, encryption and signature detachment run on worker threads.
+    private static List<PdfAnnotation> CaptureAnnotations(IReadOnlyList<PdfAnnotation> annotations)
+    {
+        var captured = annotations.Select(a => a.Clone()).ToList();
+        foreach (var annotation in captured.Where(a => a.NativeText == null && !a.IsApplied &&
+            !a.IsOriginalTextReplacement && a.Type is AnnotationType.Text or AnnotationType.FreeText))
+        {
+            annotation.LineHeight = AnnotationTextLayoutService.GetDisplayLineHeight(annotation, annotation.Content);
+            annotation.BaselineOffset = AnnotationTextLayoutService.GetVisualBaselineOffset(annotation);
+        }
+        return captured;
     }
 
-    public async Task SaveAsync(
-        PdfDocumentManager manager,
-        List<PdfAnnotation> annotations,
-        string filePath,
-        bool isUserSave)
+    public Task<byte[]> CreateAnnotatedBytesAsync(PdfDocumentManager manager, IReadOnlyList<PdfAnnotation> annotations)
+    {
+        byte[] source = manager.GetPdfBytes() ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+        var captured = CaptureAnnotations(annotations);
+        return Task.Run(() => CreateAnnotatedBytes(manager, source, captured));
+    }
+
+    private byte[] CreateAnnotatedBytes(PdfDocumentManager manager, byte[] source, List<PdfAnnotation> annotations)
     {
         bool needsAnnotationWrite = annotations.Any(a => a.NativeText == null &&
             (!a.IsApplied && !a.IsOriginalTextReplacement || a.Type == AnnotationType.Signature));
-        byte[] sourceBytes = manager.GetPdfBytes() ??
-            throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
-        bool needsFormRepair = _formService.NeedsAppearanceRepair(sourceBytes);
-        byte[] editedBytes = !needsAnnotationWrite && !needsFormRepair
-            ? sourceBytes
-            : manager.CreatePdfBytesWithEdits(document =>
+        bool needsFormRepair = _formService.NeedsAppearanceRepair(source);
+        if (!needsAnnotationWrite && !needsFormRepair) return source;
+        return PdfDocumentManager.RewritePdfBytes(source, document =>
         {
             if (needsFormRepair) _formService.RepairAppearances(document);
-            if (needsAnnotationWrite)
-            {
-                manager.RemoveSavedSignatureAnnotations(document);
-                foreach (PdfAnnotation annotation in annotations)
-                    _annotationDocumentService.Apply(manager, document, annotation);
-            }
+            if (!needsAnnotationWrite) return;
+            manager.RemoveSavedSignatureAnnotations(document);
+            foreach (var annotation in annotations)
+                _annotationDocumentService.Apply(manager, document, annotation, textMetricsPrepared: true);
         });
+    }
 
-        if (!isUserSave)
+    public async Task<bool> SaveAsync(PdfDocumentManager manager, List<PdfAnnotation> annotations, string filePath, bool isUserSave)
+    {
+        byte[] source = manager.GetPdfBytes() ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+        long version = manager.EditVersion;
+        var protection = manager.Protection;
+        var captured = CaptureAnnotations(annotations);
+        var prepared = await Task.Run(async () =>
         {
-            await File.WriteAllBytesAsync(filePath, editedBytes);
-            return;
+            if (!isUserSave) return (Disk: CreateAnnotatedBytes(manager, source, captured), Editor: source);
+            // Bake non-signature overlays into the editor once. Add signatures and
+            // encryption together in the disk pass, keeping Ink out of the editor.
+            byte[] editor = CreateAnnotatedBytes(manager, source, captured.Where(a => a.Type != AnnotationType.Signature).ToList());
+            await RefreshSavedAnnotationsAsync(manager, editor, captured);
+            var signatures = captured.Where(a => a.Type == AnnotationType.Signature).ToList();
+            byte[] disk = signatures.Count == 0 ? PdfSecurityService.Encrypt(editor, protection)
+                : PdfDocumentManager.RewritePdfBytes(editor, document =>
+                {
+                    manager.RemoveSavedSignatureAnnotations(document);
+                    foreach (var signature in signatures)
+                        _annotationDocumentService.Apply(manager, document, signature, textMetricsPrepared: true);
+                }, protection.Enabled ? PdfSecurityService.CreateEncryptionProperties(protection) : null);
+            return (Disk: disk, Editor: editor);
+        });
+        await WriteAtomicallyAsync(filePath, prepared.Disk);
+        if (!isUserSave) return true;
+        if (ReferenceEquals(source, manager.GetPdfBytes()) && version == manager.EditVersion)
+        {
+            for (int i = 0; i < annotations.Count; i++) CopySavedState(annotations[i], captured[i]);
+            return manager.ReplacePdfBytesAfterSave(source, version, prepared.Editor, filePath);
         }
+        // Edits made during a save stay modified, with their original byte/UI pair.
+        return false;
+    }
 
-        // 메모리의 문서는 항상 평문이므로, 사용자 저장일 때만 원래의 보호 설정을
-        // 적용한 바이트를 디스크에 기록한다. (인쇄용 임시 파일 등은 평문 유지)
-        await WriteAtomicallyAsync(filePath, manager.ProtectBytesForSave(editedBytes));
+    private static void CopySavedState(PdfAnnotation target, PdfAnnotation saved)
+    {
+        if (saved.NativeText != null && !ReferenceEquals(target.NativeText, saved.NativeText))
+            NativePdfTextService.UpdateAnnotation(target, saved.NativeText);
+        target.IsApplied = saved.IsApplied;
+        target.X = saved.X; target.Y = saved.Y; target.Width = saved.Width; target.Height = saved.Height;
+        target.Rotation = saved.Rotation;
+        target.IsOriginalImageReplacement = saved.IsOriginalImageReplacement;
+        target.OriginalImageName = saved.OriginalImageName;
+        target.OriginalPdfX = saved.OriginalPdfX; target.OriginalPdfY = saved.OriginalPdfY;
+        target.GraphicCtm = saved.GraphicCtm;
+        target.ContentStreamIndex = saved.ContentStreamIndex;
+        target.ContentStreamObjectNumber = saved.ContentStreamObjectNumber;
+        target.OperationIndex = saved.OperationIndex;
+    }
 
-        manager.ReplacePdfBytesAfterSave(editedBytes, filePath);
+    private static async Task RefreshSavedAnnotationsAsync(PdfDocumentManager manager, byte[] editedBytes, List<PdfAnnotation> annotations)
+    {
         foreach (var pageGroup in annotations.Where(a => a.Type == AnnotationType.Image && !a.IsOriginalImageReplacement).GroupBy(a => a.PageIndex))
         {
-            var contents = await manager.ExtractPageContentsAsync(pageGroup.Key);
+            var contents = await new PdfPageContentExtractor().ExtractAsync(editedBytes, pageGroup.Key, manager.TextEditingMode);
             var used = new System.Collections.Generic.HashSet<PdfPageContent>();
             foreach (var annotation in pageGroup)
             {
@@ -105,54 +155,9 @@ public sealed class PdfSaveService
         foreach (PdfAnnotation annotation in annotations.Where(annotation => annotation.Type == AnnotationType.Signature))
             annotation.IsApplied = true;
 
-        // Keep the just-saved Ink annotations in the file, but remove them from
-        // the in-memory render source. The overlay renders the editor copies;
-        // otherwise a moved signature would appear twice until the next save.
-        manager.DetachSavedSignatureAnnotationsForEditing();
+        foreach (var annotation in annotations.Where(a => a.Type == AnnotationType.Highlight))
+            annotation.IsApplied = true;
     }
 
-    private static async Task WriteAtomicallyAsync(string filePath, byte[] contents)
-    {
-        string fullPath = Path.GetFullPath(filePath);
-        string? directory = Path.GetDirectoryName(fullPath);
-        if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
-            throw new DirectoryNotFoundException($"저장할 폴더를 찾을 수 없습니다: {directory}");
-
-        string temporaryPath = Path.Combine(
-            directory,
-            $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
-
-        try
-        {
-            await File.WriteAllBytesAsync(temporaryPath, contents);
-
-            for (int attempt = 1; attempt <= FileReplaceAttempts; attempt++)
-            {
-                try
-                {
-                    File.Move(temporaryPath, fullPath, true);
-                    return;
-                }
-                catch (IOException) when (attempt < FileReplaceAttempts)
-                {
-                    await Task.Delay(attempt * 100);
-                }
-            }
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            throw new IOException($"파일에 쓸 권한이 없습니다: {fullPath}", ex);
-        }
-        finally
-        {
-            try
-            {
-                if (File.Exists(temporaryPath))
-                    File.Delete(temporaryPath);
-            }
-            catch
-            {
-            }
-        }
-    }
+    internal static Task WriteAtomicallyAsync(string filePath, byte[] contents) => PdfAtomicFile.WriteAsync(filePath, contents);
 }

@@ -556,6 +556,9 @@ namespace PDF_simple_edit.Services
             PdfCanvas canvas = new PdfCanvas(page, true);
             
             canvas.SaveState();
+            var textTransform = PdfPageCoordinates.ToDisplay(page).Inverse().After(
+                new PdfAffineTransform(1, 0, 0, -1, -rect.GetLeft(), rect.GetTop()));
+            canvas.ConcatMatrix(textTransform.A, textTransform.B, textTransform.C, textTransform.D, textTransform.E, textTransform.F);
             canvas.BeginText();
             canvas.SetFillColor(color ?? ColorConstants.BLACK);
 
@@ -803,11 +806,8 @@ namespace PDF_simple_edit.Services
                 width <= 0 || height <= 0 || double.IsNaN(width) || double.IsNaN(height))
                 return;
 
-            // 핵심: Y축 변환
-            var pageSize = page.GetPageSize();
-            float pdfY = pageSize.GetHeight() - (float)y - (float)height;
-
-            canvas.Rectangle((float)x, pdfY, (float)width, (float)height); // 변환된 pdfY 사용
+            var bounds = PdfPageCoordinates.ToDisplay(page).Inverse().Map(new PdfTextBox(x, y, width, height));
+            canvas.Rectangle(bounds.X, bounds.Y, bounds.Width, bounds.Height);
             canvas.Fill();
             
             canvas.RestoreState();
@@ -826,7 +826,7 @@ namespace PDF_simple_edit.Services
                 return;
 
             PdfPage page = doc.GetPage(pageIndex + 1);
-            Rectangle pageSize = page.GetPageSize();
+            var toPdf = PdfPageCoordinates.ToDisplay(page).Inverse();
 
             var validPoints = points
                 .Where(point => double.IsFinite(point.X) && double.IsFinite(point.Y))
@@ -834,21 +834,18 @@ namespace PDF_simple_edit.Services
             if (validPoints.Count < 2)
                 return;
 
-            float minX = (float)validPoints.Min(point => point.X);
-            float maxX = (float)validPoints.Max(point => point.X);
-            float minY = (float)validPoints.Min(point => point.Y);
-            float maxY = (float)validPoints.Max(point => point.Y);
-            float pdfBottom = pageSize.GetHeight() - maxY;
+            var mapped = validPoints.Select(point => toPdf.Map(point.X, point.Y)).ToList();
+            double padding = Math.Clamp(lineWidth, 0.1, 100) / 2;
             var rectangle = new Rectangle(
-                minX,
-                pdfBottom,
-                Math.Max(maxX - minX, 1),
-                Math.Max(maxY - minY, 1));
+                (float)(mapped.Min(point => point.X) - padding),
+                (float)(mapped.Min(point => point.Y) - padding),
+                (float)Math.Max(mapped.Max(point => point.X) - mapped.Min(point => point.X) + padding * 2, 1),
+                (float)Math.Max(mapped.Max(point => point.Y) - mapped.Min(point => point.Y) + padding * 2, 1));
             var inkPath = new PdfArray();
-            foreach (PdfPathPoint point in validPoints)
+            foreach (var point in mapped)
             {
-                inkPath.Add(new PdfNumber((float)point.X));
-                inkPath.Add(new PdfNumber(pageSize.GetHeight() - (float)point.Y));
+                inkPath.Add(new PdfNumber(point.X));
+                inkPath.Add(new PdfNumber(point.Y));
             }
 
             var inkList = new PdfArray();
@@ -860,6 +857,7 @@ namespace PDF_simple_edit.Services
                 PdfName.W,
                 new PdfNumber((float)Math.Clamp(lineWidth, 0.1, 100)));
             inkAnnotation.SetBorderStyle(borderStyle);
+            inkAnnotation.SetFlag(iText.Kernel.Pdf.Annot.PdfAnnotation.PRINT);
             if (!string.IsNullOrEmpty(metadata))
                 inkAnnotation.SetContents(metadata);
             page.AddAnnotation(inkAnnotation);
@@ -871,19 +869,15 @@ namespace PDF_simple_edit.Services
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages()) return;
 
             var page = doc.GetPage(pageIndex + 1);
-            var pageSize = page.GetPageSize();
-
-            // UI 좌표(Top-Down)를 PDF 좌표(Bottom-Up)로 변환
-            float pdfY = pageSize.GetHeight() - (float)y - (float)height;
-
+            if (width <= 0 || height <= 0) return;
             ImageData data = ImageDataFactory.Create(imagePath);
-            iText.Layout.Element.Image img = new iText.Layout.Element.Image(data);
-            
-            // Use iText.Layout.Canvas for easy positioning
-            using var canvasLayout = new iText.Layout.Canvas(new PdfCanvas(page, true), pageSize);
-            img.SetFixedPosition((float)x, pdfY, (float)width);
-            if (height > 0) img.SetHeight((float)height);
-            canvasLayout.Add(img);
+            // Image coordinates are bottom-up inside the unit square.
+            var imageToDisplay = new PdfAffineTransform(width, 0, 0, -height, x, y + height);
+            var matrix = PdfPageCoordinates.ToDisplay(page).Inverse().After(imageToDisplay);
+            var canvas = new PdfCanvas(page, true);
+            canvas.AddImageWithTransformationMatrix(data, (float)matrix.A, (float)matrix.B,
+                (float)matrix.C, (float)matrix.D, (float)matrix.E, (float)matrix.F, false);
+            canvas.Release();
         }
 
     }

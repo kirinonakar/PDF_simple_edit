@@ -1,5 +1,7 @@
 using Microsoft.UI.Xaml;
 using PDF_simple_edit.Helpers;
+using PDF_simple_edit.Services;
+using System.Threading.Tasks;
 using System;
 
 namespace PDF_simple_edit
@@ -28,7 +30,9 @@ namespace PDF_simple_edit
 
         protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
+            _ = Task.Run(PdfTemporaryFiles.CleanupStaleFiles);
             _window = new MainWindow();
+            _window.Closed += (_, _) => PdfTemporaryFiles.CleanupSession();
             _window.Activate();
         }
     }

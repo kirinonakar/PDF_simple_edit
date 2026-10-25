@@ -10,10 +10,10 @@ namespace PDF_simple_edit.Services;
 
 public sealed class PdfAnnotationDocumentService
 {
-    public void Apply(PdfDocumentManager manager, PdfDocument document, PdfAnnotation annotation)
+    public void Apply(PdfDocumentManager manager, PdfDocument document, PdfAnnotation annotation, bool textMetricsPrepared = false)
     {
-        if (annotation.NativeText != null || (annotation.IsApplied && annotation.Type == AnnotationType.Image)) return;
-        if (System.Math.Abs(annotation.Rotation) > .0001 && !annotation.IsOriginalImageReplacement &&
+        if (annotation.NativeText != null || (annotation.IsApplied && annotation.Type is AnnotationType.Image or AnnotationType.Highlight)) return;
+        if (System.Math.Abs(annotation.Rotation) > .0001 && annotation.Type != AnnotationType.Signature && !annotation.IsOriginalImageReplacement &&
             !annotation.IsOriginalTextReplacement && !(annotation.IsApplied && annotation.Type is AnnotationType.Text or AnnotationType.FreeText))
         {
             var page = document.GetPage(annotation.PageIndex + 1);
@@ -24,9 +24,10 @@ public sealed class PdfAnnotationDocumentService
             {
                 var temporary = temporaryDocument.AddNewPage(new PageSize(page.GetMediaBox()));
                 temporary.SetCropBox(page.GetCropBox());
+                temporary.SetRotation(page.GetRotation());
                 var unrotated = annotation.Clone(); unrotated.Rotation = 0;
                 unrotated.PageIndex = 0;
-                Apply(manager, temporaryDocument, unrotated);
+                Apply(manager, temporaryDocument, unrotated, textMetricsPrepared);
             }
             // Finalize subset font dictionaries before importing their resources.
             using var sourceDocument = new PdfDocument(new PdfReader(new System.IO.MemoryStream(buffer.ToArray())));
@@ -66,10 +67,10 @@ public sealed class PdfAnnotationDocumentService
                 // The overlay is the editing source of truth. Measure its visual
                 // line metrics and pass those same values to the PDF writer instead
                 // of restoring the original PDF operators' per-line positions.
-                double lineHeight = AnnotationTextLayoutService.GetDisplayLineHeight(
+                double lineHeight = textMetricsPrepared ? annotation.LineHeight : AnnotationTextLayoutService.GetDisplayLineHeight(
                     annotation,
                     annotation.Content);
-                double baselineOffset = AnnotationTextLayoutService.GetVisualBaselineOffset(annotation);
+                double baselineOffset = textMetricsPrepared ? annotation.BaselineOffset : AnnotationTextLayoutService.GetVisualBaselineOffset(annotation);
                 int characterSpacing = AnnotationTextLayoutService.GetDisplayCharacterSpacing(
                     annotation,
                     annotation.Content);
@@ -106,10 +107,14 @@ public sealed class PdfAnnotationDocumentService
                     (float)annotation.Opacity);
                 break;
             case AnnotationType.Signature:
+                var signatureBounds = new PdfTextBox(annotation.X, annotation.Y, annotation.Width, annotation.Height);
+                var signatureRotation = PdfAffineTransform.Between(signatureBounds, signatureBounds, annotation.Rotation);
+                var points = annotation.SignaturePoints.Select(point => signatureRotation.Map(point.X, point.Y))
+                    .Select(point => new PdfPathPoint { X = point.X, Y = point.Y }).ToList();
                 manager.AddSignatureInternal(
                     document,
                     annotation.PageIndex,
-                    annotation.SignaturePoints,
+                    points,
                     color,
                     annotation.LineWidth,
                     PdfSignatureMetadata.Serialize(annotation));

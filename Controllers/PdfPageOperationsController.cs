@@ -16,6 +16,8 @@ namespace PDF_simple_edit.Controllers;
 /// <summary>Coordinates merge, split, page deletion and page export workflows.</summary>
 public sealed class PdfPageOperationsController(
     PdfOperationService operationService,
+    PdfSaveService saveService,
+    Func<Task> finishInlineEditAsync,
     TextBlock statusText,
     ProgressRing loadingIndicator,
     Func<PdfDocumentManager> getManager,
@@ -92,63 +94,59 @@ public sealed class PdfPageOperationsController(
 
     public async Task MergeAsync()
     {
-        var hwnd = getWindowHandle();
+        var sourceTab = getActiveTab();
+        var manager = getManager();
         PdfMergeRequest? request = await operationService.CreateMergeRequestAsync(
-            getXamlRoot(), hwnd, getManager().IsLoaded);
-        if (request == null)
-            return;
-
-        PdfDocumentTab? newTab = null;
-        PdfDocumentManager manager = getManager();
-        if (!getManager().IsLoaded)
-        {
-            newTab = new PdfDocumentTab();
-            manager = newTab.PdfManager;
-        }
-
+            getXamlRoot(), getWindowHandle(), manager.IsLoaded);
+        if (request == null || !ReferenceEquals(manager, getManager())) return;
         statusText.Text = "PDF 합치기 중...";
         loadingIndicator.IsActive = true;
         try
         {
-            string? outputPath = await operationService.ExecuteMergeAsync(manager, request);
-            if (outputPath == null)
+            await finishInlineEditAsync();
+            if (!ReferenceEquals(manager, getManager())) return;
+            if (request.Target == PdfMergeTarget.CurrentDocument)
             {
-                await showErrorAsync("오류", "PDF 합치기에 실패했습니다.");
-                return;
+                // Keep existing overlays pending, so the merge remains one undoable
+                // document edit and does not write to the original file.
+                var signatures = await manager.MergeIntoDocumentAsync(request.SourcePaths);
+                sourceTab!.Annotations.AddRange(signatures);
             }
-
-            if (newTab != null)
+            else
             {
-                newTab.FilePath = outputPath;
-                newTab.Header = Path.GetFileName(outputPath);
+                byte[]? annotated = manager.IsLoaded
+                    ? await saveService.CreateAnnotatedBytesAsync(manager, sourceTab!.Annotations) : null;
+                await operationService.ExecuteMergeAsync(manager, request, annotated);
+                var newTab = new PdfDocumentTab { FilePath = request.OutputPath, Header = Path.GetFileName(request.OutputPath)! };
+                if (await newTab.PdfManager.OpenWithPasswordAsync(request.OutputPath!, manager.SavePassword) != PdfOpenStatus.Success)
+                    throw new IOException("병합 파일은 저장되었지만 다시 열 수 없습니다.");
+                newTab.PdfManager.SetProtection(manager.Protection);
+                newTab.PdfManager.MarkModified(false);
+                newTab.Annotations.AddRange(await Task.Run(newTab.PdfManager.LoadSavedSignatures));
                 addTab(newTab);
             }
-            else if (getActiveTab() is { } activeTab)
-                activeTab.FilePath = outputPath;
-
-            setCurrentPageIndex(0);
             statusText.Text = "PDF 합치기 완료";
             updateUIState();
         }
         catch (Exception ex)
         {
-            await showErrorAsync("오류", $"합치기 중 에러 발생: {ex.Message}");
+            statusText.Text = "PDF 합치기에 실패했습니다.";
+            await showErrorAsync("합치기 오류", ex.Message);
         }
-        finally
-        {
-            loadingIndicator.IsActive = false;
-        }
+        finally { loadingIndicator.IsActive = false; }
     }
 
     public async Task SplitAsync()
     {
         if (!getManager().IsLoaded) return;
 
+        var manager = getManager();
+        var tab = getActiveTab();
         PdfSplitRequest? request = await operationService.CreateSplitRequestAsync(
             getXamlRoot(),
             getWindowHandle(),
             getManager().PageCount);
-        if (request == null)
+        if (request == null || !ReferenceEquals(manager, getManager()))
             return;
         if (request.Ranges.Count == 0)
         {
@@ -160,12 +158,16 @@ public sealed class PdfPageOperationsController(
         loadingIndicator.IsActive = true;
         try
         {
-            int resultCount = await getManager().SplitFileAsync(
-                request.OutputFolder, request.Ranges.ToList());
+            await finishInlineEditAsync();
+            if (!ReferenceEquals(manager, getManager())) return;
+            byte[] annotated = await saveService.CreateAnnotatedBytesAsync(manager, tab!.Annotations);
+            int resultCount = await manager.SplitFileAsync(
+                request.OutputFolder, request.Ranges.ToList(), annotated);
             statusText.Text = $"PDF 나누기 완료: {resultCount}개 파일 생성됨";
         }
         catch (Exception ex)
         {
+            statusText.Text = "PDF 나누기에 실패했습니다.";
             await showErrorAsync("나누기 오류", $"나누기 중 에러 발생: {ex.Message}");
         }
         finally
@@ -222,6 +224,8 @@ public sealed class PdfPageOperationsController(
         if (!getManager().IsLoaded)
             return;
 
+        var manager = getManager();
+        var tab = getActiveTab();
         List<int> pageIndices = getSelectedPageIndices();
         if (pageIndices.Count == 0)
             return;
@@ -234,20 +238,24 @@ public sealed class PdfPageOperationsController(
         InitializeWithWindow.Initialize(picker, getWindowHandle());
 
         StorageFile? file = await picker.PickSaveFileAsync();
-        if (file == null)
+        if (file == null || !ReferenceEquals(manager, getManager()))
             return;
 
         statusText.Text = "페이지 추출 중...";
         loadingIndicator.IsActive = true;
         try
         {
-            bool success = await getManager().ExportPagesAsync(file.Path, pageIndices);
+            await finishInlineEditAsync();
+            if (!ReferenceEquals(manager, getManager())) return;
+            byte[] annotated = await saveService.CreateAnnotatedBytesAsync(manager, tab!.Annotations);
+            bool success = await manager.ExportPagesAsync(file.Path, pageIndices, annotated);
             statusText.Text = success
                 ? $"페이지 추출 완료: {pageIndices.Count}개 페이지"
                 : "페이지 추출에 실패했습니다";
         }
         catch (Exception ex)
         {
+            statusText.Text = "페이지 추출에 실패했습니다.";
             await showErrorAsync("페이지 추출 오류", $"페이지 추출 중 오류가 발생했습니다: {ex.Message}");
         }
         finally

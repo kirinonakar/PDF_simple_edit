@@ -45,6 +45,8 @@ public sealed class PageViewController
 
     private CancellationTokenSource? _thumbnailCts;
     private int _renderVersion;
+    private CancellationTokenSource? _detailCts;
+    private Image? _detailImage;
     private PageThumbnailData? _draggedThumbnail;
     private int _draggedOriginalIndex = -1;
     private int _pageIndexBeforeReorder = -1;
@@ -100,6 +102,8 @@ public sealed class PageViewController
     public async Task RenderCurrentPageAsync()
     {
         int version = ++_renderVersion;
+        _detailCts?.Cancel();
+        if (_detailImage != null) _detailImage.Source = null;
         PdfDocumentManager manager = _getManager();
         if (!manager.IsLoaded)
             return;
@@ -140,6 +144,7 @@ public sealed class PageViewController
             _pageImage.Stretch = Stretch.Fill;
             _renderAnnotationOverlays();
             _renderFormOverlays();
+            ScheduleViewportRender();
         }
         catch (Exception ex)
         {
@@ -160,6 +165,8 @@ public sealed class PageViewController
     {
         ++_renderVersion;
         _thumbnailCts?.Cancel();
+        _detailCts?.Cancel();
+        if (_detailImage != null) _detailImage.Source = null;
     }
 
     public async Task LoadThumbnailsAsync()
@@ -427,10 +434,61 @@ public sealed class PageViewController
         ApplyZoom();
     }
 
-    public void ViewChanged()
+    public void ViewChanged(bool isIntermediate)
     {
         _setZoomLevel(_scrollViewer.ZoomFactor);
         _zoomText.Text = $"{(int)(_getZoomLevel() * 100)}%";
+        _detailCts?.Cancel();
+        if (!isIntermediate) ScheduleViewportRender();
+    }
+
+    private async void ScheduleViewportRender()
+    {
+        _detailCts?.Cancel();
+        using var cts = new CancellationTokenSource();
+        _detailCts = cts;
+        var manager = _getManager();
+        var snapshot = manager.GetPdfBytes();
+        int pageIndex = _getCurrentPageIndex();
+        int version = _renderVersion;
+        try
+        {
+            await Task.Delay(180, cts.Token);
+            double zoom = _scrollViewer.ZoomFactor;
+            double rasterScale = _pageImage.XamlRoot?.RasterizationScale ?? 1;
+            double scale = zoom * rasterScale;
+            if (scale <= _getRenderScale() || !_getManager().IsLoaded)
+            {
+                if (_detailImage != null) _detailImage.Source = null;
+                return;
+            }
+            // Transform includes the ScrollViewer's zoom and content margins.
+            Point origin = _pageImage.TransformToVisual(_scrollViewer).TransformPoint(new Point());
+            double left = Math.Clamp(-origin.X / zoom - 32, 0, _pageImage.Width);
+            double top = Math.Clamp(-origin.Y / zoom - 32, 0, _pageImage.Height);
+            double right = Math.Min((_scrollViewer.ViewportWidth - origin.X) / zoom + 32, _pageImage.Width);
+            double bottom = Math.Min((_scrollViewer.ViewportHeight - origin.Y) / zoom + 32, _pageImage.Height);
+            if (right <= left || bottom <= top) return;
+            var region = new Rect(left, top, right - left, bottom - top);
+            // Only the visible region is rerasterized; avoid full-page 500% bitmaps.
+            scale = Math.Min(scale, 4096 / Math.Max(region.Width, region.Height));
+            var bitmap = await _renderService.RenderRegionAsync(manager, pageIndex, region, scale, cts.Token);
+            if (bitmap == null || cts.IsCancellationRequested || version != _renderVersion ||
+                !ReferenceEquals(manager, _getManager()) || !ReferenceEquals(snapshot, manager.GetPdfBytes())) return;
+            if (_detailImage == null && _pageImage.Parent is Grid grid)
+            {
+                _detailImage = new Image { HorizontalAlignment = HorizontalAlignment.Left,
+                    VerticalAlignment = VerticalAlignment.Top, Stretch = Stretch.Fill, IsHitTestVisible = false };
+                grid.Children.Insert(grid.Children.IndexOf(_pageImage) + 1, _detailImage);
+            }
+            if (_detailImage == null) return;
+            _detailImage.Width = region.Width; _detailImage.Height = region.Height;
+            _detailImage.Margin = new Thickness(left, top, 0, 0);
+            _detailImage.Source = bitmap;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Viewport render error: {ex.Message}"); }
+        finally { if (ReferenceEquals(_detailCts, cts)) _detailCts = null; }
     }
 
     private void ApplyZoom()

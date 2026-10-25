@@ -146,6 +146,7 @@ namespace PDF_simple_edit.Models
             Prefix + JsonSerializer.Serialize(new Payload
             {
                 PageIndex = annotation.PageIndex,
+                Rotation = annotation.Rotation,
                 X = annotation.X,
                 Y = annotation.Y,
                 Width = annotation.Width,
@@ -175,6 +176,7 @@ namespace PDF_simple_edit.Models
                 {
                     Type = AnnotationType.Signature,
                     PageIndex = pageIndex,
+                    Rotation = payload.Rotation,
                     X = payload.X,
                     Y = payload.Y,
                     Width = payload.Width,
@@ -195,6 +197,7 @@ namespace PDF_simple_edit.Models
         private sealed class Payload
         {
             public int PageIndex { get; set; }
+            public double Rotation { get; set; }
             public double X { get; set; }
             public double Y { get; set; }
             public double Width { get; set; }

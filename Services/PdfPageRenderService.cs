@@ -16,7 +16,6 @@ public sealed record RenderedPdfPage(
 
 public sealed class PdfPageRenderService
 {
-    private const double PdfToPixels = 96.0 / 72.0;
     private sealed class DocumentCache
     {
         public byte[]? Snapshot;
@@ -64,17 +63,31 @@ public sealed class PdfPageRenderService
             return null;
 
         PdfRenderDocument document = await GetDocumentAsync(manager, snapshot);
-        using MemoryStream? stream = await document.RenderAsync(pageIndex, renderScale * PdfToPixels);
+        using MemoryStream? stream = await document.RenderAsync(pageIndex, renderScale);
         if (stream == null || !ReferenceEquals(snapshot, manager.GetPdfBytes()))
             return null;
 
         var bitmap = new BitmapImage();
         await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
-        var pageSize = manager.GetPageSize(pageIndex);
+        var pageSize = document.GetPageSize(pageIndex);
         return new RenderedPdfPage(
             bitmap,
-            pageSize.width * PdfToPixels,
-            pageSize.height * PdfToPixels);
+            pageSize.Width,
+            pageSize.Height);
+    }
+
+    public async Task<BitmapImage?> RenderRegionAsync(PdfDocumentManager manager, int pageIndex,
+        Windows.Foundation.Rect region, double scale, CancellationToken cancellationToken)
+    {
+        byte[]? snapshot = manager.GetPdfBytes();
+        if (snapshot == null) return null;
+        var document = await GetDocumentAsync(manager, snapshot);
+        using var stream = await document.RenderAsync(pageIndex, scale, cancellationToken, region);
+        if (stream == null || !ReferenceEquals(snapshot, manager.GetPdfBytes())) return null;
+        var bitmap = new BitmapImage();
+        await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
+        cancellationToken.ThrowIfCancellationRequested();
+        return bitmap;
     }
 
     public async IAsyncEnumerable<PageThumbnailData> RenderThumbnailsAsync(

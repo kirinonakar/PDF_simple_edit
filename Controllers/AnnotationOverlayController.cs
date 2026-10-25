@@ -45,7 +45,7 @@ public sealed class AnnotationOverlayController
             if (annotation.IsOriginalTextReplacement && !selectedAnnotations.Contains(annotation))
                 continue;
 
-            if (annotation.IsOriginalImageReplacement || (annotation.IsApplied && annotation.Type == AnnotationType.Image))
+            if (annotation.IsOriginalImageReplacement || (annotation.IsApplied && annotation.Type is AnnotationType.Image or AnnotationType.Highlight))
             {
                 if (selectedAnnotations.Contains(annotation))
                 {

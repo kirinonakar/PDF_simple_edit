@@ -10,6 +10,9 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using WinRT.Interop;
 using System.Collections.Generic;
+using PDF_simple_edit.Services;
+using Microsoft.UI.Dispatching;
+using System.Linq;
 
 namespace PDF_simple_edit.Helpers
 {
@@ -46,6 +49,7 @@ namespace PDF_simple_edit.Helpers
                     return null;
 
                 using var page = pdfDoc.GetPage((uint)pageIndex);
+                await page.PreparePageAsync();
                 var ms = new MemoryStream();
                 var outputStream = ms.AsRandomAccessStream();
 
@@ -84,6 +88,7 @@ namespace PDF_simple_edit.Helpers
                 }
 
                 using var page = pdfDoc.GetPage((uint)pageIndex);
+                await page.PreparePageAsync();
                 var ms = new MemoryStream();
                 var outputStream = ms.AsRandomAccessStream();
                 var options = new Windows.Data.Pdf.PdfPageRenderOptions
@@ -130,17 +135,29 @@ namespace PDF_simple_edit.Helpers
     public class PrintHelper
     {
         private PrintDocument? _printDocument;
+        private PdfRenderDocument? _renderer;
         private IPrintDocumentSource? _printDocumentSource;
         private PrintManager? _printManager;
         private string? _filePath;
         private IntPtr _windowHandle;
-        private Dictionary<int, UIElement> _pageCache = new();
+        private readonly Dictionary<int, (UIElement Page, double Scale)> _pageCache = new();
+        private DispatcherQueue? _dispatcher;
+        private TaskCompletionSource? _completion;
+        private int _generation;
+        private bool _taskRequested;
+        public bool IsPrinting => _completion != null;
         private int _totalPageCount = 0;
         private PrintPageDescription _printPageDescription;
         private bool _hasPrintPageDescription;
 
         public async Task PrintAsync(string filePath, IntPtr windowHandle)
         {
+            if (IsPrinting) throw new InvalidOperationException("이전 인쇄 작업이 아직 진행 중입니다.");
+            _dispatcher = DispatcherQueue.GetForCurrentThread();
+            _filePath = filePath;
+            _completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task completion = _completion.Task;
+            _taskRequested = false;
             try
             {
                 if (!PrintManager.IsSupported())
@@ -148,7 +165,8 @@ namespace PDF_simple_edit.Helpers
 
                 // Paginate 이벤트는 동기적으로 페이지 수를 받아야 하므로,
                 // 인쇄 UI를 표시하기 전에 PDF의 페이지 수를 준비합니다.
-                _totalPageCount = await GetPageCountAsync(filePath);
+                _renderer = await PdfRenderDocument.LoadAsync(await File.ReadAllBytesAsync(filePath));
+                _totalPageCount = _renderer.PageCount;
                 if (_totalPageCount <= 0)
                     throw new InvalidOperationException("인쇄할 PDF 페이지를 찾을 수 없습니다.");
 
@@ -169,7 +187,9 @@ namespace PDF_simple_edit.Helpers
                 _printDocument.AddPages += PrintDocument_AddPages;
 
                 // Show print UI
-                await PrintManagerInterop.ShowPrintUIForWindowAsync(_windowHandle);
+                bool shown = await PrintManagerInterop.ShowPrintUIForWindowAsync(_windowHandle);
+                if (!shown || !_taskRequested) Cleanup();
+                await completion;
             }
             catch (Exception ex)
             {
@@ -179,24 +199,33 @@ namespace PDF_simple_edit.Helpers
             }
         }
 
-        private static async Task<int> GetPageCountAsync(string filePath)
-        {
-            var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(filePath);
-            var pdfDoc = await Windows.Data.Pdf.PdfDocument.LoadFromFileAsync(file);
-            return (int)pdfDoc.PageCount;
-        }
-
         private void PrintManager_PrintTaskRequested(PrintManager sender, PrintTaskRequestedEventArgs args)
         {
+            _taskRequested = true;
+            var documentSource = _printDocumentSource;
+            var taskCompletion = _completion;
+            var dispatcher = _dispatcher;
             var printTask = args.Request.CreatePrintTask("PDF Simple Editor", sourceRequested =>
             {
-                sourceRequested.SetSource(_printDocumentSource);
+                sourceRequested.SetSource(documentSource);
             });
 
             printTask.Completed += (s, e) =>
             {
-                // Clean up after printing
-                Cleanup();
+                void Complete()
+                {
+                    if (!ReferenceEquals(taskCompletion, _completion)) return;
+                    if (e.Completion == PrintTaskCompletion.Failed)
+                        _completion?.TrySetException(new IOException("프린터가 인쇄 작업을 완료하지 못했습니다."));
+                    Cleanup();
+                }
+                if (dispatcher?.HasThreadAccess == true) Complete();
+                else if (dispatcher?.TryEnqueue(Complete) != true)
+                {
+                    // The window is closing; no UI cleanup can be dispatched.
+                    PdfTemporaryFiles.TryDelete(_filePath);
+                    taskCompletion?.TrySetResult();
+                }
             };
         }
 
@@ -209,6 +238,7 @@ namespace PDF_simple_edit.Helpers
             // 크기와 위치가 어긋나지 않습니다.
             _printPageDescription = e.PrintTaskOptions.GetPageDescription(0);
             _hasPrintPageDescription = true;
+            ++_generation;
             _pageCache.Clear();
 
             // 페이지 수를 미리 알고 있으므로 최종 개수로 즉시 알립니다.
@@ -224,18 +254,23 @@ namespace PDF_simple_edit.Helpers
             int pageIdx = e.PageNumber - 1;
             if (pageIdx < 0 || pageIdx >= _totalPageCount) return;
 
+            int generation = _generation;
             try
             {
                 if (!_pageCache.ContainsKey(pageIdx))
                 {
                     var previewPage = await CreatePrintPageAsync(pageIdx, 2.0);
+                    if (generation != _generation || !ReferenceEquals(sender, _printDocument)) return;
                     if (previewPage != null)
-                        _pageCache[pageIdx] = previewPage;
+                    {
+                        if (_pageCache.Count >= 3) _pageCache.Remove(_pageCache.Keys.First());
+                        _pageCache[pageIdx] = (previewPage, 2.0);
+                    }
                 }
 
                 if (_pageCache.TryGetValue(pageIdx, out var cachedImage))
                 {
-                    ((PrintDocument)sender).SetPreviewPage(e.PageNumber, cachedImage);
+                    ((PrintDocument)sender).SetPreviewPage(e.PageNumber, cachedImage.Page);
                 }
             }
             catch (Exception ex)
@@ -249,49 +284,44 @@ namespace PDF_simple_edit.Helpers
             if (_filePath == null) return;
 
             var printDocument = (PrintDocument)sender;
-            for (int i = 0; i < _totalPageCount; i++)
+            int generation = _generation;
+            try
             {
-                try
+                for (int i = 0; i < _totalPageCount; i++)
                 {
-                    // For final printing, ensure we have the best quality
-                    // We can reuse cache if already rendered at high enough quality
-                    if (!_pageCache.ContainsKey(i))
-                    {
-                        var printPage = await CreatePrintPageAsync(i, 3.0);
-                        if (printPage != null)
-                            _pageCache[i] = printPage;
-                    }
-
-                    if (_pageCache.TryGetValue(i, out var page))
-                        printDocument.AddPage(page);
+                    UIElement? page = _pageCache.TryGetValue(i, out var cached) && cached.Scale >= 3.0
+                        ? cached.Page : await CreatePrintPageAsync(i, 3.0);
+                    if (generation != _generation || !ReferenceEquals(printDocument, _printDocument)) return;
+                    if (page == null) throw new IOException($"{i + 1}페이지를 인쇄용으로 렌더링할 수 없습니다.");
+                    printDocument.AddPage(page);
+                    _pageCache.Remove(i);
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"AddPage error at index {i}: {ex.Message}");
-                }
+                _pageCache.Clear();
+                printDocument.AddPagesComplete();
             }
-            printDocument.AddPagesComplete();
+            catch (Exception ex)
+            {
+                _completion?.TrySetException(ex);
+                Cleanup();
+            }
         }
 
         private async Task<UIElement?> CreatePrintPageAsync(int pageIndex, double renderScale)
         {
-            if (_filePath == null)
-                return null;
-
-            var ms = await PdfRenderHelper.RenderPageWithWindowsPdfAsync(
-                _filePath,
-                pageIndex,
-                renderScale);
+            var renderer = _renderer;
+            if (renderer == null) return null;
+            using var ms = await renderer.RenderAsync(pageIndex, renderScale);
             if (ms == null)
                 return null;
 
             var bitmap = new BitmapImage();
             await bitmap.SetSourceAsync(ms.AsRandomAccessStream());
 
-            // RenderPageWithWindowsPdfAsync renders at page DIPs * renderScale,
-            // so converting the bitmap back gives the document's real page size.
-            double documentWidth = bitmap.PixelWidth / renderScale;
-            double documentHeight = bitmap.PixelHeight / renderScale;
+            // Bitmap pixel density may include display scaling. Page.Size is
+            // the logical paper size, independent of preview/print raster quality.
+            var logicalSize = renderer.GetPageSize(pageIndex);
+            double documentWidth = logicalSize.Width;
+            double documentHeight = logicalSize.Height;
             double pageWidth = documentWidth;
             double pageHeight = documentHeight;
             double printableX = 0;
@@ -349,6 +379,10 @@ namespace PDF_simple_edit.Helpers
 
         private void Cleanup()
         {
+            ++_generation;
+            string? temporaryPath = _filePath;
+            var completion = _completion;
+            _completion = null;
             if (_printDocument != null)
             {
                 _printDocument.Paginate -= PrintDocument_Paginate;
@@ -361,11 +395,14 @@ namespace PDF_simple_edit.Helpers
 
             _pageCache.Clear();
             _printDocument = null;
+            _renderer = null;
             _printDocumentSource = null;
             _printManager = null;
             _filePath = null;
             _totalPageCount = 0;
             _hasPrintPageDescription = false;
+            PdfTemporaryFiles.TryDelete(temporaryPath);
+            completion?.TrySetResult();
         }
     }
 }

@@ -14,12 +14,15 @@ public sealed class DocumentSearchController
     private const double PdfToPixels = 96.0 / 72.0;
     private const string SearchHighlightTag = "SearchHighlight";
 
+    private int _searchVersion;
     private readonly PdfSearchService _searchService;
 
     public DocumentSearchController(PdfSearchService searchService)
     {
         _searchService = searchService;
     }
+
+    public void CancelPendingSearch() => ++_searchVersion;
 
     public async Task SearchAsync(
         PdfDocumentManager manager,
@@ -34,6 +37,7 @@ public sealed class DocumentSearchController
         Action<string> setStatus,
         Func<string, string, Task> showMessage)
     {
+        int version = ++_searchVersion;
         try
         {
             byte[]? pdfBytes = manager.GetPdfBytes();
@@ -47,8 +51,10 @@ public sealed class DocumentSearchController
                 forward,
                 matchCase);
 
+            if (version != _searchVersion || !ReferenceEquals(pdfBytes, manager.GetPdfBytes())) return;
             if (result == null)
             {
+                ClearHighlights(overlayCanvas);
                 setStatus("텍스트를 찾을 수 없습니다.");
                 await showMessage("검색 결과", $"'{searchText}'를 찾을 수 없습니다.");
                 return;
@@ -58,19 +64,14 @@ public sealed class DocumentSearchController
             if (currentPageIndex != resultPageIndex)
                 await navigateToPage(resultPageIndex);
 
+            if (version != _searchVersion || !ReferenceEquals(pdfBytes, manager.GetPdfBytes())) return;
             ClearHighlights(overlayCanvas);
-            foreach (var rectangle in result.Rectangles)
-            {
-                AddHighlight(
-                    manager,
-                    overlayCanvas,
-                    scrollViewer,
-                    resultPageIndex,
-                    zoomLevel,
-                    rectangle);
-            }
-
-            setStatus($"{result.PageNumber} 페이지에서 {result.Rectangles.Count}개의 일치 항목을 찾았습니다.");
+            for (int i = 0; i < result.Rectangles.Count; i++)
+                AddHighlight(overlayCanvas, result.Rectangles[i], i == result.SelectedIndex);
+            var selected = result.Rectangles[result.SelectedIndex];
+            scrollViewer.ChangeView(selected.GetX() * PdfToPixels * zoomLevel,
+                selected.GetY() * PdfToPixels * zoomLevel, null);
+            setStatus($"{result.PageNumber} 페이지: {result.SelectedIndex + 1}/{result.Rectangles.Count} 일치 항목");
         }
         catch (Exception ex)
         {
@@ -89,33 +90,21 @@ public sealed class DocumentSearchController
             overlayCanvas.Children.Remove(highlight);
     }
 
-    private static void AddHighlight(
-        PdfDocumentManager manager,
-        Canvas overlayCanvas,
-        ScrollViewer scrollViewer,
-        int pageIndex,
-        double zoomLevel,
-        iText.Kernel.Geom.Rectangle rectangle)
+    private static void AddHighlight(Canvas overlayCanvas, iText.Kernel.Geom.Rectangle rectangle, bool selected)
     {
-        var pageSize = manager.GetPageSize(pageIndex);
-        double x = rectangle.GetLeft() * PdfToPixels;
-        double y = (pageSize.height - rectangle.GetTop()) * PdfToPixels;
-
         var highlight = new Rectangle
         {
             Width = rectangle.GetWidth() * PdfToPixels,
             Height = rectangle.GetHeight() * PdfToPixels,
-            Fill = new SolidColorBrush(Microsoft.UI.Colors.Yellow),
+            Fill = new SolidColorBrush(selected ? Microsoft.UI.Colors.Orange : Microsoft.UI.Colors.Yellow),
             Opacity = 0.4,
             Stroke = new SolidColorBrush(Microsoft.UI.Colors.Orange),
-            StrokeThickness = 1,
+            StrokeThickness = selected ? 2 : 1,
             IsHitTestVisible = false,
             Tag = SearchHighlightTag
         };
-
-        Canvas.SetLeft(highlight, x);
-        Canvas.SetTop(highlight, y);
+        Canvas.SetLeft(highlight, rectangle.GetX() * PdfToPixels);
+        Canvas.SetTop(highlight, rectangle.GetY() * PdfToPixels);
         overlayCanvas.Children.Add(highlight);
-        scrollViewer.ChangeView(x * zoomLevel, y * zoomLevel, null);
     }
 }

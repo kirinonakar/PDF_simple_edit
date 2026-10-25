@@ -19,6 +19,12 @@ public sealed class PdfRenderDocument
         _source = source;
     }
 
+    public Windows.Foundation.Size GetPageSize(int pageIndex)
+    {
+        using var page = _document.GetPage((uint)pageIndex);
+        return page.Size;
+    }
+
     public int PageCount => (int)_document.PageCount;
 
     public static async Task<PdfRenderDocument> LoadAsync(byte[] bytes)
@@ -40,7 +46,7 @@ public sealed class PdfRenderDocument
     }
 
     public async Task<MemoryStream?> RenderAsync(
-        int pageIndex, double scale, CancellationToken cancellationToken = default)
+        int pageIndex, double scale, CancellationToken cancellationToken = default, Windows.Foundation.Rect? region = null)
     {
         if (pageIndex < 0 || pageIndex >= PageCount)
             return null;
@@ -52,16 +58,21 @@ public sealed class PdfRenderDocument
         {
             cancellationToken.ThrowIfCancellationRequested();
             using var page = _document.GetPage((uint)pageIndex);
+            // Finish native page preparation before rasterizing image-heavy PDFs;
+            // otherwise a first render can omit content added over a scanned page.
+            await page.PreparePageAsync().AsTask(cancellationToken);
             var output = new MemoryStream();
             try
             {
                 var stream = output.AsRandomAccessStream();
-                await page.RenderToStreamAsync(stream, new PdfPageRenderOptions
+                var options = new PdfPageRenderOptions
                 {
-                    DestinationWidth = (uint)Math.Max(1, page.Size.Width * scale),
-                    DestinationHeight = (uint)Math.Max(1, page.Size.Height * scale),
+                    DestinationWidth = (uint)Math.Max(1, (region?.Width ?? page.Size.Width) * scale),
+                    DestinationHeight = (uint)Math.Max(1, (region?.Height ?? page.Size.Height) * scale),
                     BackgroundColor = Windows.UI.Color.FromArgb(255, 255, 255, 255)
-                }).AsTask(cancellationToken);
+                };
+                if (region is { } sourceRect) options.SourceRect = sourceRect;
+                await page.RenderToStreamAsync(stream, options).AsTask(cancellationToken);
                 await stream.FlushAsync();
                 cancellationToken.ThrowIfCancellationRequested();
                 output.Position = 0;

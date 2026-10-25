@@ -71,40 +71,11 @@ public sealed class PdfOperationService
             : new PdfMergeRequest(sourcePaths, target, outputPath);
     }
 
-    public async Task<string?> ExecuteMergeAsync(
-        PdfDocumentManager manager,
-        PdfMergeRequest request)
+    public async Task ExecuteMergeAsync(PdfDocumentManager manager, PdfMergeRequest request, byte[]? annotatedSnapshot)
     {
-        // 병합 결과는 원본 문서의 보호 설정을 유지한다. 병합된 파일을 다시 열
-        // 때도 같은 암호가 필요하므로 미리 기억해 둔다.
-        string? savedPassword = manager.SavePassword;
-        var savedProtection = manager.Protection;
-
-        string outputPath;
-        if (request.Target == PdfMergeTarget.CurrentDocument)
-        {
-            outputPath = manager.FilePath ?? System.IO.Path.Combine(
-                Windows.Storage.ApplicationData.Current.TemporaryFolder.Path,
-                $"merging_{Guid.NewGuid()}.pdf");
-            // 현재 문서를 원본 경로에 평문으로 미리 덮어쓰면 보호 설정이 사라질
-            // 수 있다. 병합은 메모리 스냅샷을 소스로 사용하므로, 아직 파일이
-            // 없는 새 문서일 때만 임시 파일을 만든다.
-            if (manager.FilePath == null && !await manager.SaveAsAsync(outputPath, false))
-                return null;
-        }
-        else
-        {
-            outputPath = request.OutputPath!;
-        }
-
-        bool success = await manager.MergeFilesAsync(request.SourcePaths.ToList(), outputPath);
-        if (!success || await manager.OpenWithPasswordAsync(outputPath, savedPassword) != PdfOpenStatus.Success)
-            return null;
-        // Reopening with one password cannot recover the other. Both are already
-        // known for the output we just created, so keep that complete configuration.
-        manager.SetProtection(savedProtection);
-        manager.MarkModified(false);
-        return outputPath;
+        if (request.Target != PdfMergeTarget.NewFile || string.IsNullOrWhiteSpace(request.OutputPath))
+            throw new InvalidOperationException("새 병합 파일의 저장 경로가 필요합니다.");
+        await manager.MergeFilesAsync(request.SourcePaths.ToList(), request.OutputPath, annotatedSnapshot);
     }
 
     public async Task<PdfSplitRequest?> CreateSplitRequestAsync(
@@ -166,6 +137,20 @@ public sealed class PdfOperationService
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = xamlRoot
         };
+        var errorText = new TextBlock { Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Red), TextWrapping = TextWrapping.Wrap };
+        panel.Children.Add(errorText);
+        dialog.PrimaryButtonClick += (_, args) =>
+        {
+            try
+            {
+                if (byPageCount.IsChecked == true && (!double.IsFinite(pagesPerFile.Value) ||
+                    pagesPerFile.Value < 1 || pagesPerFile.Value > totalPages || pagesPerFile.Value != Math.Truncate(pagesPerFile.Value)))
+                    throw new ArgumentException($"파일당 페이지 수는 1~{totalPages} 사이의 정수여야 합니다.");
+                BuildRanges(totalPages, everyPage.IsChecked == true, byPageCount.IsChecked == true,
+                    (int)pagesPerFile.Value, rangesText.Text);
+            }
+            catch (ArgumentException ex) { args.Cancel = true; errorText.Text = ex.Message; }
+        };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary)
             return null;
 
@@ -220,12 +205,13 @@ public sealed class PdfOperationService
 
         if (byPageCount)
         {
+            if (pagesPerFile < 1) throw new ArgumentException("파일당 페이지 수는 1 이상이어야 합니다.");
             for (int page = 1; page <= totalPages; page += pagesPerFile)
                 ranges.Add((page, Math.Min(page + pagesPerFile - 1, totalPages)));
             return ranges;
         }
 
-        foreach (string part in rangeText.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        foreach (string part in rangeText.Split(','))
         {
             string[] bounds = part.Trim().Split('-');
             if (bounds.Length == 1 && int.TryParse(bounds[0], out int page))
@@ -234,7 +220,10 @@ public sealed class PdfOperationService
                      int.TryParse(bounds[0].Trim(), out int start) &&
                      int.TryParse(bounds[1].Trim(), out int end))
                 ranges.Add((start, end));
+            else throw new ArgumentException($"페이지 범위를 확인해 주세요: '{part}'");
         }
+        foreach (var (start, end) in ranges) PdfFileOperationService.ValidateRange(start, end, totalPages);
+        if (ranges.Count == 0) throw new ArgumentException("페이지 범위를 입력해 주세요.");
         return ranges;
     }
 }

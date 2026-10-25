@@ -25,7 +25,7 @@ namespace PDF_simple_edit.Services
         public async Task<List<PdfPageContent>> ExtractAsync(byte[] pdfBytes, int pageIndex, TextEditingMode mode = TextEditingMode.PreserveOriginal)
         {
             ArgumentNullException.ThrowIfNull(pdfBytes);
-            byte[] pdfSnapshot = (byte[])pdfBytes.Clone();
+            byte[] pdfSnapshot = pdfBytes;
 
             List<PdfPageContent> contents = await Task.Run(() =>
             {
@@ -137,8 +137,7 @@ namespace PDF_simple_edit.Services
                     continue;
 
                 byte[] bytes = rendered.ToArray();
-                string directory = System.IO.Path.Combine(
-                    System.IO.Path.GetTempPath(), "PDF_simple_edit", "images");
+                string directory = PdfTemporaryFiles.GetDirectory("images");
                 Directory.CreateDirectory(directory);
                 string hash = Convert.ToHexString(SHA256.HashData(bytes));
                 string path = System.IO.Path.Combine(directory, $"{hash}.png");
@@ -1505,8 +1504,7 @@ namespace PDF_simple_edit.Services
 
             private static string SaveExtractedImage(byte[] bytes, string extension)
             {
-                string directory = System.IO.Path.Combine(
-                    System.IO.Path.GetTempPath(), "PDF_simple_edit", "images");
+                string directory = PdfTemporaryFiles.GetDirectory("images");
                 Directory.CreateDirectory(directory);
                 string hash = Convert.ToHexString(SHA256.HashData(bytes));
                 string path = System.IO.Path.Combine(directory, $"{hash}.{extension}");
