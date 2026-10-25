@@ -178,6 +178,7 @@ namespace PDF_simple_edit
                     () => _zoomLevel,
                     value => _zoomLevel = value,
                     () => _renderScale,
+                    () => _annotationCanvasController.IsInlineEditing,
                     RenderAnnotationOverlays,
                     _formOverlayController.Render,
                     UpdateUIState);
@@ -539,6 +540,7 @@ namespace PDF_simple_edit
                 if (!ReferenceEquals(sender, _activeTab?.PdfManager)) return;
                 PdfDocumentTab? tab = _activeTab;
                 UpdateUIState();
+                _pageViewController.ScheduleThumbnailRefresh();
                 if (_pdfManager.IsLoaded)
                 {
                     await RenderCurrentPageAsync();
@@ -584,6 +586,8 @@ namespace PDF_simple_edit
             DispatcherQueue.TryEnqueue(() => {
                 UpdateTitleBar();
                 UpdateTabHeader();
+                if (ReferenceEquals(sender, _activeTab?.PdfManager))
+                    _pageViewController.ScheduleThumbnailRefresh();
             });
         }
 

@@ -2,6 +2,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using PDF_simple_edit.Helpers;
 using PDF_simple_edit.Models;
 using PDF_simple_edit.Services;
@@ -39,11 +40,15 @@ public sealed class PageViewController
     private readonly Func<double> _getZoomLevel;
     private readonly Action<double> _setZoomLevel;
     private readonly Func<double> _getRenderScale;
+    private readonly Func<bool> _isInlineEditing;
     private readonly Action _renderAnnotationOverlays;
     private readonly Action _renderFormOverlays;
     private readonly Action _updateUiState;
 
     private CancellationTokenSource? _thumbnailCts;
+    private CancellationTokenSource? _liveThumbnailCts;
+    private PageThumbnailData? _liveThumbnail;
+    private readonly PdfSaveService _thumbnailSaveService = new(new PdfAnnotationDocumentService());
     private int _renderVersion;
     private CancellationTokenSource? _detailCts;
     private Image? _detailImage;
@@ -73,6 +78,7 @@ public sealed class PageViewController
         Func<double> getZoomLevel,
         Action<double> setZoomLevel,
         Func<double> getRenderScale,
+        Func<bool> isInlineEditing,
         Action renderAnnotationOverlays,
         Action renderFormOverlays,
         Action updateUiState)
@@ -94,9 +100,18 @@ public sealed class PageViewController
         _getZoomLevel = getZoomLevel;
         _setZoomLevel = setZoomLevel;
         _getRenderScale = getRenderScale;
+        _isInlineEditing = isInlineEditing;
         _renderAnnotationOverlays = renderAnnotationOverlays;
         _renderFormOverlays = renderFormOverlays;
         _updateUiState = updateUiState;
+        // Inline editors replace this source with an uncommitted PDF preview.
+        // A viewport tile from the committed document must never cover it.
+        _pageImage.RegisterPropertyChangedCallback(Image.SourceProperty, (_, _) =>
+        {
+            _detailCts?.Cancel();
+            if (_detailImage != null) _detailImage.Source = null;
+            UpdateLiveThumbnail();
+        });
     }
 
     public async Task RenderCurrentPageAsync()
@@ -165,6 +180,8 @@ public sealed class PageViewController
     {
         ++_renderVersion;
         _thumbnailCts?.Cancel();
+        _liveThumbnailCts?.Cancel();
+        _liveThumbnail = null;
         _detailCts?.Cancel();
         if (_detailImage != null) _detailImage.Source = null;
     }
@@ -176,16 +193,23 @@ public sealed class PageViewController
         _thumbnailCts = cts;
         CancellationToken token = cts.Token;
         ObservableCollection<PageThumbnailData> thumbnails = _getThumbnails();
+        var manager = _getManager();
+        var snapshot = manager.GetPdfBytes();
 
         try
         {
             thumbnails.Clear();
+            byte[] annotated = await _thumbnailSaveService.CreateAnnotatedBytesAsync(manager, _getAnnotations());
+            token.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(snapshot, manager.GetPdfBytes()) || !ReferenceEquals(manager, _getManager())) return;
             await foreach (PageThumbnailData thumbnail in _renderService.RenderThumbnailsAsync(
-                _getManager(), token))
+                manager, token, annotated))
             {
                 token.ThrowIfCancellationRequested();
+                if (!ReferenceEquals(snapshot, manager.GetPdfBytes()) || !ReferenceEquals(thumbnails, _getThumbnails())) return;
                 thumbnails.Add(thumbnail);
             }
+            if (_isInlineEditing()) UpdateLiveThumbnail();
         }
         catch (OperationCanceledException)
         {
@@ -199,6 +223,79 @@ public sealed class PageViewController
             if (ReferenceEquals(_thumbnailCts, cts))
                 _thumbnailCts = null;
         }
+    }
+
+    private async void UpdateLiveThumbnail()
+    {
+        if (_isInlineEditing() && _pageImage.Source is BitmapImage preview)
+        {
+            _liveThumbnail = _getThumbnails().FirstOrDefault(t => t.PageIndex == _getCurrentPageIndex());
+            if (_liveThumbnail != null) _liveThumbnail.Thumbnail = preview;
+        }
+        if (_liveThumbnail == null) return;
+        _liveThumbnailCts?.Cancel();
+        using var cts = new CancellationTokenSource();
+        _liveThumbnailCts = cts;
+        var target = _liveThumbnail;
+        var thumbnails = _getThumbnails();
+        var manager = _getManager();
+        var snapshot = manager.GetPdfBytes();
+        int pageIndex = target.PageIndex;
+        try
+        {
+            await Task.Delay(180, cts.Token);
+            // Share the already-rendered page only while it is being edited.
+            // On completion/cancel replace it with a small bitmap so navigating
+            // away does not retain full-resolution page images in the sidebar.
+            if (_isInlineEditing() || !ReferenceEquals(manager, _getManager())) return;
+            long version = manager.EditVersion;
+            byte[] annotated = await _thumbnailSaveService.CreateAnnotatedBytesAsync(manager, _getAnnotations());
+            cts.Token.ThrowIfCancellationRequested();
+            var bitmap = await _renderService.RenderThumbnailAsync(manager, pageIndex, cts.Token, annotated);
+            if (bitmap == null || _isInlineEditing() || !ReferenceEquals(manager, _getManager()) ||
+                !ReferenceEquals(snapshot, manager.GetPdfBytes()) || version != manager.EditVersion || !ReferenceEquals(thumbnails, _getThumbnails()) ||
+                !thumbnails.Contains(target) || target.PageIndex != pageIndex) return;
+            target.Thumbnail = bitmap;
+            if (ReferenceEquals(_liveThumbnail, target)) _liveThumbnail = null;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Live thumbnail error: {ex.Message}"); }
+        finally { if (ReferenceEquals(_liveThumbnailCts, cts)) _liveThumbnailCts = null; }
+    }
+
+    public async void ScheduleThumbnailRefresh()
+    {
+        _thumbnailCts?.Cancel();
+        using var cts = new CancellationTokenSource();
+        _thumbnailCts = cts;
+        var manager = _getManager();
+        var thumbnails = _getThumbnails();
+        var annotations = _getAnnotations();
+        try
+        {
+            await Task.Delay(180, cts.Token);
+            if (!manager.IsLoaded || !ReferenceEquals(manager, _getManager())) return;
+            if (thumbnails.Count != manager.PageCount)
+            {
+                await LoadThumbnailsAsync();
+                return;
+            }
+            var snapshot = manager.GetPdfBytes();
+            long version = manager.EditVersion;
+            byte[] annotated = await _thumbnailSaveService.CreateAnnotatedBytesAsync(manager, annotations);
+            cts.Token.ThrowIfCancellationRequested();
+            await foreach (var rendered in _renderService.RenderThumbnailsAsync(manager, cts.Token, annotated))
+            {
+                if (!ReferenceEquals(manager, _getManager()) || !ReferenceEquals(snapshot, manager.GetPdfBytes()) ||
+                    version != manager.EditVersion || !ReferenceEquals(thumbnails, _getThumbnails())) return;
+                var target = thumbnails.FirstOrDefault(t => t.PageIndex == rendered.PageIndex);
+                if (target == null || ReferenceEquals(target, _liveThumbnail) && _isInlineEditing()) continue;
+                target.Thumbnail = rendered.Thumbnail;
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Thumbnail refresh error: {ex.Message}"); }
+        finally { if (ReferenceEquals(_thumbnailCts, cts)) _thumbnailCts = null; }
     }
 
     public async Task MovePreviousAsync()
@@ -445,6 +542,11 @@ public sealed class PageViewController
     private async void ScheduleViewportRender()
     {
         _detailCts?.Cancel();
+        if (_isInlineEditing())
+        {
+            if (_detailImage != null) _detailImage.Source = null;
+            return;
+        }
         using var cts = new CancellationTokenSource();
         _detailCts = cts;
         var manager = _getManager();
@@ -454,6 +556,7 @@ public sealed class PageViewController
         try
         {
             await Task.Delay(180, cts.Token);
+            if (_isInlineEditing()) return;
             double zoom = _scrollViewer.ZoomFactor;
             double rasterScale = _pageImage.XamlRoot?.RasterizationScale ?? 1;
             double scale = zoom * rasterScale;
@@ -473,7 +576,7 @@ public sealed class PageViewController
             // Only the visible region is rerasterized; avoid full-page 500% bitmaps.
             scale = Math.Min(scale, 4096 / Math.Max(region.Width, region.Height));
             var bitmap = await _renderService.RenderRegionAsync(manager, pageIndex, region, scale, cts.Token);
-            if (bitmap == null || cts.IsCancellationRequested || version != _renderVersion ||
+            if (bitmap == null || cts.IsCancellationRequested || version != _renderVersion || _isInlineEditing() ||
                 !ReferenceEquals(manager, _getManager()) || !ReferenceEquals(snapshot, manager.GetPdfBytes())) return;
             if (_detailImage == null && _pageImage.Parent is Grid grid)
             {

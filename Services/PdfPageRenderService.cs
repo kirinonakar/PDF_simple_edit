@@ -92,11 +92,13 @@ public sealed class PdfPageRenderService
 
     public async IAsyncEnumerable<PageThumbnailData> RenderThumbnailsAsync(
         PdfDocumentManager manager,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        byte[]? annotatedSnapshot = null)
     {
-        byte[]? snapshot = manager.GetPdfBytes();
-        if (snapshot == null)
+        byte[]? sourceVersion = manager.GetPdfBytes();
+        if (sourceVersion == null)
             yield break;
+        byte[] snapshot = annotatedSnapshot ?? sourceVersion;
 
         cancellationToken.ThrowIfCancellationRequested();
         PdfRenderDocument document = await GetDocumentAsync(manager, snapshot);
@@ -104,7 +106,7 @@ public sealed class PdfPageRenderService
         for (int pageIndex = 0; pageIndex < pageCount; pageIndex++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!ReferenceEquals(snapshot, manager.GetPdfBytes()))
+            if (!ReferenceEquals(sourceVersion, manager.GetPdfBytes()))
                 yield break;
 
             BitmapImage? bitmap = null;
@@ -124,10 +126,25 @@ public sealed class PdfPageRenderService
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            if (!ReferenceEquals(snapshot, manager.GetPdfBytes()))
+            if (!ReferenceEquals(sourceVersion, manager.GetPdfBytes()))
                 yield break;
 
             yield return new PageThumbnailData { PageNumber = pageIndex + 1, Thumbnail = bitmap };
         }
+    }
+
+    public async Task<BitmapImage?> RenderThumbnailAsync(PdfDocumentManager manager, int pageIndex,
+        CancellationToken cancellationToken, byte[]? annotatedSnapshot = null)
+    {
+        byte[]? sourceVersion = manager.GetPdfBytes();
+        if (sourceVersion == null) return null;
+        byte[] snapshot = annotatedSnapshot ?? sourceVersion;
+        var document = await GetDocumentAsync(manager, snapshot);
+        using var stream = await document.RenderAsync(pageIndex, 0.4, cancellationToken);
+        if (stream == null || !ReferenceEquals(sourceVersion, manager.GetPdfBytes())) return null;
+        var bitmap = new BitmapImage();
+        await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
+        cancellationToken.ThrowIfCancellationRequested();
+        return bitmap;
     }
 }
