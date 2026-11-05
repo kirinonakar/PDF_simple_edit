@@ -59,7 +59,8 @@ public sealed class AnnotationSelectionController
         if (found == null || found.IsOriginalImageReplacement)
         {
             analysisStarted();
-            List<PdfPageContent> pageContents = await manager.ExtractPageContentsAsync(pageIndex);
+            List<PdfPageContent> pageContents = await manager.ExtractPageContentsAsync(pageIndex,
+                textOnly: selectionMode != EditToolMode.SelectGraphics);
             if (isCurrent?.Invoke() == false) return new(primarySelection, false, null);
             PdfPageContent? content = _contentService.FindEditableContent(pageContents, x, y, selectionMode);
             if (_contentService.ShouldPreferPageContent(found, content) && content != null)

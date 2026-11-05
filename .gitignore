@@ -24,6 +24,7 @@ tests/*
 !tests/ImageConversion/
 !tests/Localization/
 !tests/NativeTextRegression/
+!tests/TextEditingPerformance/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs

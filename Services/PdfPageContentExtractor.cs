@@ -22,7 +22,8 @@ namespace PDF_simple_edit.Services
 {
     internal sealed class PdfPageContentExtractor
     {
-        public async Task<List<PdfPageContent>> ExtractAsync(byte[] pdfBytes, int pageIndex, TextEditingMode mode = TextEditingMode.PreserveOriginal)
+        public async Task<List<PdfPageContent>> ExtractAsync(byte[] pdfBytes, int pageIndex,
+            TextEditingMode mode = TextEditingMode.PreserveOriginal, bool textOnly = false)
         {
             ArgumentNullException.ThrowIfNull(pdfBytes);
             byte[] pdfSnapshot = pdfBytes;
@@ -32,6 +33,13 @@ namespace PDF_simple_edit.Services
                 var extractedContents = new List<PdfPageContent>();
                 try
                 {
+                    // Text selection needs neither image decoding/temp files nor
+                    // vector/shading analysis. Avoid the legacy text pass too.
+                    if (textOnly && mode == TextEditingMode.PreserveOriginal)
+                        return new NativePdfTextService().Extract(pdfSnapshot, pageIndex)
+                            .Where(block => !string.IsNullOrWhiteSpace(block.Text))
+                            .Select(NativePdfTextService.ToPageContent).ToList();
+
                     using var reader = new PdfReader(new MemoryStream(pdfSnapshot));
                     using var doc = new PdfDocument(reader);
                     if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages())
@@ -41,11 +49,11 @@ namespace PDF_simple_edit.Services
                     var pageSize = page.GetPageSize();
                     
                     var operationTargets = ExtractTextOperationDescriptors(page);
-                    var imageTargets = ExtractImageOperationDescriptors(page);
-                    var pathTargets = ExtractPathOperationDescriptors(page);
-                    var shadingTargets = ExtractShadingOperationDescriptors(page);
+                    var imageTargets = textOnly ? new List<ImageOperationDescriptor>() : ExtractImageOperationDescriptors(page);
+                    var pathTargets = textOnly ? new List<PathOperationDescriptor>() : ExtractPathOperationDescriptors(page);
+                    var shadingTargets = textOnly ? new List<ShadingOperationDescriptor>() : ExtractShadingOperationDescriptors(page);
                     var listener = new ContentExtractionListener(
-                        pageSize.GetHeight(), imageTargets);
+                        pageSize.GetHeight(), imageTargets, textOnly);
                     PdfCanvasProcessor processor = new PdfCanvasProcessor(listener);
                     listener.Processor = processor;
                     var tracker = new TextOperationTracker(operationTargets);
@@ -77,6 +85,7 @@ namespace PDF_simple_edit.Services
                         : new NativePdfTextService().Extract(pdfSnapshot, pageIndex)
                         .Where(block => !string.IsNullOrWhiteSpace(block.Text))
                         .Select(NativePdfTextService.ToPageContent).ToList();
+                    if (textOnly) return extractedContents;
                     var sharedForms = PdfRepeatedFormExtractor.Extract(page);
                     extractedContents.AddRange(listener.Contents.Where(content => content.Type == PageContentType.Image &&
                         !sharedForms.SharedStreams.Contains(content.ContentStreamObjectNumber)));
@@ -1094,6 +1103,7 @@ namespace PDF_simple_edit.Services
             public List<PdfPageContent> Contents { get; } = new();
             public List<VectorPathFragment> VectorPaths { get; } = new();
             private readonly float _pageHeight;
+            private readonly bool _textOnly;
             private readonly Dictionary<int, PdfFontMetadata> _fontMetadataCache = new();
             private readonly IReadOnlyList<ImageOperationDescriptor> _imageTargets;
             private readonly HashSet<(int StreamObjectNumber, int StreamIndex, int OperationIndex)> _ambiguousImageTargets;
@@ -1111,9 +1121,10 @@ namespace PDF_simple_edit.Services
 
             public ContentExtractionListener(
                 float pageHeight,
-                IReadOnlyList<ImageOperationDescriptor> imageTargets)
+                IReadOnlyList<ImageOperationDescriptor> imageTargets, bool textOnly = false)
             {
                 _pageHeight = pageHeight;
+                _textOnly = textOnly;
                 _imageTargets = imageTargets;
                 _ambiguousImageTargets = imageTargets
                     .GroupBy(target => (
@@ -1516,6 +1527,7 @@ namespace PDF_simple_edit.Services
 
             public ICollection<EventType> GetSupportedEvents()
             {
+                if (_textOnly) return new[] { EventType.RENDER_TEXT };
                 return new[]
                 {
                     EventType.RENDER_TEXT,

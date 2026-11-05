@@ -232,7 +232,8 @@ public sealed class AnnotationCanvasController
                 if (hit?.IsOriginalImageReplacement == true && !alt)
                 {
                     int page = _getPageIndex();
-                    var contents = await manager.ExtractPageContentsAsync(page);
+                    var contents = await manager.ExtractPageContentsAsync(page,
+                        textOnly: toolMode != EditToolMode.SelectGraphics);
                     if (selectPressSequence != _selectPointerPressSequence ||
                         manager != _getManager() || page != _getPageIndex()) return;
                     if (_contentService.ShouldPreferPageContent(hit,
@@ -375,7 +376,8 @@ public sealed class AnnotationCanvasController
             {
                 var regionManager = _getManager(); int page = _getPageIndex();
                 EditToolMode selectionMode = _getToolMode();
-                var contents = await regionManager.ExtractPageContentsAsync(page);
+                var contents = await regionManager.ExtractPageContentsAsync(page,
+                    textOnly: selectionMode != EditToolMode.SelectGraphics);
                 if (sequence != _selectPointerPressSequence || regionManager != _getManager() || page != _getPageIndex() || selectionMode != _getToolMode()) return;
                 var region = new PdfTextBox(Math.Min(start.X, end.X) / PdfToPixels, Math.Min(start.Y, end.Y) / PdfToPixels,
                     Math.Abs(end.X - start.X) / PdfToPixels, Math.Abs(end.Y - start.Y) / PdfToPixels);
@@ -812,7 +814,7 @@ public sealed class AnnotationCanvasController
     private async Task RefreshNativeSelectionAsync(int pageIndex)
     {
         var native = SelectedAnnotations.Where(a => a.NativeText != null).ToList();
-        var contents = await _getManager().ExtractPageContentsAsync(pageIndex);
+        var contents = await _getManager().ExtractPageContentsAsync(pageIndex, textOnly: true);
         foreach (var annotation in native)
         {
             var found = contents.Where(c => c.NativeText != null).OrderBy(c =>

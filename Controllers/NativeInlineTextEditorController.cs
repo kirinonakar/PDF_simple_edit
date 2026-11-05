@@ -12,7 +12,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Windows.System;
 
@@ -34,7 +33,6 @@ public sealed class NativeInlineTextEditorController
     public static readonly object OverlayTag = new();
     private const double Scale = 96.0 / 72.0;
     private readonly NativePdfTextService _service = new();
-    private readonly SemaphoreSlim _previewGate = new(1, 1);
     private Canvas? _canvas, _decoration;
     private Image? _pageImage;
     private ImageSource? _originalImage;
@@ -45,6 +43,8 @@ public sealed class NativeInlineTextEditorController
     private NativePdfTextBlock? _layout;
     private NativePdfTextResult? _preview;
     private string _previewText = "";
+    private string _requestedText = "";
+    private Task<NativePdfTextService.TextPreview>? _previewSource;
     private int _pageIndex;
     private int _version;
     private bool _suppress, _dragging;
@@ -68,12 +68,13 @@ public sealed class NativeInlineTextEditorController
         PdfTextPoint? initialCaret = null)
     {
         if (IsEditing || annotation.NativeText == null || manager.GetPdfBytes() == null) return false;
-        ++_version; _finishing = null; _pending = Task.CompletedTask; _caretVisible = true;
+        ++_version; _finishing = null; _pending = Task.CompletedTask; _caretVisible = true; _previewSource = null;
         _canvas = canvas; _pageImage = pageImage; _originalImage = pageImage.Source;
         _manager = manager; _snapshot = manager.GetPdfBytes(); _layout = annotation.NativeText;
         _pageIndex = pageIndex; _render = render; _overlays = overlays; _status = status;
         _restoreFocus = restoreFocus; _removed = removed; _annotations = annotations; _selected = selected;
         _session = new() { Annotation = annotation }; _preview = new(_snapshot!, _layout); _previewText = _layout.Text;
+        _requestedText = _previewText;
         _input = new RichEditBox
         {
             Tag = _session, AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap,
@@ -127,52 +128,70 @@ public sealed class NativeInlineTextEditorController
     private void TextChanged(object sender, RoutedEventArgs args)
     {
         if (_suppress || _session?.IsFinishing != false) return;
-        string text = Text();
-        int version = ++_version;
-        if (text == _previewText) { _pending = Task.CompletedTask; DrawSelection(); return; }
-        _pending = RefreshPreviewAsync(text, version);
+        _requestedText = Text();
+        // One active preview and one latest text value, rather than a task for
+        // every keystroke. Publish completed frames even during continuous input.
+        if (_pending.IsCompleted && _requestedText != _previewText)
+            _pending = RefreshPreviewsAsync(_version);
+        else DrawSelection();
     }
 
-    private async Task RefreshPreviewAsync(string text, int version)
+    private async Task RefreshPreviewsAsync(int version)
     {
-        await Task.Delay(35);
-        if (version != _version || _input == null) return;
-        await _previewGate.WaitAsync();
-        try
+        // Yield before starting so TextChanged always records the worker task
+        // before it can finish, including failures during snapshot preparation.
+        await Task.Yield();
+        while (version == _version && _input != null && _requestedText != _previewText)
         {
-            if (version != _version || _input == null) return;
-            byte[] snapshot = _snapshot!; int pageIndex = _pageIndex;
-            NativePdfTextBlock source = _session!.Annotation.NativeText!;
-            // Resolve each IME composition against the original font again, so a
-            // completed syllable never inherits the preceding jamo's fallback.
-            var result = await Task.Run(() => _service.Edit(snapshot, pageIndex, new(source, text)));
-            if (version != _version || _input == null) return;
-            using var bytes = new MemoryStream(result.Bytes);
-            using var rendered = await PdfRenderHelper.RenderPageWithWindowsPdfStreamAsync(bytes.AsRandomAccessStream(), pageIndex, 2);
-            if (rendered == null) throw new InvalidOperationException(Loc.Get("CannotRenderTheModifiedPDFPreview"));
-            var bitmap = new BitmapImage(); await bitmap.SetSourceAsync(rendered.AsRandomAccessStream());
-            if (version != _version || _input == null) return;
-            _pageImage!.Source = bitmap; _preview = result; _previewText = text; _layout = result.Layout;
-            var bounds = _layout.Bounds;
-            _input.Width = Math.Max((_session!.Annotation.Width + Math.Max(0, bounds.Right - _session.Annotation.NativeText!.Bounds.Right)) * Scale, 20);
-            _input.Height = Math.Max((_session.Annotation.Height + Math.Max(0, bounds.Bottom - _session.Annotation.NativeText!.Bounds.Bottom)) * Scale, 20);
-            _status?.Invoke(result.FontSubstitutionStatus is string substitution
-                ? substitution + Loc.Get("CtrlEnterFinishEscCancel")
-                : source.Lines.Count > 1
-                ? Loc.Get("WrappingParagraphsWithTheOriginalFontCtrlEnterFinish")
-                : Loc.Get("ExtendingASingleLineToTheRightWithThe"));
-            DrawSelection();
+            string text = _requestedText;
+            try
+            {
+                byte[] snapshot = _snapshot!; int pageIndex = _pageIndex;
+                NativePdfTextBlock source = _session!.Annotation.NativeText!;
+                _previewSource ??= Task.Run(() => _service.CreateTextPreview(snapshot, pageIndex, source));
+                var previewSource = await _previewSource;
+                if (version != _version || _input == null) return;
+                // Include input received while the page-only snapshot was prepared.
+                text = _requestedText;
+                if (text == _previewText) return;
+                // Resolve each IME composition against the original font again, so a
+                // completed syllable never inherits the preceding jamo's fallback.
+                var result = await Task.Run(() => _service.EditTextPreview(previewSource, text));
+                if (version != _version || _input == null) return;
+                if (_requestedText == _previewText) return;
+                using var rendered = await Task.Run(async () =>
+                {
+                    using var document = await PdfRenderDocument.LoadAsync(result.Bytes);
+                    return await document.RenderAsync(0, 2);
+                });
+                if (rendered == null) throw new InvalidOperationException(Loc.Get("CannotRenderTheModifiedPDFPreview"));
+                var bitmap = new BitmapImage(); await bitmap.SetSourceAsync(rendered.AsRandomAccessStream());
+                if (version != _version || _input == null) return;
+                _pageImage!.Source = bitmap; _preview = result; _previewText = text; _layout = result.Layout;
+                var bounds = _layout.Bounds;
+                _input.Width = Math.Max((_session!.Annotation.Width + Math.Max(0, bounds.Right - _session.Annotation.NativeText!.Bounds.Right)) * Scale, 20);
+                _input.Height = Math.Max((_session.Annotation.Height + Math.Max(0, bounds.Bottom - _session.Annotation.NativeText!.Bounds.Bottom)) * Scale, 20);
+                _status?.Invoke(result.FontSubstitutionStatus is string substitution
+                    ? substitution + Loc.Get("CtrlEnterFinishEscCancel")
+                    : source.Lines.Count > 1
+                    ? Loc.Get("WrappingParagraphsWithTheOriginalFontCtrlEnterFinish")
+                    : Loc.Get("ExtendingASingleLineToTheRightWithThe"));
+                DrawSelection();
+            }
+            catch (Exception error)
+            {
+                if (version != _version || _input == null) return;
+                // A transient IME syllable may fail font/overlap validation after
+                // newer input has already fixed it. Never replace that newer text.
+                if (text != _requestedText) continue;
+                int caret = Math.Min(_input.Document.Selection.StartPosition, _previewText.Length);
+                _suppress = true;
+                try { _input.Document.SetText(TextSetOptions.None, _previewText); _input.Document.Selection.SetRange(caret, caret); }
+                finally { _suppress = false; }
+                _requestedText = _previewText;
+                _status?.Invoke(error.Message); DrawSelection();
+            }
         }
-        catch (Exception error)
-        {
-            if (version != _version || _input == null) return;
-            int caret = Math.Min(_input.Document.Selection.StartPosition, _previewText.Length);
-            _suppress = true;
-            try { _input.Document.SetText(TextSetOptions.None, _previewText); _input.Document.Selection.SetRange(caret, caret); }
-            finally { _suppress = false; }
-            _status?.Invoke(error.Message); DrawSelection();
-        }
-        finally { _previewGate.Release(); }
     }
 
     private void DrawSelection()
@@ -276,6 +295,7 @@ public sealed class NativeInlineTextEditorController
     {
         if (_input == null || _session == null || _session.IsFinishing) return;
         _session.IsFinishing = true;
+        _input.IsReadOnly = true;
         try
         {
             int start = Math.Min(_input.Document.Selection.StartPosition, _input.Document.Selection.EndPosition);
@@ -283,13 +303,20 @@ public sealed class NativeInlineTextEditorController
             await _pending;
             if (_preview == null || _snapshot == null) return;
             var annotation = _session.Annotation;
+            // Preview bytes contain only one page. Rewrite the complete original
+            // document once on confirmation, using exactly the previewed text.
+            var source = annotation.NativeText!;
+            byte[] snapshot = _snapshot;
+            int pageIndex = _pageIndex;
+            string text = _previewText;
+            var result = await Task.Run(() => _service.Edit(snapshot, pageIndex, new(source, text)));
             // Preserve the highlighted characters for a subsequent toolbar
             // command. A caret alone keeps the entire edited text selected.
-            var selection = await Task.Run(() => _service.RefreshSelection(_preview.Bytes, _pageIndex,
-                _preview.Layout, length > 0 ? start : 0, length > 0 ? length : int.MaxValue));
-            if (!ReferenceEquals(_preview.Bytes, _snapshot))
+            var selection = await Task.Run(() => _service.RefreshSelection(result.Bytes, pageIndex,
+                result.Layout, length > 0 ? start : 0, length > 0 ? length : int.MaxValue));
+            if (!ReferenceEquals(result.Bytes, _snapshot))
             {
-                _manager!.CommitNativeTextEdit(_snapshot, _preview.Bytes, _pageIndex);
+                _manager!.CommitNativeTextEdit(_snapshot, result.Bytes, _pageIndex);
                 // Stream operation indexes change after replacement. Discard stale
                 // handles; the next selection is extracted from committed bytes.
                 foreach (var item in _annotations!.Where(a => a.PageIndex == _pageIndex && a.NativeText != null &&
@@ -297,7 +324,7 @@ public sealed class NativeInlineTextEditorController
                 { _annotations!.Remove(item); _selected!.Remove(item); _removed?.Invoke(item); }
             }
             if (selection != null) NativePdfTextService.UpdateAnnotation(annotation, selection);
-            string? substitution = _preview.FontSubstitutionStatus;
+            string? substitution = result.FontSubstitutionStatus;
             Cleanup(); if (_render != null) await _render(); _overlays?.Invoke();
             if (_restoreFocusOnFinish) _restoreFocus?.Invoke(false);
             if (substitution != null) _status?.Invoke(Loc.Get("TextEditingComplete") + substitution);
@@ -305,6 +332,7 @@ public sealed class NativeInlineTextEditorController
         catch (Exception error)
         {
             if (_session != null) _session.IsFinishing = false;
+            if (_input != null) _input.IsReadOnly = false;
             _finishing = null; _status?.Invoke(error.Message); _input?.Focus(FocusState.Programmatic);
         }
     }
@@ -324,6 +352,6 @@ public sealed class NativeInlineTextEditorController
         var input = _input; _input = null;
         if (input != null) _canvas?.Children.Remove(input);
         if (_decoration != null) _canvas?.Children.Remove(_decoration);
-        _decoration = null; _session = null; _snapshot = null; _preview = null;
+        _decoration = null; _session = null; _snapshot = null; _preview = null; _previewSource = null;
     }
 }

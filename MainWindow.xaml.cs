@@ -1006,6 +1006,14 @@ namespace PDF_simple_edit
             finally { _isSyncingDrawingWidth = false; }
             RenderAnnotationOverlays();
             _formOverlayController.Render();
+            if (mode == EditToolMode.Select)
+                _ = PrepareTextSelectionAsync(_pdfManager, _currentPageIndex);
+        }
+
+        private static async Task PrepareTextSelectionAsync(PdfDocumentManager manager, int pageIndex)
+        {
+            try { await manager.ExtractPageContentsAsync(pageIndex, textOnly: true); }
+            catch (Exception error) { System.Diagnostics.Debug.WriteLine($"Text selection preparation: {error}"); }
         }
 
         private void UpdateCursor(EditToolMode mode)

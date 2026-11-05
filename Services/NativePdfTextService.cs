@@ -226,9 +226,12 @@ public sealed partial class NativePdfTextService
     private static float[] Values(Matrix m) => new[] { m.Get(0), m.Get(1), m.Get(3), m.Get(4), m.Get(6), m.Get(7) };
     private static Matrix MatrixOf(float[] m) => new(m[0], m[1], m[2], m[3], m[4], m[5]);
 
-    private static List<NativePdfTextBlock> Group(List<NativePdfRun> runs) =>
-        NativePdfParagraphLayout.GroupRuns(runs).Select(parts => BuildBlock(parts) with
-        { Runs = parts.Select(p => p.Id).Distinct().Select(id => runs.Single(r => r.Id == id)).ToList() }).ToList();
+    private static List<NativePdfTextBlock> Group(List<NativePdfRun> runs)
+    {
+        var byId = runs.ToDictionary(r => r.Id);
+        return NativePdfParagraphLayout.GroupRuns(runs).Select(parts => BuildBlock(parts) with
+        { Runs = parts.Select(p => p.Id).Distinct().Select(id => byId[id]).ToList() }).ToList();
+    }
 
     // A marquee is an explicit editing boundary, never an invitation to expand
     // to the inferred paragraph. Keep full runs for validation and operand repair.
@@ -303,6 +306,10 @@ public sealed partial class NativePdfTextService
         EditMany(bytes, pageIndex, new[] { edit });
 
     public NativePdfTextResult EditMany(byte[] bytes, int pageIndex, IReadOnlyList<NativePdfTextEdit> edits)
+        => EditMany(bytes, pageIndex, edits, null, preview: false);
+
+    private NativePdfTextResult EditMany(byte[] bytes, int pageIndex, IReadOnlyList<NativePdfTextEdit> edits,
+        List<NativePdfTextBlock>? originalBlocks, bool preview)
     {
         ArgumentNullException.ThrowIfNull(bytes);
         if (edits.Count == 0) throw new ArgumentException(Loc.Get("NoTextToEdit"), nameof(edits));
@@ -316,7 +323,8 @@ public sealed partial class NativePdfTextService
         // PDFs after an incremental update (including the AJCC9 abstract). Write
         // a complete current revision so preview, saved output and extraction
         // agree. PatchSource still preserves untouched content stream bytes.
-        using (var doc = new PdfDocument(new PdfReader(input), new PdfWriter(output)))
+        using (var doc = new PdfDocument(new PdfReader(input), new PdfWriter(output,
+            new WriterProperties().SetCompressionLevel(preview ? CompressionConstants.NO_COMPRESSION : CompressionConstants.DEFAULT_COMPRESSION))))
         {
             var page = doc.GetPage(pageIndex + 1);
             var data = Read(page);
@@ -437,7 +445,7 @@ public sealed partial class NativePdfTextService
             var original = edits[0].Block;
             bool Selected(NativePdfGlyph g) => original.Glyphs.Any(s => !s.IsVirtual && s.RunId == g.RunId &&
                 s.Code.SequenceEqual(g.Code) && Math.Abs(s.Origin.X - g.Origin.X) < .001 && Math.Abs(s.Origin.Y - g.Origin.Y) < .001);
-            var blocks = Extract(bytes, pageIndex);
+            var blocks = originalBlocks ?? Extract(bytes, pageIndex);
             var flow = PlanFollowingTextFlow(blocks, edits[0], layout, Selected);
             if (flow.Count > 0)
             {
@@ -462,7 +470,7 @@ public sealed partial class NativePdfTextService
                 }).ToList();
                 // Resolve new operation IDs after replacing the title. Moving
                 // dependent text is part of the same preview/undo transaction.
-                resultBytes = EditMany(resultBytes, pageIndex, movedEdits).Bytes;
+                resultBytes = EditMany(resultBytes, pageIndex, movedEdits, null, preview).Bytes;
             }
             var other = blocks.SelectMany(b => b.Glyphs
                 .Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text) && !Selected(g))
@@ -544,6 +552,8 @@ public sealed partial class NativePdfTextService
         var block = edit.Block;
         string text = edit.Text.Replace("\r\n", "\n").Replace('\r', '\n');
         var original = block.Glyphs;
+        var glyphsByTextIndex = new Dictionary<int, NativePdfGlyph>();
+        foreach (var glyph in original) glyphsByTextIndex.TryAdd(glyph.TextIndex, glyph);
         var originalOrder = original.Select((glyph, index) => (glyph, index)).Where(p => !p.glyph.IsVirtual)
             .ToDictionary(p => p.glyph.Code, p => p.index);
         var runs = block.Runs.ToDictionary(r => r.Id);
@@ -610,8 +620,9 @@ public sealed partial class NativePdfTextService
         for (int index = 0; index < text.Length;)
         {
             int sourceIndex = matches.GetValueOrDefault(index, -1);
-            var existing = sourceIndex < 0 ? null : original.FirstOrDefault(g => g.TextIndex == sourceIndex &&
-                index + g.Text.Length <= text.Length && text.AsSpan(index, g.Text.Length).SequenceEqual(g.Text));
+            var existing = sourceIndex < 0 ? null : glyphsByTextIndex.GetValueOrDefault(sourceIndex);
+            if (existing != null && (index + existing.Text.Length > text.Length ||
+                !text.AsSpan(index, existing.Text.Length).SequenceEqual(existing.Text))) existing = null;
             if (existing != null)
             {
                 tokens.Add(existing with { TextIndex = index }); precedingSourceIndex = existing.TextIndex + existing.Text.Length - 1;

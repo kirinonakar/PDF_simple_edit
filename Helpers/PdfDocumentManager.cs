@@ -48,7 +48,9 @@ namespace PDF_simple_edit.Helpers
         public bool RequiresSignedCopySave => _signedSourcePath != null && _filePath != null && SamePath(_signedSourcePath, _filePath);
         private bool _isModified;
         private readonly object _docLock = new();
-        private readonly Dictionary<int, List<PdfPageContent>> _contentCache = new();
+        private readonly Dictionary<(int Page, bool TextOnly), List<PdfPageContent>> _contentCache = new();
+        private readonly Dictionary<(byte[] Source, int Page, TextEditingMode Mode, bool TextOnly),
+            Task<List<PdfPageContent>>> _contentExtractions = new();
         private TextEditingMode _textEditingMode = TextEditingMode.PreserveOriginal;
         public TextEditingMode TextEditingMode
         {
@@ -708,29 +710,40 @@ namespace PDF_simple_edit.Helpers
             }
         }
 
-        public async Task<List<PdfPageContent>> ExtractPageContentsAsync(int pageIndex)
+        public Task<List<PdfPageContent>> ExtractPageContentsAsync(int pageIndex, bool textOnly = false)
         {
-            byte[] pdfSnapshot;
-            byte[] sourceVersion;
-            TextEditingMode mode;
             lock (_docLock)
             {
                 if (_pdfBytes == null)
-                    return new List<PdfPageContent>();
-                if (_contentCache.TryGetValue(pageIndex, out List<PdfPageContent>? cached))
-                    return cached;
-                pdfSnapshot = _pdfBytes;
-                sourceVersion = _pdfBytes;
-                mode = TextEditingMode;
+                    return Task.FromResult(new List<PdfPageContent>());
+                if (_contentCache.TryGetValue((pageIndex, textOnly), out var cached))
+                    return Task.FromResult(cached);
+                if (textOnly && _contentCache.TryGetValue((pageIndex, false), out var full))
+                {
+                    var texts = full.Where(c => c.Type == PageContentType.Text).ToList();
+                    _contentCache[(pageIndex, true)] = texts;
+                    return Task.FromResult(texts);
+                }
+
+                var key = (Source: _pdfBytes, Page: pageIndex, Mode: TextEditingMode, TextOnly: textOnly);
+                if (_contentExtractions.TryGetValue(key, out var pending)) return pending;
+                // Double-click/drag requests share the same in-flight analysis.
+                // A result from an older document or mode never enters the cache.
+                var task = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var contents = await _contentExtractor.ExtractAsync(key.Source, key.Page, key.Mode, key.TextOnly);
+                        lock (_docLock)
+                            if (ReferenceEquals(_pdfBytes, key.Source) && TextEditingMode == key.Mode)
+                                _contentCache[(key.Page, key.TextOnly)] = contents;
+                        return contents;
+                    }
+                    finally { lock (_docLock) _contentExtractions.Remove(key); }
+                });
+                _contentExtractions.Add(key, task);
+                return task;
             }
-
-            List<PdfPageContent> contents =
-                await _contentExtractor.ExtractAsync(pdfSnapshot, pageIndex, mode);
-
-            lock (_docLock)
-                if (ReferenceEquals(_pdfBytes, sourceVersion) && TextEditingMode == mode)
-                    _contentCache[pageIndex] = contents;
-            return contents;
         }
 
 

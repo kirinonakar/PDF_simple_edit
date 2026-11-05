@@ -76,7 +76,5 @@ You can download the latest version from the [Releases Page](https://github.com/
 3. Restore NuGet packages.
 4. Build and run the `PDF_simple_edit` project.
 
-Performance and persistence regression checks are documented in [tests/RegressionTests](tests/RegressionTests/README.md).
-
 ## 📄 License
 This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
