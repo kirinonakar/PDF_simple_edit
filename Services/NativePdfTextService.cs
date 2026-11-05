@@ -437,14 +437,77 @@ public sealed partial class NativePdfTextService
             var original = edits[0].Block;
             bool Selected(NativePdfGlyph g) => original.Glyphs.Any(s => !s.IsVirtual && s.RunId == g.RunId &&
                 s.Code.SequenceEqual(g.Code) && Math.Abs(s.Origin.X - g.Origin.X) < .001 && Math.Abs(s.Origin.Y - g.Origin.Y) < .001);
-            var other = new NativePdfTextService().Extract(bytes, pageIndex).SelectMany(b => b.Glyphs)
-                .Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text) && !Selected(g)).ToList();
+            var blocks = Extract(bytes, pageIndex);
+            var flow = PlanFollowingTextFlow(blocks, edits[0], layout, Selected);
+            if (flow.Count > 0)
+            {
+                double pageBottom = finalMap.Rotation is 90 or 270 ? finalMap.Width : finalMap.Height;
+                var movingBlocks = flow.Select(item => item.Block).ToHashSet();
+                var stationary = blocks.Where(b => !movingBlocks.Contains(b)).SelectMany(b => b.Glyphs)
+                    .Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text) && !Selected(g)).ToList();
+                foreach (var item in flow)
+                {
+                    if (item.Block.Bounds.Bottom + item.DeltaY > pageBottom - .25 ||
+                        item.Block.Glyphs.Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text))
+                            .Select(g => Translate(g, 0, item.DeltaY)).Any(g => stationary.Any(s =>
+                                Math.Min(s.Bounds.Right, g.Bounds.Right) - Math.Max(s.Bounds.X, g.Bounds.X) > .25 &&
+                                Math.Min(s.Bounds.Bottom, g.Bounds.Bottom) - Math.Max(s.Bounds.Y, g.Bounds.Y) > .25)))
+                        throw new InvalidOperationException(Loc.Get("TheAddedLinesOverlapOtherOriginalTextShortenThe"));
+                }
+                var movedEdits = flow.Select(item =>
+                {
+                    var selection = RefreshSelection(resultBytes, pageIndex, item.Block)
+                        ?? throw new InvalidOperationException(Loc.Get("ThePDFContentChangedSelectTheTextAgain"));
+                    return new NativePdfTextEdit(selection, selection.Text, DeltaY: item.DeltaY);
+                }).ToList();
+                // Resolve new operation IDs after replacing the title. Moving
+                // dependent text is part of the same preview/undo transaction.
+                resultBytes = EditMany(resultBytes, pageIndex, movedEdits).Bytes;
+            }
+            var other = blocks.SelectMany(b => b.Glyphs
+                .Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text) && !Selected(g))
+                .Select(g => Translate(g, 0, flow.FirstOrDefault(item => ReferenceEquals(item.Block, b)).DeltaY))).ToList();
             foreach (var glyph in layout.Glyphs.Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text) && !Selected(g)))
                 if (other.Any(g => Math.Min(g.Bounds.Right, glyph.Bounds.Right) - Math.Max(g.Bounds.X, glyph.Bounds.X) > .25 &&
                     Math.Min(g.Bounds.Bottom, glyph.Bounds.Bottom) - Math.Max(g.Bounds.Y, glyph.Bounds.Y) > .25))
                     throw new InvalidOperationException(Loc.Get("TheAddedLinesOverlapOtherOriginalTextShortenThe"));
         }
         return new(resultBytes, layout) { Layouts = layouts };
+    }
+
+    private static List<(NativePdfTextBlock Block, double DeltaY)> PlanFollowingTextFlow(
+        List<NativePdfTextBlock> blocks, NativePdfTextEdit edit, NativePdfTextBlock layout,
+        Func<NativePdfGlyph, bool> selected)
+    {
+        var moves = new List<(NativePdfTextBlock Block, double DeltaY)>();
+        var source = edit.Block;
+        if (edit.Style != null || edit.Transform != null || edit.DeltaX != 0 || edit.DeltaY != 0 ||
+            layout.Bounds.Bottom <= source.Bounds.Bottom + .25) return moves;
+        // A marquee remains an explicit boundary. Only a complete paragraph can
+        // push following paragraphs; fragments must not move unselected siblings.
+        var owners = blocks.Where(b => b.Glyphs.Any(selected) &&
+            b.Glyphs.Where(g => !g.IsVirtual).All(selected)).ToList();
+        if (owners.Count != 1) return moves;
+        var owner = owners[0];
+        if (source.Glyphs.Count(g => !g.IsVirtual) != owner.Glyphs.Count(g => !g.IsVirtual)) return moves;
+        double originalBottom = owner.Bounds.Bottom, bottom = layout.Bounds.Bottom;
+        double size = owner.Runs.Max(r => r.DisplayFontSize);
+        foreach (var block in blocks.Where(b => b != owner && b.Bounds.Y >= owner.Bounds.Bottom - .25 &&
+            Math.Min(b.Bounds.Right, owner.Bounds.Right) - Math.Max(b.Bounds.X, owner.Bounds.X) > .25)
+            .OrderBy(b => b.Bounds.Y))
+        {
+            double nextSize = block.Runs.Max(r => r.DisplayFontSize);
+            // Keep close caption/title spacing; larger whitespace can absorb
+            // growth before it needs to propagate further down the column.
+            double gap = Math.Min(Math.Max(0, block.Bounds.Y - originalBottom), Math.Max(2, Math.Min(size, nextSize) * .35));
+            double shift = bottom + gap - block.Bounds.Y;
+            if (shift <= .25) break;
+            if (block.Glyphs.Any(g => !g.IsVirtual && (Math.Abs(g.End.Y - g.Origin.Y) > .1 || g.End.X < g.Origin.X)))
+                throw new InvalidOperationException(Loc.Get("TheAddedLinesOverlapOtherOriginalTextShortenThe"));
+            moves.Add((block, shift));
+            originalBottom = block.Bounds.Bottom; bottom = block.Bounds.Bottom + shift; size = nextSize;
+        }
+        return moves;
     }
 
     private static List<NativePdfTextBlock> ApplyInkBounds(PdfPage page, List<NativePdfTextBlock> blocks, PageMap map)
