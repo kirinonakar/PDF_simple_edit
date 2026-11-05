@@ -67,7 +67,7 @@ namespace PDF_simple_edit
         private readonly TextFontSettings _fontSettings = new();
         private string _signatureColor = "#000000";
         private double _signatureLineWidth = 2.0;
-        private string _drawingColor = "#000000";
+        private string _drawingColor = "#FF0000";
         private double _drawingLineWidth = 2;
 
         // Resolve the selected document when a composed controller invokes a command.

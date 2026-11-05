@@ -51,7 +51,7 @@
                     </DropDownButton.Flyout>
                 </DropDownButton>
                 <DropDownButton x:Name="DrawingSettingsButton" x:FieldModifier="public" IsEnabled="False" Padding="6" Height="{Binding ActualHeight, ElementName=DrawingButton}" VerticalAlignment="Center" ToolTipService.ToolTip="그리기 색상 및 선 두께" AutomationProperties.Name="그리기 설정">
-                    <Border x:Name="DrawingColorIndicator" x:FieldModifier="public" Width="14" Height="4" Background="Black"/>
+                    <Border x:Name="DrawingColorIndicator" x:FieldModifier="public" Width="14" Height="4" Background="Red"/>
                     <DropDownButton.Flyout>
                         <Flyout FlyoutBase.Placement="BottomEdgeAlignedRight">
                             <StackPanel Spacing="10" Width="360">
