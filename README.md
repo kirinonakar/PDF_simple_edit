@@ -54,7 +54,7 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 ## 🛠️ Technology Stack
 - **Framework**: .NET 10.0
 - **UI Framework**: WinUI 3 (Windows App SDK)
-- **PDF Engine**: iText 9.8.0 (Core, BouncyCastle), pdfSweep 5.0.8; PDFium for glyph geometry
+- **PDF Engine**: iText 9.8.0 (Core, BouncyCastle), pdfSweep 5.0.8; Windows.Data.Pdf for page rendering.
 - **Language**: C#
 
 ## ⚙️ Installation

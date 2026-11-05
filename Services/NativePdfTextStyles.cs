@@ -183,7 +183,7 @@ public sealed partial class NativePdfTextService
             };
         }
         else selected = BuildBlock(slices) with { Runs = slices.Select(s => data.Runs.Single(r => r.Id == s.Id)).ToList() };
-        return ApplyInkBounds(bytes, pageIndex, new() { selected }, data.Map)[0];
+        return ApplyInkBounds(doc.GetPage(pageIndex + 1), new() { selected }, data.Map)[0];
     }
 
     public static void UpdateAnnotation(PdfAnnotation annotation, NativePdfTextBlock block)

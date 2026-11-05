@@ -68,7 +68,7 @@ public sealed partial class NativePdfTextService
     {
         using var doc = new PdfDocument(new PdfReader(new MemoryStream(bytes)));
         var data = Read(doc.GetPage(pageIndex + 1));
-        return ApplyInkBounds(bytes, pageIndex, data.Blocks, data.Map);
+        return ApplyInkBounds(doc.GetPage(pageIndex + 1), data.Blocks, data.Map);
     }
 
     private sealed record PageData(List<Source> Sources, List<NativePdfRun> Runs,
@@ -419,7 +419,7 @@ public sealed partial class NativePdfTextService
         using var finalDoc = new PdfDocument(new PdfReader(new MemoryStream(resultBytes)));
         var finalPage = finalDoc.GetPage(pageIndex + 1); var finalBox = finalPage.GetCropBox();
         var finalMap = new PageMap(finalBox.GetX(), finalBox.GetY(), finalBox.GetWidth(), finalBox.GetHeight(), ((finalPage.GetRotation() % 360) + 360) % 360);
-        layouts = ApplyInkBounds(resultBytes, pageIndex, layouts, finalMap);
+        layouts = ApplyInkBounds(finalPage, layouts, finalMap);
         layout = layouts[^1];
         if (edits.Any(e => e.Style is { } style && (style.FontSize != null || style.FontFamily != null || style.IsBold != null || style.IsItalic != null)))
         {
@@ -447,9 +447,9 @@ public sealed partial class NativePdfTextService
         return new(resultBytes, layout) { Layouts = layouts };
     }
 
-    private static List<NativePdfTextBlock> ApplyInkBounds(byte[] bytes, int pageIndex, List<NativePdfTextBlock> blocks, PageMap map)
+    private static List<NativePdfTextBlock> ApplyInkBounds(PdfPage page, List<NativePdfTextBlock> blocks, PageMap map)
     {
-        var boxes = NativePdfGlyphGeometry.Read(bytes, pageIndex).Select(g =>
+        var boxes = NativePdfGlyphGeometry.Read(page).Select(g =>
         {
             var a = map.Map(g.Box.X, g.Box.Y); var b = map.Map(g.Box.Right, g.Box.Bottom);
             return (Origin: map.Map(g.X, g.Y), Box: new PdfTextBox(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y)));

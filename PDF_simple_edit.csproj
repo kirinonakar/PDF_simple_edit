@@ -84,7 +84,6 @@
 
   <ItemGroup>
     <PackageReference Include="itext" Version="9.8.0" />
-    <PackageReference Include="PDFiumCore" Version="157.0.8100" />
     <PackageReference Include="itext.bouncy-castle-adapter" Version="9.8.0" />
     <!-- pdfSweep 5.0.8 ships only net461 assets; the application still targets .NET 10. -->
     <PackageReference Include="itext.pdfsweep" Version="5.0.8" NoWarn="NU1701" />
