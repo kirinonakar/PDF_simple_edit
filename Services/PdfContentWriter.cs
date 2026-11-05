@@ -827,7 +827,7 @@ namespace PDF_simple_edit.Services
 
         public void AddPaths(PdfDocument doc, int pageIndex,
             IEnumerable<IReadOnlyList<PdfPathPoint>> strokes, Color color, double lineWidth, string? metadata = null,
-            IReadOnlySet<int>? filledStrokeIndexes = null)
+            IReadOnlySet<int>? filledStrokeIndexes = null, bool strokeFilledPaths = false)
         {
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages())
                 return;
@@ -883,7 +883,12 @@ namespace PDF_simple_edit.Services
                 var stroke = mappedStrokes[i];
                 appearanceCanvas.MoveTo(stroke[0].X, stroke[0].Y);
                 foreach (var point in stroke.Skip(1)) appearanceCanvas.LineTo(point.X, point.Y);
-                if (filledStrokeIndexes?.Contains(i) == true) appearanceCanvas.ClosePath().Fill();
+                if (filledStrokeIndexes?.Contains(i) == true)
+                {
+                    appearanceCanvas.ClosePath();
+                    if (strokeFilledPaths) appearanceCanvas.EoFillStroke();
+                    else appearanceCanvas.Fill();
+                }
                 else appearanceCanvas.Stroke();
             }
             appearanceCanvas.Release();

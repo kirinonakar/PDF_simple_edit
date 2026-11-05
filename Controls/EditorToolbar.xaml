@@ -47,11 +47,12 @@
                     <DropDownButton.Flyout>
                         <MenuFlyout FlyoutBase.Placement="BottomEdgeAlignedRight">
                             <ToggleMenuFlyoutItem x:Name="DrawFreehandItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Freehand}" Tag="DrawFreehand"/>
-                            <ToggleMenuFlyoutItem x:Name="DrawRectangleItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Rectangle}" Tag="DrawRectangle"/>
-                            <ToggleMenuFlyoutItem x:Name="DrawEllipseItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Ellipse}" Tag="DrawEllipse"/>
+                            <ToggleMenuFlyoutItem x:Name="DrawLineItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Line}" Tag="DrawLine"/>
                             <ToggleMenuFlyoutItem x:Name="DrawArrowItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Arrow}" Tag="DrawArrow"/>
                             <ToggleMenuFlyoutItem x:Name="DrawTriangleArrowItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=TriangleArrow}" Tag="DrawTriangleArrow"/>
                             <ToggleMenuFlyoutItem x:Name="DrawOutlineArrowItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=OutlineArrow}" Tag="DrawOutlineArrow"/>
+                            <ToggleMenuFlyoutItem x:Name="DrawRectangleItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Rectangle}" Tag="DrawRectangle"/>
+                            <ToggleMenuFlyoutItem x:Name="DrawEllipseItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Ellipse}" Tag="DrawEllipse"/>
                             <ToggleMenuFlyoutItem x:Name="DrawPolygonItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Polygon}" Tag="DrawPolygon"/>
                         </MenuFlyout>
                     </DropDownButton.Flyout>
@@ -59,10 +60,12 @@
                 <DropDownButton x:Name="DrawingSettingsButton" x:FieldModifier="public" IsEnabled="False" Padding="6" Height="{Binding ActualHeight, ElementName=DrawingButton}" VerticalAlignment="Center" ToolTipService.ToolTip="{loc:LocalizedString Key=DrawingColorAndLineWidth}" AutomationProperties.Name="{loc:LocalizedString Key=DrawingSettings}">
                     <Border x:Name="DrawingColorIndicator" x:FieldModifier="public" Width="14" Height="4" Background="Red"/>
                     <DropDownButton.Flyout>
-                        <Flyout FlyoutBase.Placement="BottomEdgeAlignedRight">
+                        <Flyout x:Name="DrawingSettingsFlyout" x:FieldModifier="public" FlyoutBase.Placement="BottomEdgeAlignedRight">
                             <StackPanel Spacing="10" Width="360">
                                 <TextBlock Text="{loc:LocalizedString Key=DrawingLineSettings}" FontWeight="Bold"/>
                                 <ColorPicker x:Name="DrawingColorPicker" x:FieldModifier="public" Width="340" HorizontalAlignment="Left" IsAlphaEnabled="False"/>
+                                <CheckBox x:Name="DrawingFillCheckBox" x:FieldModifier="public" Content="{loc:LocalizedString Key=FillShape}"
+                                          ToolTipService.ToolTip="{loc:LocalizedString Key=FillShapeTooltip}" IsChecked="False" Visibility="Collapsed"/>
                                 <StackPanel Orientation="Horizontal" Spacing="10">
                                     <TextBlock Text="{loc:LocalizedString Key=LineWidth}" VerticalAlignment="Center"/>
                                     <Slider x:Name="DrawingWidthSlider" x:FieldModifier="public" Minimum="0.5" Maximum="12" StepFrequency="0.5" Value="2" Width="150"/>

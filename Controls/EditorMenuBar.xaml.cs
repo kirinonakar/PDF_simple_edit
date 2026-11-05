@@ -29,6 +29,7 @@ public enum EditorMenuCommand
     RedactRegionTool,
     SignatureTool,
     DrawFreehandTool,
+    DrawLineTool,
     DrawRectangleTool,
     DrawEllipseTool,
     DrawArrowTool,
@@ -108,6 +109,7 @@ public sealed partial class EditorMenuBar : UserControl
         MenuRedactRegion.IsChecked = mode == EditToolMode.RedactRegion;
         MenuSignature.IsChecked = mode == EditToolMode.Signature;
         MenuDrawFreehand.IsChecked = mode == EditToolMode.DrawFreehand;
+        MenuDrawLine.IsChecked = mode == EditToolMode.DrawLine;
         MenuDrawRectangle.IsChecked = mode == EditToolMode.DrawRectangle;
         MenuDrawEllipse.IsChecked = mode == EditToolMode.DrawEllipse;
         MenuDrawArrow.IsChecked = mode == EditToolMode.DrawArrow;

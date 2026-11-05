@@ -1175,16 +1175,16 @@ To remove passwords individually, use Encryption and password settings.</value>
     <value>Drawing tools</value>
   </data>
   <data name="FreehandRectangleEllipseArrowPolygon" xml:space="preserve">
-    <value>Freehand · Rectangle · Ellipse · Arrow · Polygon</value>
+    <value>Freehand · Line · Rectangle · Ellipse · Arrow · Polygon</value>
   </data>
   <data name="DrawingColorAndLineWidth" xml:space="preserve">
-    <value>Drawing color and line width</value>
+    <value>Drawing color, fill, and line width</value>
   </data>
   <data name="DrawingSettings" xml:space="preserve">
     <value>Drawing settings</value>
   </data>
   <data name="DrawingLineSettings" xml:space="preserve">
-    <value>Drawing line settings</value>
+    <value>Drawing settings</value>
   </data>
   <data name="LineWidth" xml:space="preserve">
     <value>Line width</value>
@@ -1368,5 +1368,17 @@ To remove passwords individually, use Encryption and password settings.</value>
   </data>
   <data name="AdjustTextWidthTooltip" xml:space="preserve">
     <value>Checked: scale text when resizing its area. Unchecked: keep the font size and reflow text to the area width.</value>
+  </data>
+  <data name="Line" xml:space="preserve">
+    <value>Line</value>
+  </data>
+  <data name="ToolLineDragFromStartToEndEscCancel" xml:space="preserve">
+    <value>Tool: Line — drag from start to end (Esc: cancel)</value>
+  </data>
+  <data name="FillShape" xml:space="preserve">
+    <value>Fill</value>
+  </data>
+  <data name="FillShapeTooltip" xml:space="preserve">
+    <value>Fill the interior of rectangles, ellipses, and polygons with the selected color.</value>
   </data>
 </root>

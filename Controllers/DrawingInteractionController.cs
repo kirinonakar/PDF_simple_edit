@@ -25,6 +25,7 @@ public sealed class DrawingInteractionController
     private readonly Func<EditToolMode> _getMode;
     private readonly Func<string> _getColor;
     private readonly Func<double> _getWidth;
+    private readonly Func<bool> _getFill;
     private readonly Action<PdfAnnotation> _commit;
     private readonly List<PdfPathPoint> _points = new();
     private PdfDocumentManager? _manager;
@@ -32,16 +33,17 @@ public sealed class DrawingInteractionController
     private DrawingKind _kind;
     private string _color = "#000000";
     private double _width;
+    private bool _isFilled;
     private uint? _pointerId;
     private PdfPathPoint? _hover;
     private FrameworkElement? _preview;
 
     public DrawingInteractionController(Canvas canvas, TextBlock status,
         Func<PdfDocumentManager> getManager, Func<int> getPage, Func<EditToolMode> getMode,
-        Func<string> getColor, Func<double> getWidth, Action<PdfAnnotation> commit)
+        Func<string> getColor, Func<double> getWidth, Func<bool> getFill, Action<PdfAnnotation> commit)
     {
         _canvas = canvas; _status = status; _getManager = getManager; _getPage = getPage;
-        _getMode = getMode; _getColor = getColor; _getWidth = getWidth; _commit = commit;
+        _getMode = getMode; _getColor = getColor; _getWidth = getWidth; _getFill = getFill; _commit = commit;
         canvas.PointerCaptureLost += (_, e) => { if (_pointerId == e.Pointer.PointerId) Cancel(); };
         canvas.PointerCanceled += (_, _) => Cancel();
     }
@@ -66,6 +68,7 @@ public sealed class DrawingInteractionController
         {
             _manager = _getManager(); _page = _getPage();
             _kind = PdfDrawingGeometry.GetKind(_getMode()); _color = _getColor(); _width = _getWidth();
+            _isFilled = _getFill();
         }
         if (_kind == DrawingKind.Polygon)
         {
@@ -147,7 +150,7 @@ public sealed class DrawingInteractionController
         if (_preview != null) _canvas.Children.Remove(_preview);
         var points = GetPreviewPoints();
         if (points.Count < 2) return;
-        var drawing = PdfDrawingGeometry.Create(_kind, points, _page, _color, _width);
+        var drawing = PdfDrawingGeometry.Create(_kind, points, _page, _color, _width, _isFilled);
         _preview = CreateElement(drawing);
         Canvas.SetLeft(_preview, drawing.X * PdfToPixels);
         Canvas.SetTop(_preview, drawing.Y * PdfToPixels);
@@ -157,7 +160,7 @@ public sealed class DrawingInteractionController
     private List<PdfPathPoint> GetPreviewPoints()
     {
         var points = _points.ToList();
-        if (_kind is DrawingKind.Rectangle or DrawingKind.Ellipse || PdfDrawingGeometry.IsArrow(_kind))
+        if (_kind is DrawingKind.Line or DrawingKind.Rectangle or DrawingKind.Ellipse || PdfDrawingGeometry.IsArrow(_kind))
             return new() { points[0], _hover ?? points[0] };
         if (_kind == DrawingKind.Polygon && _hover != null) points.Add(_hover);
         return points;
@@ -180,7 +183,7 @@ public sealed class DrawingInteractionController
         }
         if (!valid && _kind == DrawingKind.Polygon)
         { _status.Text = Loc.Get("AddAtLeastThreeNonCollinearVerticesToThe"); return; }
-        var drawing = valid ? PdfDrawingGeometry.Create(_kind, points, _page, _color, _width) : null;
+        var drawing = valid ? PdfDrawingGeometry.Create(_kind, points, _page, _color, _width, _isFilled) : null;
         Cancel();
         if (drawing != null) { _commit(drawing); _status.Text = Loc.Get("DrawingAddedUseSelectGraphicsGToEditIt"); }
     }

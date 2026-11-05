@@ -111,11 +111,12 @@
             </ToggleMenuFlyoutItem>
             <MenuFlyoutSubItem x:Name="MenuDrawing" Text="{loc:LocalizedString Key=Drawing}" IsEnabled="False">
                 <ToggleMenuFlyoutItem x:Name="MenuDrawFreehand" Text="{loc:LocalizedString Key=Freehand}" Tag="DrawFreehandTool" Click="Command_Click"/>
-                <ToggleMenuFlyoutItem x:Name="MenuDrawRectangle" Text="{loc:LocalizedString Key=Rectangle}" Tag="DrawRectangleTool" Click="Command_Click"/>
-                <ToggleMenuFlyoutItem x:Name="MenuDrawEllipse" Text="{loc:LocalizedString Key=Ellipse}" Tag="DrawEllipseTool" Click="Command_Click"/>
+                <ToggleMenuFlyoutItem x:Name="MenuDrawLine" Text="{loc:LocalizedString Key=Line}" Tag="DrawLineTool" Click="Command_Click"/>
                 <ToggleMenuFlyoutItem x:Name="MenuDrawArrow" Text="{loc:LocalizedString Key=Arrow}" Tag="DrawArrowTool" Click="Command_Click"/>
                 <ToggleMenuFlyoutItem x:Name="MenuDrawTriangleArrow" Text="{loc:LocalizedString Key=TriangleArrow}" Tag="DrawTriangleArrowTool" Click="Command_Click"/>
                 <ToggleMenuFlyoutItem x:Name="MenuDrawOutlineArrow" Text="{loc:LocalizedString Key=OutlineArrow}" Tag="DrawOutlineArrowTool" Click="Command_Click"/>
+                <ToggleMenuFlyoutItem x:Name="MenuDrawRectangle" Text="{loc:LocalizedString Key=Rectangle}" Tag="DrawRectangleTool" Click="Command_Click"/>
+                <ToggleMenuFlyoutItem x:Name="MenuDrawEllipse" Text="{loc:LocalizedString Key=Ellipse}" Tag="DrawEllipseTool" Click="Command_Click"/>
                 <ToggleMenuFlyoutItem x:Name="MenuDrawPolygon" Text="{loc:LocalizedString Key=Polygon}" Tag="DrawPolygonTool" Click="Command_Click"/>
             </MenuFlyoutSubItem>
             <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=DrawSignature}" x:Name="MenuSignature" Tag="SignatureTool" Click="Command_Click" IsEnabled="False">

@@ -516,7 +516,9 @@ namespace PDF_simple_edit.Helpers
                 return new PdfPathPoint { X = mapped.X, Y = mapped.Y };
             }).ToList()).ToList();
             _contentWriter.AddPaths(doc, annotation.PageIndex, strokes, color, annotation.LineWidth,
-                PdfSignatureMetadata.Serialize(annotation), annotation.DrawingKind == DrawingKind.TriangleArrow ? new HashSet<int> { 0 } : null);
+                PdfSignatureMetadata.Serialize(annotation),
+                Enumerable.Range(0, strokes.Count).Where(i => PdfDrawingGeometry.IsFilledStroke(annotation, i)).ToHashSet(),
+                strokeFilledPaths: PdfDrawingGeometry.SupportsFill(annotation.DrawingKind));
         }
 
         public void AddImage(

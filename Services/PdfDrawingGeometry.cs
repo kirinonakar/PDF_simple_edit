@@ -10,15 +10,19 @@ public static class PdfDrawingGeometry
 {
     public static bool IsDrawingTool(EditToolMode mode) => mode is EditToolMode.DrawFreehand or
         EditToolMode.DrawRectangle or EditToolMode.DrawEllipse or EditToolMode.DrawArrow or EditToolMode.DrawPolygon or
-        EditToolMode.DrawTriangleArrow or EditToolMode.DrawOutlineArrow;
+        EditToolMode.DrawTriangleArrow or EditToolMode.DrawOutlineArrow or EditToolMode.DrawLine;
 
     public static bool IsArrow(DrawingKind kind) => kind is DrawingKind.Arrow or DrawingKind.TriangleArrow or DrawingKind.OutlineArrow;
 
+    public static bool SupportsFill(DrawingKind kind) => kind is DrawingKind.Rectangle or DrawingKind.Ellipse or DrawingKind.Polygon;
+
     public static bool IsFilledStroke(PdfAnnotation annotation, int strokeIndex) =>
-        annotation.DrawingKind == DrawingKind.TriangleArrow && strokeIndex == 0;
+        strokeIndex == 0 && (annotation.DrawingKind == DrawingKind.TriangleArrow ||
+            annotation.IsFilled && SupportsFill(annotation.DrawingKind));
 
     public static DrawingKind GetKind(EditToolMode mode) => mode switch
     {
+        EditToolMode.DrawLine => DrawingKind.Line,
         EditToolMode.DrawRectangle => DrawingKind.Rectangle,
         EditToolMode.DrawEllipse => DrawingKind.Ellipse,
         EditToolMode.DrawArrow => DrawingKind.Arrow,
@@ -29,7 +33,7 @@ public static class PdfDrawingGeometry
     };
 
     public static PdfAnnotation Create(DrawingKind kind, IReadOnlyList<PdfPathPoint> points,
-        int pageIndex, string color, double lineWidth)
+        int pageIndex, string color, double lineWidth, bool isFilled = false)
     {
         var anchors = points.Select(p => p.Clone()).ToList();
         if (IsArrow(kind) && anchors.Count >= 2)
@@ -71,6 +75,7 @@ public static class PdfDrawingGeometry
         return new PdfAnnotation
         {
             Type = AnnotationType.Drawing, DrawingKind = kind, PageIndex = pageIndex,
+            IsFilled = isFilled && SupportsFill(kind),
             X = x, Y = y, Width = width, Height = height, Color = color, LineWidth = lineWidth,
             DrawingPoints = anchors.Select(p => new PdfPathPoint { X = (p.X - x) / width, Y = (p.Y - y) / height }).ToList()
         };
@@ -175,9 +180,10 @@ public static class PdfDrawingGeometry
     {
         double tolerance = Math.Max(5, annotation.LineWidth / 2 + 3);
         var strokes = GetStrokes(annotation);
-        if (annotation.DrawingKind == DrawingKind.TriangleArrow && strokes.Count > 0)
+        for (int strokeIndex = 0; strokeIndex < strokes.Count; strokeIndex++)
         {
-            var polygon = strokes[0];
+            if (!IsFilledStroke(annotation, strokeIndex)) continue;
+            var polygon = strokes[strokeIndex];
             bool inside = false;
             for (int i = 1; i < polygon.Count; i++)
             {

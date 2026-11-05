@@ -29,7 +29,7 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 - **Smooth Highlighting**: Add semi-transparent highlights to text blocks.
 - **Advanced Color Control**: Integrated color picker (eyedropper) and transparency sliders to customize highlight styles.
 - **Signature Tool**: Draw, customize, select, move, resize proportionally, edit, and save mouse-drawn signatures for reuse after reopening the PDF.
-- **Drawing Tools**: Choose smooth Freehand, Rectangle, Ellipse, Arrow, Triangle-head Arrow, Outline Arrow, or Polygon from the drawing menu. Drag to draw; for polygons, click vertices and double-click, press `Enter`, or click the first vertex to close. Press `Esc` to cancel. Set the stroke color and width beside the drawing menu.
+- **Drawing Tools**: Choose smooth Freehand, Line, Arrow, Triangle-head Arrow, Outline Arrow, Rectangle, Ellipse, or Polygon from the drawing menu. Drag to draw; for polygons, click vertices and double-click, press `Enter`, or click the first vertex to close. Press `Esc` to cancel. Set the color and stroke width beside the drawing menu. For rectangles, ellipses, and polygons, check **Fill** in the color settings to fill the interior with the selected color.
 
 ### 📂 Document Management
 - **Multi-Tab Interface**: Work on multiple PDF files simultaneously using a modern tabbed layout.

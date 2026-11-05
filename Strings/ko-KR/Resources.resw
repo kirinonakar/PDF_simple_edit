@@ -1175,16 +1175,16 @@
     <value>그리기 도구</value>
   </data>
   <data name="FreehandRectangleEllipseArrowPolygon" xml:space="preserve">
-    <value>자유 · 사각형 · 타원 · 화살표 · 다각형</value>
+    <value>자유 · 선 · 사각형 · 타원 · 화살표 · 다각형</value>
   </data>
   <data name="DrawingColorAndLineWidth" xml:space="preserve">
-    <value>그리기 색상 및 선 두께</value>
+    <value>그리기 색상, 채우기 및 선 두께</value>
   </data>
   <data name="DrawingSettings" xml:space="preserve">
     <value>그리기 설정</value>
   </data>
   <data name="DrawingLineSettings" xml:space="preserve">
-    <value>그리기 선 설정</value>
+    <value>그리기 설정</value>
   </data>
   <data name="LineWidth" xml:space="preserve">
     <value>선 두께</value>
@@ -1368,5 +1368,17 @@
   </data>
   <data name="AdjustTextWidthTooltip" xml:space="preserve">
     <value>체크하면 영역 크기를 바꿀 때 글자를 확대·축소합니다. 해제하면 글자 크기를 유지하고 영역 너비에 맞춰 줄바꿈을 변경합니다.</value>
+  </data>
+  <data name="Line" xml:space="preserve">
+    <value>선</value>
+  </data>
+  <data name="ToolLineDragFromStartToEndEscCancel" xml:space="preserve">
+    <value>도구: 선 — 시작점에서 끝점까지 드래그 (Esc: 취소)</value>
+  </data>
+  <data name="FillShape" xml:space="preserve">
+    <value>채우기</value>
+  </data>
+  <data name="FillShapeTooltip" xml:space="preserve">
+    <value>선택한 색으로 사각형, 타원, 다각형의 내부를 채웁니다.</value>
   </data>
 </root>

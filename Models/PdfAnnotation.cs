@@ -18,7 +18,7 @@ namespace PDF_simple_edit.Models
         Drawing
     }
 
-    public enum DrawingKind { Freehand, Rectangle, Ellipse, Arrow, Polygon, TriangleArrow, OutlineArrow }
+    public enum DrawingKind { Freehand, Rectangle, Ellipse, Arrow, Polygon, TriangleArrow, OutlineArrow, Line }
 
     /// <summary>
     /// Represents an annotation on a PDF page.
@@ -50,6 +50,7 @@ namespace PDF_simple_edit.Models
         public double LineWidth { get; set; } = 2.0;
         public List<PdfPathPoint> SignaturePoints { get; set; } = new();
         public DrawingKind DrawingKind { get; set; }
+        public bool IsFilled { get; set; }
         // Drawing points are relative to the annotation bounds (0..1), so all
         // existing move, resize, rotation and clipboard operations apply to them.
         public List<PdfPathPoint> DrawingPoints { get; set; } = new();
@@ -107,6 +108,7 @@ namespace PDF_simple_edit.Models
                 LineWidth = this.LineWidth,
                 SignaturePoints = this.SignaturePoints.Select(point => point.Clone()).ToList(),
                 DrawingKind = this.DrawingKind,
+                IsFilled = this.IsFilled,
                 DrawingPoints = this.DrawingPoints.Select(point => point.Clone()).ToList(),
                 ImagePath = this.ImagePath,
                 CreatedAt = this.CreatedAt,
@@ -168,6 +170,7 @@ namespace PDF_simple_edit.Models
                 Color = annotation.Color,
                 LineWidth = annotation.LineWidth,
                 DrawingKind = annotation.DrawingKind,
+                IsFilled = annotation.IsFilled,
                 DrawingPoints = annotation.DrawingPoints.Select(point => point.Clone()).ToList(),
                 Points = annotation.SignaturePoints.Select(point => point.Clone()).ToList()
             });
@@ -213,6 +216,7 @@ namespace PDF_simple_edit.Models
                     LineWidth = payload.LineWidth > 0 ? payload.LineWidth : 2,
                     SignaturePoints = payload.Points.Select(point => point.Clone()).ToList(),
                     DrawingKind = payload.DrawingKind,
+                    IsFilled = payload.IsFilled,
                     DrawingPoints = payload.DrawingPoints.Select(point => point.Clone()).ToList(),
                     IsApplied = true
                 };
@@ -236,6 +240,7 @@ namespace PDF_simple_edit.Models
             public double LineWidth { get; set; } = 2;
             public List<PdfPathPoint> Points { get; set; } = new();
             public DrawingKind DrawingKind { get; set; }
+            public bool IsFilled { get; set; }
             public List<PdfPathPoint> DrawingPoints { get; set; } = new();
         }
     }
@@ -299,7 +304,8 @@ namespace PDF_simple_edit.Models
         DrawPolygon,
         RedactRegion,
         DrawTriangleArrow,
-        DrawOutlineArrow
+        DrawOutlineArrow,
+        DrawLine
     }
 
     /// <summary>

@@ -70,6 +70,7 @@ namespace PDF_simple_edit
         private double _signatureLineWidth = 2.0;
         private string _drawingColor = "#FF0000";
         private double _drawingLineWidth = 2;
+        private bool _drawingFill;
         private double _standardDrawingLineWidth = 2;
         private double _triangleArrowLineWidth = 2;
         private bool _isSyncingDrawingWidth;
@@ -152,6 +153,7 @@ namespace PDF_simple_edit
                     () => _signatureLineWidth,
                     () => _drawingColor,
                     () => _drawingLineWidth,
+                    () => _drawingFill,
                     color =>
                     {
                         _fontSettings.HighlightColor = color.ToString();
@@ -455,6 +457,7 @@ namespace PDF_simple_edit
                 case EditorMenuCommand.RedactRegionTool: RedactRegionTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.SignatureTool: SignatureTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.DrawFreehandTool: SetToolMode(EditToolMode.DrawFreehand); break;
+                case EditorMenuCommand.DrawLineTool: SetToolMode(EditToolMode.DrawLine); break;
                 case EditorMenuCommand.DrawRectangleTool: SetToolMode(EditToolMode.DrawRectangle); break;
                 case EditorMenuCommand.DrawEllipseTool: SetToolMode(EditToolMode.DrawEllipse); break;
                 case EditorMenuCommand.DrawArrowTool: SetToolMode(EditToolMode.DrawArrow); break;
@@ -494,6 +497,12 @@ namespace PDF_simple_edit
             BtnSignature.Click += SignatureTool_Click;
             foreach (var item in DrawingToolItems)
                 item.Click += DrawingTool_Click;
+            EditorToolbar.DrawingSettingsFlyout.Opening += (_, _) => UpdateDrawingFillControl();
+            EditorToolbar.DrawingFillCheckBox.Click += (_, _) =>
+            {
+                _drawingFill = EditorToolbar.DrawingFillCheckBox.IsChecked == true;
+                ApplySelectedDrawingStyle(changeColor: false, changeFill: true);
+            };
             EditorToolbar.DrawingColorPicker.Color = ParseColor(_drawingColor);
             EditorToolbar.DrawingColorPicker.ColorChanged += (_, args) =>
             {
@@ -983,6 +992,7 @@ namespace PDF_simple_edit
                 EditToolMode.RedactRegion => Loc.Get("ToolRedactRegionDragToRemoveContentEscCancel"),
                 EditToolMode.Signature => Loc.Get("ToolDrawSignature"),
                 EditToolMode.DrawFreehand => Loc.Get("ToolFreehandDragToDrawEscCancel"),
+                EditToolMode.DrawLine => Loc.Get("ToolLineDragFromStartToEndEscCancel"),
                 EditToolMode.DrawRectangle => Loc.Get("ToolRectangleDragToDrawEscCancel"),
                 EditToolMode.DrawEllipse => Loc.Get("ToolEllipseDragToDrawEscCancel"),
                 EditToolMode.DrawArrow => Loc.Get("ToolArrowDragFromStartToEndEscCancel"),
@@ -999,6 +1009,7 @@ namespace PDF_simple_edit
             UpdateCursor(mode);
             _annotationCanvasController.CancelSelectionGesture();
             _annotationCanvasController.ClearSelection();
+            UpdateDrawingFillControl();
             _isSyncingDrawingWidth = true;
             try
             {
@@ -1091,9 +1102,9 @@ namespace PDF_simple_edit
 
         private ToggleMenuFlyoutItem[] DrawingToolItems => new[]
         {
-            EditorToolbar.DrawFreehandItem, EditorToolbar.DrawRectangleItem, EditorToolbar.DrawEllipseItem,
+            EditorToolbar.DrawFreehandItem, EditorToolbar.DrawLineItem,
             EditorToolbar.DrawArrowItem, EditorToolbar.DrawTriangleArrowItem, EditorToolbar.DrawOutlineArrowItem,
-            EditorToolbar.DrawPolygonItem
+            EditorToolbar.DrawRectangleItem, EditorToolbar.DrawEllipseItem, EditorToolbar.DrawPolygonItem
         };
 
         private void DrawingTool_Click(object sender, RoutedEventArgs e)
@@ -1102,13 +1113,25 @@ namespace PDF_simple_edit
                 SetToolMode(_currentTool == mode ? EditToolMode.None : mode);
         }
 
-        private void ApplySelectedDrawingStyle(bool changeColor)
+        private void UpdateDrawingFillControl()
         {
-            var selected = _annotationCanvasController.SelectedAnnotations.Where(a => a.Type == AnnotationType.Drawing).ToList();
+            var selected = _annotationCanvasController.SelectedAnnotations
+                .Where(a => a.Type == AnnotationType.Drawing && PdfDrawingGeometry.SupportsFill(a.DrawingKind)).ToList();
+            bool canFill = PdfDrawingGeometry.IsDrawingTool(_currentTool) &&
+                PdfDrawingGeometry.SupportsFill(PdfDrawingGeometry.GetKind(_currentTool));
+            EditorToolbar.DrawingFillCheckBox.Visibility = canFill || selected.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            EditorToolbar.DrawingFillCheckBox.IsChecked = selected.Count > 0 ? selected.All(a => a.IsFilled) : _drawingFill;
+        }
+
+        private void ApplySelectedDrawingStyle(bool changeColor, bool changeFill = false)
+        {
+            var selected = _annotationCanvasController.SelectedAnnotations.Where(a => a.Type == AnnotationType.Drawing &&
+                (!changeFill || PdfDrawingGeometry.SupportsFill(a.DrawingKind) && a.IsFilled != _drawingFill)).ToList();
             if (selected.Count == 0) return;
             foreach (var drawing in selected)
             {
                 if (changeColor) drawing.Color = _drawingColor;
+                else if (changeFill) drawing.IsFilled = _drawingFill;
                 else PdfDrawingGeometry.UpdateLineWidth(drawing, _drawingLineWidth);
                 drawing.IsApplied = false;
             }

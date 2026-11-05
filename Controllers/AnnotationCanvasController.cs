@@ -83,6 +83,7 @@ public sealed class AnnotationCanvasController
         Func<double> getSignatureLineWidth,
         Func<string> getDrawingColor,
         Func<double> getDrawingLineWidth,
+        Func<bool> getDrawingFill,
         Action<Windows.UI.Color> applyPickedHighlightColor,
         Func<Task> renderCurrentPageAsync,
         Action<bool> focusAfterInlineEdit)
@@ -104,7 +105,7 @@ public sealed class AnnotationCanvasController
         _focusAfterInlineEdit = focusAfterInlineEdit;
         _selectionController = new AnnotationSelectionController(_contentService);
         _drawingController = new DrawingInteractionController(canvas, statusText, getManager, getPageIndex,
-            getToolMode, getDrawingColor, getDrawingLineWidth, annotation =>
+            getToolMode, getDrawingColor, getDrawingLineWidth, getDrawingFill, annotation =>
             {
                 _getAnnotations().Add(annotation);
                 _getManager().MarkModified(pageIndex: annotation.PageIndex);
