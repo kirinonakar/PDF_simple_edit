@@ -70,6 +70,9 @@ namespace PDF_simple_edit
         private double _signatureLineWidth = 2.0;
         private string _drawingColor = "#FF0000";
         private double _drawingLineWidth = 2;
+        private double _standardDrawingLineWidth = 2;
+        private double _triangleArrowLineWidth = 2;
+        private bool _isSyncingDrawingWidth;
 
         // Resolve the selected document when a composed controller invokes a command.
         private PdfDocumentManager _pdfManager => _activeTab?.PdfManager ?? new PdfDocumentManager();
@@ -501,6 +504,9 @@ namespace PDF_simple_edit
             {
                 _drawingLineWidth = args.NewValue;
                 EditorToolbar.DrawingWidthText.Text = $"{args.NewValue:0.#} pt";
+                if (_isSyncingDrawingWidth) return;
+                if (_currentTool == EditToolMode.DrawTriangleArrow) _triangleArrowLineWidth = args.NewValue;
+                else _standardDrawingLineWidth = args.NewValue;
                 ApplySelectedDrawingStyle(changeColor: false);
             };
             BtnSignatureSettings.Click += SignatureSettings_Click;
@@ -990,6 +996,14 @@ namespace PDF_simple_edit
             UpdateCursor(mode);
             _annotationCanvasController.CancelSelectionGesture();
             _annotationCanvasController.ClearSelection();
+            _isSyncingDrawingWidth = true;
+            try
+            {
+                _drawingLineWidth = mode == EditToolMode.DrawTriangleArrow ? _triangleArrowLineWidth : _standardDrawingLineWidth;
+                EditorToolbar.DrawingWidthSlider.Value = _drawingLineWidth;
+                EditorToolbar.DrawingWidthText.Text = $"{_drawingLineWidth:0.#} pt";
+            }
+            finally { _isSyncingDrawingWidth = false; }
             RenderAnnotationOverlays();
             _formOverlayController.Render();
         }
@@ -1084,7 +1098,7 @@ namespace PDF_simple_edit
             foreach (var drawing in selected)
             {
                 if (changeColor) drawing.Color = _drawingColor;
-                else drawing.LineWidth = _drawingLineWidth;
+                else PdfDrawingGeometry.UpdateLineWidth(drawing, _drawingLineWidth);
                 drawing.IsApplied = false;
             }
             _pdfManager.MarkModified(pageIndex: _currentPageIndex);

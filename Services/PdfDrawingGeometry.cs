@@ -15,7 +15,7 @@ public static class PdfDrawingGeometry
     public static bool IsArrow(DrawingKind kind) => kind is DrawingKind.Arrow or DrawingKind.TriangleArrow or DrawingKind.OutlineArrow;
 
     public static bool IsFilledStroke(PdfAnnotation annotation, int strokeIndex) =>
-        annotation.DrawingKind == DrawingKind.TriangleArrow && strokeIndex == 1;
+        annotation.DrawingKind == DrawingKind.TriangleArrow && strokeIndex == 0;
 
     public static DrawingKind GetKind(EditToolMode mode) => mode switch
     {
@@ -41,6 +41,18 @@ public static class PdfDrawingGeometry
             anchors = new() { start, end,
                 new() { X = end.X - head * Math.Cos(angle - Math.PI / 6), Y = end.Y - head * Math.Sin(angle - Math.PI / 6) },
                 new() { X = end.X - head * Math.Cos(angle + Math.PI / 6), Y = end.Y - head * Math.Sin(angle + Math.PI / 6) } };
+            if (kind == DrawingKind.TriangleArrow)
+            {
+                // Reference proportions: a square-ended shaft and a sharp,
+                // filled head whose length and base are three shaft widths.
+                double headLength = Math.Min(lineWidth * 3, length * .4);
+                double bx = end.X - Math.Cos(angle) * headLength;
+                double by = end.Y - Math.Sin(angle) * headLength;
+                double nx = -Math.Sin(angle) * headLength / 2;
+                double ny = Math.Cos(angle) * headLength / 2;
+                anchors[2] = new() { X = bx + nx, Y = by + ny };
+                anchors[3] = new() { X = bx - nx, Y = by - ny };
+            }
             if (kind == DrawingKind.OutlineArrow)
             {
                 var left = anchors[2]; var right = anchors[3];
@@ -77,8 +89,25 @@ public static class PdfDrawingGeometry
         if (annotation.DrawingKind == DrawingKind.Arrow && points.Count >= 4)
             return new() { new() { points[0], points[1] }, new() { points[2], points[1], points[3] } };
         if (annotation.DrawingKind == DrawingKind.TriangleArrow && points.Count >= 4)
-            return new() { new() { points[0], Midpoint(points[2], points[3]) },
-                new() { points[2], points[1], points[3], points[2] } };
+        {
+            var start = points[0]; var neck = Midpoint(points[2], points[3]);
+            double dx = points[1].X - start.X, dy = points[1].Y - start.Y;
+            double length = Math.Max(Math.Sqrt(dx * dx + dy * dy), .000001);
+            double hx = points[2].X - points[3].X, hy = points[2].Y - points[3].Y;
+            double headWidth = Math.Max(Math.Sqrt(hx * hx + hy * hy), .000001);
+            double halfWidth = Math.Min(Math.Min(annotation.LineWidth, length / 7.5), headWidth) / 2;
+            double nx = -dy / length * halfWidth, ny = dx / length * halfWidth;
+            double sx = hx / headWidth * halfWidth, sy = hy / headWidth * halfWidth;
+            // Fill one continuous silhouette. Separate overlapping figures in
+            // the same Path can cancel under even-odd fill and expose a white seam.
+            return new() { new() {
+                new() { X = start.X + nx, Y = start.Y + ny },
+                new() { X = neck.X + sx, Y = neck.Y + sy },
+                points[2], points[1], points[3],
+                new() { X = neck.X - sx, Y = neck.Y - sy },
+                new() { X = start.X - nx, Y = start.Y - ny },
+                new() { X = start.X + nx, Y = start.Y + ny } } };
+        }
         if (annotation.DrawingKind is DrawingKind.Polygon or DrawingKind.OutlineArrow && points.Count >= 3)
             points.Add(points[0].Clone());
         if (annotation.DrawingKind == DrawingKind.Freehand)
@@ -88,6 +117,26 @@ public static class PdfDrawingGeometry
 
     private static PdfPathPoint Midpoint(PdfPathPoint a, PdfPathPoint b) =>
         new() { X = (a.X + b.X) / 2, Y = (a.Y + b.Y) / 2 };
+
+    public static void UpdateLineWidth(PdfAnnotation annotation, double lineWidth)
+    {
+        if (annotation.DrawingKind == DrawingKind.TriangleArrow && annotation.DrawingPoints.Count >= 4)
+        {
+            var ends = annotation.DrawingPoints.Take(2).Select(p => new PdfPathPoint
+            { X = annotation.X + p.X * annotation.Width, Y = annotation.Y + p.Y * annotation.Height }).ToList();
+            var updated = Create(DrawingKind.TriangleArrow, ends, annotation.PageIndex, annotation.Color, lineWidth);
+            // The new head can change the bounds center. Compensate so changing
+            // thickness preserves both visible endpoints of a rotated arrow.
+            double cx = annotation.X + annotation.Width / 2 - updated.X - updated.Width / 2;
+            double cy = annotation.Y + annotation.Height / 2 - updated.Y - updated.Height / 2;
+            double angle = annotation.Rotation * Math.PI / 180;
+            annotation.X = updated.X + cx - (cx * Math.Cos(angle) - cy * Math.Sin(angle));
+            annotation.Y = updated.Y + cy - (cx * Math.Sin(angle) + cy * Math.Cos(angle));
+            annotation.Width = updated.Width; annotation.Height = updated.Height;
+            annotation.DrawingPoints = updated.DrawingPoints;
+        }
+        annotation.LineWidth = lineWidth;
+    }
 
     private static List<PdfPathPoint> SmoothFreehand(List<PdfPathPoint> points)
     {
@@ -126,15 +175,17 @@ public static class PdfDrawingGeometry
     {
         double tolerance = Math.Max(5, annotation.LineWidth / 2 + 3);
         var strokes = GetStrokes(annotation);
-        if (annotation.DrawingKind == DrawingKind.TriangleArrow && strokes.Count >= 2)
+        if (annotation.DrawingKind == DrawingKind.TriangleArrow && strokes.Count > 0)
         {
-            var head = strokes[1];
-            double Cross(PdfPathPoint a, PdfPathPoint b) => (x - a.X) * (b.Y - a.Y) - (y - a.Y) * (b.X - a.X);
-            double a = Cross(head[0], head[1]), b = Cross(head[1], head[2]), c = Cross(head[2], head[0]);
-            double area = (head[1].X - head[0].X) * (head[2].Y - head[0].Y) -
-                (head[1].Y - head[0].Y) * (head[2].X - head[0].X);
-            if (Math.Abs(area) > .000001 && !((a < 0 || b < 0 || c < 0) && (a > 0 || b > 0 || c > 0)))
-                return true;
+            var polygon = strokes[0];
+            bool inside = false;
+            for (int i = 1; i < polygon.Count; i++)
+            {
+                var a = polygon[i - 1]; var b = polygon[i];
+                if ((a.Y > y) != (b.Y > y) && x < (b.X - a.X) * (y - a.Y) / (b.Y - a.Y) + a.X)
+                    inside = !inside;
+            }
+            if (inside) return true;
         }
         foreach (var stroke in strokes)
             for (int i = 1; i < stroke.Count; i++)

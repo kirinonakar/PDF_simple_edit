@@ -883,7 +883,7 @@ namespace PDF_simple_edit.Services
                 var stroke = mappedStrokes[i];
                 appearanceCanvas.MoveTo(stroke[0].X, stroke[0].Y);
                 foreach (var point in stroke.Skip(1)) appearanceCanvas.LineTo(point.X, point.Y);
-                if (filledStrokeIndexes?.Contains(i) == true) appearanceCanvas.ClosePathFillStroke();
+                if (filledStrokeIndexes?.Contains(i) == true) appearanceCanvas.ClosePath().Fill();
                 else appearanceCanvas.Stroke();
             }
             appearanceCanvas.Release();

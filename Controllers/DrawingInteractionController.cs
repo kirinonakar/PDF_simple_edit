@@ -212,7 +212,7 @@ public sealed class DrawingInteractionController
         var path = new Microsoft.UI.Xaml.Shapes.Path
         {
             Data = geometry, Width = width + padding * 2, Height = height + padding * 2,
-            Stroke = new SolidColorBrush(EditorColorService.Parse(drawing.Color)),
+            Stroke = drawing.DrawingKind == DrawingKind.TriangleArrow ? null : new SolidColorBrush(EditorColorService.Parse(drawing.Color)),
             Fill = new SolidColorBrush(EditorColorService.Parse(drawing.Color)),
             StrokeThickness = strokeWidth, StrokeLineJoin = PenLineJoin.Round,
             StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round,
