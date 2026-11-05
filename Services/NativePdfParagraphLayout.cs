@@ -130,6 +130,8 @@ internal static class NativePdfParagraphLayout
         var originalLines = block.Glyphs.Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text))
             .GroupBy(g => Math.Round(g.Origin.Y, 1)).Select(g => g.ToList()).OrderBy(g => g[0].Origin.Y).ToList();
         var anchors = originalLines.Select(line => line[0].Origin).ToList();
+        var originalTokensByLine = block.Glyphs.GroupBy(g => Math.Round(g.Origin.Y, 1))
+            .ToDictionary(line => line.Key, line => line.ToList());
         double left = anchors.Min(p => p.X), firstLeft = anchors[0].X;
         double right = Math.Max(block.Bounds.Right, block.Glyphs.Max(g => g.End.X));
         // A selected single line grows horizontally. Only an original multiline
@@ -210,20 +212,44 @@ internal static class NativePdfParagraphLayout
                     Bounds = token.Bounds with { X = token.Bounds.X + dx, Y = token.Bounds.Y + dy }, IsSoftBreak = false });
                 x += widths[i];
             }
-            // Preserve exact original placement if reflow leaves a line's glyph
-            // sequence unchanged. This also retains original justification.
+            // Retain original justification only when the complete sequence up
+            // to the last visible character, including spaces, is unchanged.
+            // Comparing ink alone cancels inserted/deleted spaces by restoring
+            // the following letters to their old positions.
             if (preservePlacement && lineIndex < originalLines.Count)
             {
-                var source = originalLines[lineIndex];
-                var indexes = Enumerable.Range(placedStart, placed.Count - placedStart).Where(i => !placed[i].IsVirtual && !White(placed[i])).ToList();
-                if (source.Count == indexes.Count && source.Zip(indexes).All(p => ReferenceEquals(p.First.Code, placed[p.Second].Code)))
-                    for (int i = 0; i < source.Count; i++)
+                var source = originalTokensByLine[Math.Round(anchors[lineIndex].Y, 1)];
+                int sourceCount = source.FindLastIndex(g => !White(g)) + 1;
+                int targetCount = lastInk - line.Start + 1;
+                if (sourceCount == targetCount && Enumerable.Range(0, sourceCount).All(i =>
+                    source[i].Text == placed[placedStart + i].Text && source[i].IsVirtual == placed[placedStart + i].IsVirtual &&
+                    (source[i].IsVirtual || ReferenceEquals(source[i].Code, placed[placedStart + i].Code))))
+                {
+                    for (int i = 0; i < sourceCount; i++)
                     {
-                        var glyph = source[i]; int target = indexes[i];
+                        var glyph = source[i]; int target = placedStart + i;
                         placed[target] = glyph with { TextIndex = placed[target].TextIndex,
                             Origin = new(glyph.Origin.X + deltaX, glyph.Origin.Y + deltaY), End = new(glyph.End.X + deltaX, glyph.End.Y + deltaY),
                             Bounds = glyph.Bounds with { X = glyph.Bounds.X + deltaX, Y = glyph.Bounds.Y + deltaY } };
                     }
+                    // Trailing spaces do not move existing text. Anchor their
+                    // advances after the restored final character so the caret
+                    // also follows the original justified line correctly.
+                    double tailX = placed[placedStart + sourceCount - 1].End.X;
+                    for (int i = lastInk + 1; i < line.End; i++)
+                    {
+                        int target = placedStart + i - line.Start;
+                        var glyph = placed[target];
+                        bool softOrHardBreak = glyph.IsSoftBreak || glyph.Text == "\n";
+                        placed[target] = glyph with
+                        {
+                            Origin = new(tailX, glyph.Origin.Y),
+                            End = softOrHardBreak ? glyph.End : new(tailX + widths[i], glyph.End.Y),
+                            Bounds = glyph.Bounds with { X = tailX, Width = softOrHardBreak ? 0 : widths[i] }
+                        };
+                        if (!softOrHardBreak) tailX += widths[i];
+                    }
+                }
             }
         }
         var boxes = placed.Where(g => !White(g)).GroupBy(g => Math.Round(g.Origin.Y, 1)).Select(g => PdfTextBox.Union(g.Select(c => c.Bounds))).ToList();

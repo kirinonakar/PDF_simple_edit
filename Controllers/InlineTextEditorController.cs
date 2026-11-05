@@ -126,7 +126,7 @@ public sealed class InlineTextEditorController
             ? Math.Max(existingAnnotation.Width * PdfToPixels,
                 AnnotationTextLayoutService.GetRequiredTextBoxWidth(existingAnnotation, initialText,
                     AnnotationTextLayoutService.GetDisplayCharacterSpacing(existingAnnotation, initialText)) * PdfToPixels)
-            : double.NaN;
+            : 60;
         int characterSpacing = existingAnnotation != null
             ? AnnotationTextLayoutService.GetDisplayCharacterSpacing(existingAnnotation, initialText)
             : 0;
@@ -458,12 +458,23 @@ public sealed class InlineTextEditorController
             _settings == null)
             return;
 
+        string text = GetEditorText(editor);
+        var metrics = new PdfAnnotation
+        {
+            FontFamily = editor.FontFamily.Source,
+            FontSize = editor.FontSize / PdfToPixels,
+            FontWeight = editor.FontWeight.Weight,
+            IsBold = editor.FontWeight.Weight >= 600,
+            IsItalic = editor.FontStyle == Windows.UI.Text.FontStyle.Italic
+        };
+        // Auto-sized RichEditBox omits trailing spaces from its desired width.
+        // Measure them explicitly for Add Text too, leaving room for the caret.
+        editor.Width = Math.Clamp(
+            AnnotationTextLayoutService.GetRequiredTextBoxWidth(metrics, text, editor.CharacterSpacing) * PdfToPixels,
+            editor.MinWidth,
+            editor.MaxWidth);
         editor.Height = AnnotationTextLayoutService.GetInlineEditorHeight(
-            GetEditorText(editor),
-            _settings.FontFamily,
-            _settings.FontSize,
-            _settings.IsBold,
-            _settings.IsItalic);
+            text, metrics.FontFamily, metrics.FontSize, metrics.IsBold, metrics.IsItalic, metrics.FontWeight);
     }
 
     private static void ApplyEditorLineSpacing(RichEditBox editor, double lineHeightPoints)
