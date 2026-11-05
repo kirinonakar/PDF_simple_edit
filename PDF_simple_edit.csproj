@@ -90,7 +90,8 @@
     <!-- pdfSweep's partial-image cleanup loads System.Drawing at runtime. -->
     <PackageReference Include="System.Drawing.Common" Version="10.0.14" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2957" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
+    <!-- Reference WinUI directly to avoid the umbrella package's AI/ML dependencies. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.5" />
 
   </ItemGroup>
 

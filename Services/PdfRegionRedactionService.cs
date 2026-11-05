@@ -36,6 +36,7 @@ internal static class PdfRegionRedactionService
         region = Clip(region, bounds.Width, bounds.Height);
         if (region.Width <= 0 || region.Height <= 0) return;
         var pdfBounds = display.Inverse().Map(region);
+        PdfRedactionContentNormalizer.Normalize(page);
         RemoveFormWidgets(document, page, pdfBounds);
         var locations = new List<PdfCleanUpLocation>
         {
