@@ -32,7 +32,7 @@ public sealed class AnnotationSelectionController
             Contains(content.X, content.Y, content.Width, content.Height)))
         {
             if (annotations.Any(a => a.PageIndex == pageIndex && a.IsOriginalImageReplacement &&
-                a.OriginalImageName == content.ImageId)) continue;
+                AnnotationContentService.IsSameOriginalGraphic(a, content))) continue;
             annotations.Add(_contentService.ConvertToAnnotation(content, pageIndex));
         }
         return annotations.Where(a => a.PageIndex == pageIndex &&
@@ -65,12 +65,21 @@ public sealed class AnnotationSelectionController
             PdfPageContent? content = _contentService.FindEditableContent(pageContents, x, y, selectionMode);
             if (_contentService.ShouldPreferPageContent(found, content) && content != null)
             {
-                PdfAnnotation? converted = _contentService.ConvertToAnnotation(content, pageIndex);
+                // A previously selected background must not mask foreground
+                // content. Reuse existing selections so Ctrl-click toggles the
+                // same object instead of creating duplicate editing targets.
+                PdfAnnotation? converted = annotations.FirstOrDefault(a => a.PageIndex == pageIndex &&
+                    AnnotationContentService.IsSameOriginalGraphic(a, content));
+                bool isNew = converted == null;
+                converted ??= _contentService.ConvertToAnnotation(content, pageIndex);
                 if (converted != null)
                 {
                     found = converted;
-                    annotations.Add(converted);
-                    addedFromPageContent = converted;
+                    if (isNew)
+                    {
+                        annotations.Add(converted);
+                        addedFromPageContent = converted;
+                    }
                 }
             }
         }

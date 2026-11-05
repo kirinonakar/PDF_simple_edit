@@ -89,10 +89,11 @@ namespace PDF_simple_edit.Services
                     var sharedForms = PdfRepeatedFormExtractor.Extract(page);
                     extractedContents.AddRange(listener.Contents.Where(content => content.Type == PageContentType.Image &&
                         !sharedForms.SharedStreams.Contains(content.ContentStreamObjectNumber)));
-                    extractedContents.AddRange(GroupVectorPathsIntoGraphics(
+                    extractedContents.AddRange(CreateVectorGraphics(
                         listener.VectorPaths.Where(path => !sharedForms.SharedStreams.Contains(GetVectorTargetKey(path).StreamObjectNumber)).ToList(),
-                        pageSize.GetWidth(), pageSize.GetHeight()));
+                        pageSize.GetHeight()));
                     extractedContents.AddRange(sharedForms.Contents);
+                    PdfGraphicPaintOrder.Assign(page, extractedContents);
                     // Extraction above uses media-height coordinates; selection uses
                     // the displayed CropBox, including page rotation.
                     var map = PdfPageCoordinates.ToDisplay(page).After(new(1, 0, 0, -1, 0, pageSize.GetHeight()));
@@ -106,6 +107,7 @@ namespace PDF_simple_edit.Services
                         {
                             operation.Bounds = map.Map(operation.Bounds);
                             operation.HitBounds = operation.HitBounds.Select(map.Map).ToList();
+                            operation.HitGeometry = operation.HitGeometry?.Map(map);
                         }
                     }
                 }
@@ -367,6 +369,7 @@ namespace PDF_simple_edit.Services
 
         private sealed class VectorPathFragment
         {
+            public PdfGraphicHitGeometry? HitGeometry { get; init; }
             public List<PdfTextBox> HitBounds { get; init; } = new();
             public PdfAffineTransform Ctm { get; init; } = PdfAffineTransform.Identity;
             public double LineWidth { get; init; }
@@ -837,9 +840,8 @@ namespace PDF_simple_edit.Services
 
         private static PdfTextBox GetVectorBounds(VectorPathFragment path) => new(path.X, path.Y, path.Width, path.Height);
 
-        private static List<PdfPageContent> GroupVectorPathsIntoGraphics(
+        private static List<PdfPageContent> CreateVectorGraphics(
             IReadOnlyCollection<VectorPathFragment> rawPaths,
-            double pageWidth,
             double pageHeight)
         {
             var duplicateTargets = rawPaths
@@ -849,73 +851,44 @@ namespace PDF_simple_edit.Services
                 .ToHashSet();
             var graphics = new List<PdfPageContent>();
 
-            List<VectorPathFragment> remaining = rawPaths
-                .Where(path => !duplicateTargets.Contains(GetVectorTargetKey(path)))
-                .ToList();
-            while (remaining.Count > 0)
+            // A paint operation is the editable unit. Spatial connectivity cannot
+            // identify objects: a background touches/contains every foreground
+            // shape, and even unrelated rules may meet at their endpoints.
+            foreach (var path in rawPaths.Where(path => !duplicateTargets.Contains(GetVectorTargetKey(path))))
             {
-                var component = new List<VectorPathFragment> { remaining[0] };
-                remaining.RemoveAt(0);
-                bool added;
-                do
+                var key = GetVectorTargetKey(path);
+                var target = new PdfGraphicOperationTarget
                 {
-                    added = false;
-                    for (int index = remaining.Count - 1; index >= 0; index--)
-                    {
-                        if (!component.Any(path => AreVectorPathsNear(path, remaining[index])))
-                            continue;
-                        component.Add(remaining[index]);
-                        remaining.RemoveAt(index);
-                        added = true;
-                    }
-                }
-                while (added);
-
-                double left = component.Min(path => path.X);
-                double top = component.Min(path => path.Y);
-                double right = component.Max(path => path.X + path.Width);
-                double bottom = component.Max(path => path.Y + path.Height);
-                double width = right - left;
-                double height = bottom - top;
-                List<PdfGraphicOperationTarget> operationTargets = component
-                    .Select(GetVectorTargetKey)
-                    .Distinct()
-                    .Select(key => new PdfGraphicOperationTarget
-                    {
-                        Bounds = GetVectorBounds(component.First(path => GetVectorTargetKey(path) == key)),
-                        HitBounds = new(component.First(path => GetVectorTargetKey(path) == key).HitBounds),
-                        Ctm = component.First(path => GetVectorTargetKey(path) == key).Ctm,
-                        LineWidth = component.First(path => GetVectorTargetKey(path) == key).LineWidth,
-                        IsClipping = component.First(path => GetVectorTargetKey(path) == key).IsClipping,
-                        StreamObjectNumber = key.StreamObjectNumber,
-                        StreamIndex = key.StreamIndex,
-                        OperationIndex = key.OperationIndex,
-                        IsTextOperation = key.IsText,
-                        IsShadingOperation = key.IsShading
-                    })
-                    .OrderBy(target => target.StreamObjectNumber)
-                    .ThenBy(target => target.StreamIndex)
-                    .ThenBy(target => target.OperationIndex)
-                    .ToList();
-                PdfGraphicOperationTarget firstTarget = operationTargets[0];
+                    Bounds = GetVectorBounds(path),
+                    HitGeometry = path.HitGeometry,
+                    HitBounds = new(path.HitBounds),
+                    Ctm = path.Ctm,
+                    LineWidth = path.LineWidth,
+                    IsClipping = path.IsClipping,
+                    StreamObjectNumber = key.StreamObjectNumber,
+                    StreamIndex = key.StreamIndex,
+                    OperationIndex = key.OperationIndex,
+                    IsTextOperation = key.IsText,
+                    IsShadingOperation = key.IsShading
+                };
                 graphics.Add(new PdfPageContent
                 {
                     Type = PageContentType.Image,
-                    X = left,
-                    Y = top,
-                    Width = width,
-                    Height = height,
-                    OriginalPdfX = left,
-                    OriginalPdfY = pageHeight - (top + height),
-                    ImageId = "vector:" + string.Join(";", operationTargets.Select(target =>
+                    X = path.X,
+                    Y = path.Y,
+                    Width = path.Width,
+                    Height = path.Height,
+                    OriginalPdfX = path.X,
+                    OriginalPdfY = pageHeight - (path.Y + path.Height),
+                    ImageId = "vector:" +
                         $"{target.StreamObjectNumber}:{target.OperationIndex}:" +
-                        $"{target.IsTextOperation}:{target.IsShadingOperation}")),
-                    ContentStreamIndex = firstTarget.StreamIndex,
-                    ContentStreamObjectNumber = firstTarget.StreamObjectNumber,
-                    OperationIndex = firstTarget.OperationIndex,
-                    GraphicOperations = operationTargets,
-                    GraphicHitBounds = component.SelectMany(path => path.HitBounds.Count > 0
-                        ? path.HitBounds : new List<PdfTextBox> { new(path.X, path.Y, path.Width, path.Height) }).ToList()
+                        $"{target.IsTextOperation}:{target.IsShadingOperation}",
+                    ContentStreamIndex = target.StreamIndex,
+                    ContentStreamObjectNumber = target.StreamObjectNumber,
+                    OperationIndex = target.OperationIndex,
+                    GraphicOperations = new() { target },
+                    GraphicHitBounds = path.HitBounds.Count > 0
+                        ? new(path.HitBounds) : new() { GetVectorBounds(path) }
                 });
             }
 
@@ -948,19 +921,6 @@ namespace PDF_simple_edit.Services
                     path.Target.OperationIndex,
                     false,
                     false);
-
-        private static bool AreVectorPathsNear(
-            VectorPathFragment first,
-            VectorPathFragment second)
-        {
-            const double maximumGap = 2;
-            // Join touching strokes, not everything inside a table's outer box.
-            var firstBounds = first.HitBounds.Count > 0 ? first.HitBounds : new() { new(first.X, first.Y, first.Width, first.Height) };
-            var secondBounds = second.HitBounds.Count > 0 ? second.HitBounds : new() { new(second.X, second.Y, second.Width, second.Height) };
-            return firstBounds.Any(a => secondBounds.Any(b =>
-                a.X <= b.Right + maximumGap && a.Right + maximumGap >= b.X &&
-                a.Y <= b.Bottom + maximumGap && a.Bottom + maximumGap >= b.Y));
-        }
 
         private sealed class TextOperationTracker
         {
@@ -1360,14 +1320,20 @@ namespace PDF_simple_edit.Services
                 }
 
                 var hitBounds = new List<PdfTextBox>();
+                var hitContours = new List<PdfGraphicHitContour>();
                 foreach (var subpath in subpaths)
                 {
                     var segments = subpath.GetSegments();
                     // Filled shapes include their interior. Stroked shapes use
                     // segment bounds so empty table cells stay available for text.
+                    var approximation = subpath.GetPiecewiseLinearApproximation();
+                    hitContours.Add(new(approximation.Select(point => new PdfTextPoint(
+                        a * point.GetX() + c * point.GetY() + e,
+                        _pageHeight - (b * point.GetX() + d * point.GetY() + f))).ToList(), subpath.IsClosed()));
                     var groups = (pathInfo.GetOperation() & PathRenderInfo.FILL) != 0
                         ? new[] { segments.SelectMany(segment => segment.GetBasePoints()) }
-                        : segments.Select(segment => (IEnumerable<iText.Kernel.Geom.Point>)segment.GetBasePoints());
+                        : approximation.Zip(approximation.Skip(1), (first, second) =>
+                            (IEnumerable<iText.Kernel.Geom.Point>)new[] { first, second });
                     foreach (var group in groups)
                     {
                         var transformed = group.Select(point => new PdfTextPoint(
@@ -1393,6 +1359,14 @@ namespace PDF_simple_edit.Services
                 }
                 VectorPaths.Add(new VectorPathFragment
                 {
+                    HitGeometry = new PdfGraphicHitGeometry
+                    {
+                        Contours = hitContours,
+                        Filled = (pathInfo.GetOperation() & PathRenderInfo.FILL) != 0,
+                        EvenOddFill = pathInfo.GetRule() == PdfCanvasConstants.FillingRule.EVEN_ODD,
+                        Stroked = (pathInfo.GetOperation() & PathRenderInfo.STROKE) != 0,
+                        StrokeRadius = padding
+                    },
                     HitBounds = hitBounds,
                     Ctm = new(a, b, c, d, e, f),
                     LineWidth = pathInfo.GetLineWidth(),

@@ -340,6 +340,7 @@ namespace PDF_simple_edit.Models
 
     public class PdfGraphicOperationTarget
     {
+        public PdfGraphicHitGeometry? HitGeometry { get; set; }
         public PdfAffineTransform Ctm { get; set; } = PdfAffineTransform.Identity;
         public double LineWidth { get; set; }
         public PdfTextBox Bounds { get; set; }
@@ -356,6 +357,7 @@ namespace PDF_simple_edit.Models
         {
             var clone = (PdfGraphicOperationTarget)MemberwiseClone();
             clone.HitBounds = new(HitBounds);
+            clone.HitGeometry = HitGeometry?.Map(PdfAffineTransform.Identity);
             return clone;
         }
     }
@@ -365,6 +367,8 @@ namespace PDF_simple_edit.Models
     /// </summary>
     public class PdfPageContent
     {
+        // Order in the executed page content, including nested form invocations.
+        public int GraphicPaintOrder { get; set; } = -1;
         public PdfAffineTransform GraphicCtm { get; set; } = PdfAffineTransform.Identity;
         public NativePdfTextBlock? NativeText { get; set; }
         public PageContentType Type { get; set; }

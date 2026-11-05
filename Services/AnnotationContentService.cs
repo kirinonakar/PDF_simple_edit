@@ -26,7 +26,7 @@ public sealed class AnnotationContentService
             double hitX = local.X, hitY = local.Y;
             if (annotation.IsOriginalVectorGraphic)
             {
-                if (annotation.GraphicHitBounds.Any(bounds => bounds.Contains(hitX, hitY, 3)))
+                if (HitsGraphic(annotation.GraphicOperations, annotation.GraphicHitBounds, hitX, hitY))
                     originalImage ??= annotation;
                 continue;
             }
@@ -79,7 +79,22 @@ public sealed class AnnotationContentService
 
     public bool ShouldPreferPageContent(PdfAnnotation? annotation, PdfPageContent? content) =>
         content != null && (annotation == null ||
-            (annotation.IsOriginalImageReplacement && content.Type == PageContentType.Text));
+            (annotation.IsOriginalImageReplacement && (content.Type == PageContentType.Text ||
+                !IsSameOriginalGraphic(annotation, content))));
+
+    public static bool IsSameOriginalGraphic(PdfAnnotation annotation, PdfPageContent content) =>
+        annotation.IsOriginalImageReplacement && content.Type == PageContentType.Image &&
+        annotation.OriginalImageName == content.ImageId &&
+        annotation.ContentStreamObjectNumber == content.ContentStreamObjectNumber &&
+        annotation.ContentStreamIndex == content.ContentStreamIndex &&
+        annotation.OperationIndex == content.OperationIndex;
+
+    private static bool HitsGraphic(IReadOnlyList<PdfGraphicOperationTarget> operations,
+        IReadOnlyList<PdfTextBox> bounds, double x, double y) =>
+        operations.Count > 0
+            ? operations.Any(op => op.HitGeometry?.Contains(x, y, 3) ??
+                (op.HitBounds.Count > 0 ? op.HitBounds.Any(box => box.Contains(x, y, 3)) : op.Bounds.Contains(x, y, 3)))
+            : bounds.Count == 0 || bounds.Any(box => box.Contains(x, y, 3));
 
     public static bool MatchesSelectionMode(PdfAnnotation annotation, EditToolMode mode) =>
         mode == EditToolMode.SelectGraphics
@@ -94,8 +109,7 @@ public sealed class AnnotationContentService
             .Where(match =>
                 (selectionMode == EditToolMode.SelectGraphics
                     ? match.Content.Type == PageContentType.Image : match.Content.Type == PageContentType.Text) &&
-                (match.Content.GraphicHitBounds.Count == 0 ||
-                    match.Content.GraphicHitBounds.Any(bounds => bounds.Contains(x, y, 3))) &&
+                HitsGraphic(match.Content.GraphicOperations, match.Content.GraphicHitBounds, x, y) &&
                 x >= match.Content.X - 5 && x <= match.Content.X + match.Content.Width + 5 &&
                 y >= match.Content.Y - 5 && y <= match.Content.Y + match.Content.Height + 5)
             .ToList();
@@ -113,7 +127,8 @@ public sealed class AnnotationContentService
             .ToList();
         int matchIndex = textMatches.Count > 0
             ? textMatches[0].Index
-            : matches.OrderBy(item => item.Content.Width * item.Content.Height).First().Index;
+            : matches.OrderByDescending(item => item.Content.GraphicPaintOrder)
+                .ThenBy(item => item.Content.Width * item.Content.Height).First().Index;
 
         PdfPageContent match = contents[matchIndex];
         if (match.Type != PageContentType.Text)
