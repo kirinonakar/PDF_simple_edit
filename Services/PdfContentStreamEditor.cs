@@ -785,8 +785,7 @@ namespace PDF_simple_edit.Services
                     null));
             }
 
-            var cleaner = new PdfCleanUpTool(document, locations, new CleanUpProperties());
-            cleaner.CleanUp();
+            PdfSweepService.CleanUp(document, locations);
             return true;
         }
     }

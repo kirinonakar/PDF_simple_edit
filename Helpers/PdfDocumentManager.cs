@@ -981,8 +981,7 @@ namespace PDF_simple_edit.Helpers
                     
                     // pdfSweep 실행 (생성자 주입 방식)
                     var locations = new List<PdfCleanUpLocation> { location };
-                    PdfCleanUpTool cleaner = new PdfCleanUpTool(doc, locations, new CleanUpProperties());
-                    cleaner.CleanUp();
+                    PdfSweepService.CleanUp(doc, locations);
 
                     // 수정된 부분: 하드코딩된 "맑은 고딕" 대신 파라미터로 받은 폰트와 사이즈 사용
                     _contentWriter.AddText(

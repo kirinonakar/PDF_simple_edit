@@ -133,7 +133,13 @@ internal static class PdfRedactionContentNormalizer
         public void WriteText(TextRenderInfo text)
         {
             var frame = _frames.Peek();
-            var matrix = text.GetTextMatrix();
+            // GetRise() returns a length in user space: it loses the sign of Ts
+            // and includes the scale of Tm/CTM. pdfSweep writes that length back
+            // as Ts, which sends downward-moved text above the page, or scales
+            // a previous edit's movement twice. Bake signed text-space rise into
+            // the text matrix and clear Ts in the output only.
+            var matrix = new Matrix(0, GetGraphicsState().GetTextRise()).Multiply(text.GetTextMatrix());
+            frame.Write(new PdfNumber(0), new PdfLiteral("Ts"));
             frame.Write(new PdfNumber(matrix.Get(Matrix.I11)), new PdfNumber(matrix.Get(Matrix.I12)),
                 new PdfNumber(matrix.Get(Matrix.I21)), new PdfNumber(matrix.Get(Matrix.I22)),
                 new PdfNumber(matrix.Get(Matrix.I31)), new PdfNumber(matrix.Get(Matrix.I32)), new PdfLiteral("Tm"));

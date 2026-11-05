@@ -36,14 +36,13 @@ internal static class PdfRegionRedactionService
         region = Clip(region, bounds.Width, bounds.Height);
         if (region.Width <= 0 || region.Height <= 0) return;
         var pdfBounds = display.Inverse().Map(region);
-        PdfRedactionContentNormalizer.Normalize(page);
         RemoveFormWidgets(document, page, pdfBounds);
         var locations = new List<PdfCleanUpLocation>
         {
             new(pageIndex + 1, new Rectangle((float)pdfBounds.X, (float)pdfBounds.Y,
                 (float)pdfBounds.Width, (float)pdfBounds.Height), null)
         };
-        new PdfCleanUpTool(document, locations, new CleanUpProperties().SetProcessAnnotations(true)).CleanUp();
+        PdfSweepService.CleanUp(document, locations);
     }
 
     private static void RemoveFormWidgets(PdfDocument document, PdfPage page, PdfTextBox region)
