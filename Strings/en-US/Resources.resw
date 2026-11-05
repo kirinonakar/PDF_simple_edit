@@ -1321,4 +1321,46 @@ To remove passwords individually, use Encryption and password settings.</value>
   <data name="ThirdPartyLibraries" xml:space="preserve">
     <value>Third-party libraries</value>
   </data>
+  <data name="SavePageAsImage" xml:space="preserve">
+    <value>Save page as image (PNG)...</value>
+  </data>
+  <data name="PdfToImage" xml:space="preserve">
+    <value>PDF to Image (PNG)...</value>
+  </data>
+  <data name="ImageExportAllPages" xml:space="preserve">
+    <value>All</value>
+  </data>
+  <data name="ImageExportSpecifiedPages" xml:space="preserve">
+    <value>Specified</value>
+  </data>
+  <data name="ImageExportPageNumbers" xml:space="preserve">
+    <value>Page numbers and ranges (comma-separated)</value>
+  </data>
+  <data name="ImageExportResolution" xml:space="preserve">
+    <value>Image resolution</value>
+  </data>
+  <data name="ImageExportDescription" xml:space="preserve">
+    <value>Each page is saved as a separate PNG. Multiple pages use numbered filenames; existing files are kept by using a new name.</value>
+  </data>
+  <data name="InvalidImagePageSelection" xml:space="preserve">
+    <value>Enter page numbers or ranges between 1 and {0}. Example: 1,3,5-8</value>
+  </data>
+  <data name="CannotRenderPageAsImage" xml:space="preserve">
+    <value>Cannot render page {0} as an image.</value>
+  </data>
+  <data name="ExportingPageImages" xml:space="preserve">
+    <value>Saving PNG images... ({0}/{1})</value>
+  </data>
+  <data name="PageImagesSaved" xml:space="preserve">
+    <value>Saved {0} PNG image(s).</value>
+  </data>
+  <data name="PageImageExportFailed" xml:space="preserve">
+    <value>PNG export failed ({0} image(s) saved).</value>
+  </data>
+  <data name="PageImageExportError" xml:space="preserve">
+    <value>PDF image export error</value>
+  </data>
+  <data name="ImageExportPageTooLarge" xml:space="preserve">
+    <value>The image for page {0} is too large. Choose a lower resolution.</value>
+  </data>
 </root>

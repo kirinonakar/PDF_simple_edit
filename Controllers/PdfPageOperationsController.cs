@@ -33,6 +33,80 @@ public sealed class PdfPageOperationsController(
     Action updateUIState,
     Func<string, string, Task> showErrorAsync)
 {
+    private bool _exportingPageImages;
+
+    public async Task ExportPageImagesAsync(int? singlePageIndex = null)
+    {
+        if (_exportingPageImages || !getManager().IsLoaded || getActiveTab() is not { } tab) return;
+        var manager = getManager();
+        long version = manager.EditVersion;
+        _exportingPageImages = true;
+        bool started = false;
+        int savedCount = 0;
+        try
+        {
+            PdfPageImageExportOptions? options = singlePageIndex is int index
+                ? new PdfPageImageExportOptions(new[] { index }, 300)
+                : await new PdfPageImageExportDialogService().ShowAsync(getXamlRoot(), manager.PageCount);
+            if (options == null || !ReferenceEquals(manager, getManager()) || version != manager.EditVersion) return;
+
+            string baseName = Path.GetFileNameWithoutExtension(manager.FilePath) ?? Loc.Get("Document");
+            string? path;
+            if (options.PageIndices.Count == 1)
+            {
+                var picker = new FileSavePicker
+                {
+                    SuggestedStartLocation = PickerLocationId.PicturesLibrary,
+                    SuggestedFileName = $"{baseName}_page_{options.PageIndices[0] + 1:0000}.png"
+                };
+                picker.FileTypeChoices.Add(Loc.Get("PNGImage"), new List<string> { ".png" });
+                InitializeWithWindow.Initialize(picker, getWindowHandle());
+                path = (await picker.PickSaveFileAsync())?.Path;
+            }
+            else
+            {
+                var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.PicturesLibrary };
+                picker.FileTypeFilter.Add("*");
+                InitializeWithWindow.Initialize(picker, getWindowHandle());
+                path = (await picker.PickSingleFolderAsync())?.Path;
+            }
+            if (path == null || !ReferenceEquals(manager, getManager()) || version != manager.EditVersion) return;
+
+            started = true;
+            loadingIndicator.IsActive = true;
+            statusText.Text = Loc.Format("ExportingPageImages", 0, options.PageIndices.Count);
+            await finishInlineEditAsync();
+            if (!ReferenceEquals(manager, getManager())) return;
+            byte[] snapshot = await saveService.CreateAnnotatedBytesAsync(manager, tab.Annotations);
+            var exporter = new PdfPageImageExportService();
+            if (options.PageIndices.Count == 1)
+            {
+                await exporter.ExportPageAsync(snapshot, options.PageIndices[0], path, options.Dpi);
+                savedCount = 1;
+            }
+            else
+            {
+                var progress = new Progress<int>(count =>
+                {
+                    savedCount = count;
+                    statusText.Text = Loc.Format("ExportingPageImages", count, options.PageIndices.Count);
+                });
+                await exporter.ExportPagesAsync(snapshot, options.PageIndices, path, baseName, options.Dpi, progress);
+            }
+            statusText.Text = Loc.Format("PageImagesSaved", options.PageIndices.Count);
+        }
+        catch (Exception ex)
+        {
+            statusText.Text = Loc.Format("PageImageExportFailed", savedCount);
+            await showErrorAsync(Loc.Get("PageImageExportError"), ex.Message);
+        }
+        finally
+        {
+            _exportingPageImages = false;
+            if (started) loadingIndicator.IsActive = false;
+        }
+    }
+
     public async Task ImagesToPdfAsync()
     {
         var imagePicker = new FileOpenPicker

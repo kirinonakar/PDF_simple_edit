@@ -39,6 +39,7 @@ public enum EditorMenuCommand
     ExtractAllImages,
     MergePdf,
     ImagesToPdf,
+    PdfToImage,
     SplitPdf,
     DeletePage,
     ProtectionSettings,
@@ -89,6 +90,7 @@ public sealed partial class EditorMenuBar : UserControl
         MenuAddImage.IsEnabled = hasDoc;
         MenuExtractImages.IsEnabled = hasDoc;
         MenuSplitPdf.IsEnabled = hasDoc;
+        MenuPdfToImage.IsEnabled = hasDoc;
         MenuDeletePage.IsEnabled = hasDoc;
         MenuProtectionSettings.IsEnabled = hasDoc;
         MenuRemoveProtection.IsEnabled = hasDoc && isProtected;

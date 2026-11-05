@@ -465,6 +465,7 @@ namespace PDF_simple_edit
                 case EditorMenuCommand.ExtractAllImages: ExtractAllImages_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.MergePdf: MergePdf_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.ImagesToPdf: ImagesToPdf_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.PdfToImage: PdfToImage_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.SplitPdf: SplitPdf_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.DeletePage: DeletePage_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.ProtectionSettings: ProtectionSettings_Click(EditorMenu, new RoutedEventArgs()); break;
@@ -522,6 +523,7 @@ namespace PDF_simple_edit
 
             PageListView.SelectionChanged += PageListView_SelectionChanged;
             PagePanel.ExtractMenuItem.Click += ExtractSelectedPages_Click;
+            PagePanel.SaveImageMenuItem.Click += SavePageImage_Click;
             PagePanel.DeleteMenuItem.Click += DeletePage_Click;
             PageListView.AddHandler(
                 UIElement.PointerPressedEvent,
@@ -681,6 +683,7 @@ namespace PDF_simple_edit
 
             int selectedPageCount = GetSelectedPageIndices().Count;
             PagePanel.ExtractMenuItem.IsEnabled = hasDoc && selectedPageCount > 0;
+            PagePanel.SaveImageMenuItem.IsEnabled = hasDoc;
             PagePanel.DeleteMenuItem.IsEnabled = hasDoc &&
                 selectedPageCount > 0 && selectedPageCount < _pdfManager.PageCount;
 
@@ -1397,6 +1400,15 @@ namespace PDF_simple_edit
 
         private async void ImagesToPdf_Click(object sender, RoutedEventArgs e) =>
             await _pageOperationsController.ImagesToPdfAsync();
+
+        private async void PdfToImage_Click(object sender, RoutedEventArgs e) =>
+            await _pageOperationsController.ExportPageImagesAsync();
+
+        private async void SavePageImage_Click(object sender, RoutedEventArgs e)
+        {
+            if (PagePanel.ContextPageIndex is int pageIndex)
+                await _pageOperationsController.ExportPageImagesAsync(pageIndex);
+        }
 
         private async void SplitPdf_Click(object sender, RoutedEventArgs e) =>
             await _pageOperationsController.SplitAsync();

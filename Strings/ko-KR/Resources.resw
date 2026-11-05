@@ -1321,4 +1321,46 @@
   <data name="ThirdPartyLibraries" xml:space="preserve">
     <value>타사 라이브러리</value>
   </data>
+  <data name="SavePageAsImage" xml:space="preserve">
+    <value>이미지로 저장...</value>
+  </data>
+  <data name="PdfToImage" xml:space="preserve">
+    <value>PDF 를 이미지로...</value>
+  </data>
+  <data name="ImageExportAllPages" xml:space="preserve">
+    <value>전체</value>
+  </data>
+  <data name="ImageExportSpecifiedPages" xml:space="preserve">
+    <value>지정</value>
+  </data>
+  <data name="ImageExportPageNumbers" xml:space="preserve">
+    <value>페이지 번호 및 범위 (쉼표로 구분)</value>
+  </data>
+  <data name="ImageExportResolution" xml:space="preserve">
+    <value>이미지 해상도</value>
+  </data>
+  <data name="ImageExportDescription" xml:space="preserve">
+    <value>각 페이지를 별도의 PNG 이미지로 저장합니다. 여러 페이지는 페이지 번호를 파일 이름에 포함하며, 같은 이름의 파일이 있으면 새 이름으로 저장합니다.</value>
+  </data>
+  <data name="InvalidImagePageSelection" xml:space="preserve">
+    <value>1~{0} 사이의 페이지 번호 또는 범위를 입력하세요. 예: 1,3,5-8</value>
+  </data>
+  <data name="CannotRenderPageAsImage" xml:space="preserve">
+    <value>{0}페이지를 이미지로 변환할 수 없습니다.</value>
+  </data>
+  <data name="ExportingPageImages" xml:space="preserve">
+    <value>PNG 저장 중... ({0}/{1})</value>
+  </data>
+  <data name="PageImagesSaved" xml:space="preserve">
+    <value>PNG 이미지 {0}개 저장 완료</value>
+  </data>
+  <data name="PageImageExportFailed" xml:space="preserve">
+    <value>PNG 저장 실패 (저장된 이미지: {0}개)</value>
+  </data>
+  <data name="PageImageExportError" xml:space="preserve">
+    <value>PDF 이미지 저장 오류</value>
+  </data>
+  <data name="ImageExportPageTooLarge" xml:space="preserve">
+    <value>{0}페이지의 이미지 크기가 너무 큽니다. 더 낮은 해상도를 선택하세요.</value>
+  </data>
 </root>

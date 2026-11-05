@@ -16,6 +16,7 @@
                   SelectionMode="Extended">
             <ListView.ContextFlyout>
                 <MenuFlyout x:Name="PageContextMenu">
+                    <MenuFlyoutItem x:Name="SavePageImageMenuItem" Text="{loc:LocalizedString Key=SavePageAsImage}"/>
                     <MenuFlyoutItem x:Name="ExtractPagesMenuItem" Text="{loc:LocalizedString Key=ExtractSelectedPages}"/>
                     <MenuFlyoutItem x:Name="DeletePagesMenuItem" Text="{loc:LocalizedString Key=DeleteSelectedPages}"/>
                 </MenuFlyout>
