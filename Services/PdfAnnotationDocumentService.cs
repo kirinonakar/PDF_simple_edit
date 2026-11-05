@@ -13,7 +13,7 @@ public sealed class PdfAnnotationDocumentService
     public void Apply(PdfDocumentManager manager, PdfDocument document, PdfAnnotation annotation, bool textMetricsPrepared = false)
     {
         if (annotation.NativeText != null || (annotation.IsApplied && annotation.Type is AnnotationType.Image or AnnotationType.Highlight)) return;
-        if (System.Math.Abs(annotation.Rotation) > .0001 && annotation.Type != AnnotationType.Signature && !annotation.IsOriginalImageReplacement &&
+        if (System.Math.Abs(annotation.Rotation) > .0001 && !annotation.IsEditablePath && !annotation.IsOriginalImageReplacement &&
             !annotation.IsOriginalTextReplacement && !(annotation.IsApplied && annotation.Type is AnnotationType.Text or AnnotationType.FreeText))
         {
             var page = document.GetPage(annotation.PageIndex + 1);
@@ -105,6 +105,9 @@ public sealed class PdfAnnotationDocumentService
                     annotation.Height,
                     color,
                     (float)annotation.Opacity);
+                break;
+            case AnnotationType.Drawing:
+                manager.AddDrawingInternal(document, annotation, color);
                 break;
             case AnnotationType.Signature:
                 var signatureBounds = new PdfTextBox(annotation.X, annotation.Y, annotation.Width, annotation.Height);

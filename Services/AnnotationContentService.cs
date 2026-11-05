@@ -49,6 +49,10 @@ public sealed class AnnotationContentService
                     hitY >= annotation.Y - 5 && hitY <= annotation.Y + height)
                     return annotation;
             }
+            else if (annotation.Type == AnnotationType.Drawing)
+            {
+                if (PdfDrawingGeometry.HitTest(annotation, hitX, hitY)) return annotation;
+            }
             else if (annotation.Type == AnnotationType.Signature)
             {
                 double tolerance = Math.Max(annotation.LineWidth * 2, 8);

@@ -125,6 +125,8 @@ public sealed class AnnotationEditController
                 ? "그래픽이 삭제되었습니다."
                 : targets[0].Type == AnnotationType.Image
                 ? "이미지가 삭제되었습니다."
+                : targets[0].Type == AnnotationType.Drawing
+                ? "그리기가 삭제되었습니다."
                 : "텍스트가 삭제되었습니다.";
         return true;
     }

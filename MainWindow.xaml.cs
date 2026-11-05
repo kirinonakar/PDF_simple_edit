@@ -29,7 +29,12 @@ namespace PDF_simple_edit
         private int _currentPageIndex
         {
             get => _activeTab?.CurrentPageIndex ?? 0;
-            set { if (_activeTab != null) _activeTab.CurrentPageIndex = value; }
+            set
+            {
+                if (_activeTab == null) return;
+                if (_activeTab.CurrentPageIndex != value) _annotationCanvasController?.CancelDrawing();
+                _activeTab.CurrentPageIndex = value;
+            }
         }
         private double _zoomLevel
         {
@@ -62,6 +67,8 @@ namespace PDF_simple_edit
         private readonly TextFontSettings _fontSettings = new();
         private string _signatureColor = "#000000";
         private double _signatureLineWidth = 2.0;
+        private string _drawingColor = "#000000";
+        private double _drawingLineWidth = 2;
 
         // Resolve the selected document when a composed controller invokes a command.
         private PdfDocumentManager _pdfManager => _activeTab?.PdfManager ?? new PdfDocumentManager();
@@ -80,6 +87,7 @@ namespace PDF_simple_edit
         private ToggleButton BtnSelectGraphics => EditorToolbar.SelectGraphicsButton;
         private ToggleButton BtnAddText => EditorToolbar.AddTextButton;
         private ToggleButton BtnHighlight => EditorToolbar.HighlightButton;
+        private ToggleButton BtnRedactRegion => EditorToolbar.RedactRegionButton;
         private ToggleButton BtnSignature => EditorToolbar.SignatureButton;
         private Border SignatureColorIndicator => EditorToolbar.SignatureColorIndicator;
         private ColorPicker SignatureColorPicker => EditorToolbar.SignatureColorPicker;
@@ -138,6 +146,8 @@ namespace PDF_simple_edit
                     _fontSettings,
                     () => _signatureColor,
                     () => _signatureLineWidth,
+                    () => _drawingColor,
+                    () => _drawingLineWidth,
                     color =>
                     {
                         _fontSettings.HighlightColor = color.ToString();
@@ -157,6 +167,7 @@ namespace PDF_simple_edit
                             Content.Focus(FocusState.Programmatic);
                         }
                     });
+                _annotationCanvasController.RegionRedactionRequested = RedactRegionAsync;
                 _formOverlayController = new PdfFormOverlayController(
                     FormCanvas, TxtStatus, () => _pdfManager, () => _currentPageIndex,
                     () => _currentTool);
@@ -366,6 +377,8 @@ namespace PDF_simple_edit
 
         private async void DocTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            _annotationCanvasController?.CancelDrawing();
+            _annotationCanvasController?.CancelRegionGesture();
             _pageViewController?.CancelPendingOperations();
             _documentSearchController?.CancelPendingSearch();
             // Unhook old events
@@ -435,7 +448,15 @@ namespace PDF_simple_edit
                 case EditorMenuCommand.SelectGraphicsTool: SelectGraphicsTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.AddTextTool: AddTextTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.HighlightTool: HighlightTool_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.RedactRegionTool: RedactRegionTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.SignatureTool: SignatureTool_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.DrawFreehandTool: SetToolMode(EditToolMode.DrawFreehand); break;
+                case EditorMenuCommand.DrawRectangleTool: SetToolMode(EditToolMode.DrawRectangle); break;
+                case EditorMenuCommand.DrawEllipseTool: SetToolMode(EditToolMode.DrawEllipse); break;
+                case EditorMenuCommand.DrawArrowTool: SetToolMode(EditToolMode.DrawArrow); break;
+                case EditorMenuCommand.DrawTriangleArrowTool: SetToolMode(EditToolMode.DrawTriangleArrow); break;
+                case EditorMenuCommand.DrawOutlineArrowTool: SetToolMode(EditToolMode.DrawOutlineArrow); break;
+                case EditorMenuCommand.DrawPolygonTool: SetToolMode(EditToolMode.DrawPolygon); break;
                 case EditorMenuCommand.AddImageTool: AddImageTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.ExtractAllImages: ExtractAllImages_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.MergePdf: MergePdf_Click(EditorMenu, new RoutedEventArgs()); break;
@@ -463,8 +484,24 @@ namespace PDF_simple_edit
             BtnSelectGraphics.Click += SelectGraphicsTool_Click;
             BtnAddText.Click += AddTextTool_Click;
             BtnHighlight.Click += HighlightTool_Click;
+            BtnRedactRegion.Click += RedactRegionTool_Click;
             BtnHighlightSettings.Click += HighlightSettings_Click;
             BtnSignature.Click += SignatureTool_Click;
+            foreach (var item in DrawingToolItems)
+                item.Click += DrawingTool_Click;
+            EditorToolbar.DrawingColorPicker.Color = ParseColor(_drawingColor);
+            EditorToolbar.DrawingColorPicker.ColorChanged += (_, args) =>
+            {
+                _drawingColor = args.NewColor.ToString();
+                EditorToolbar.DrawingColorIndicator.Background = new SolidColorBrush(args.NewColor);
+                ApplySelectedDrawingStyle(changeColor: true);
+            };
+            EditorToolbar.DrawingWidthSlider.ValueChanged += (_, args) =>
+            {
+                _drawingLineWidth = args.NewValue;
+                EditorToolbar.DrawingWidthText.Text = $"{args.NewValue:0.#} pt";
+                ApplySelectedDrawingStyle(changeColor: false);
+            };
             BtnSignatureSettings.Click += SignatureSettings_Click;
             BtnColorPicker.Click += ColorPickerTool_Click;
             BtnAddImage.Click += AddImageTool_Click;
@@ -503,6 +540,8 @@ namespace PDF_simple_edit
             OverlayCanvas.PointerPressed += OverlayCanvas_PointerPressed;
             OverlayCanvas.PointerMoved += OverlayCanvas_PointerMoved;
             OverlayCanvas.PointerReleased += OverlayCanvas_PointerReleased;
+            OverlayCanvas.PointerCanceled += OverlayCanvas_PointerCanceled;
+            OverlayCanvas.PointerCaptureLost += OverlayCanvas_PointerCanceled;
             OverlayCanvas.DoubleTapped += OverlayCanvas_DoubleTapped;
             PdfSurface.AlignLeftItem.Click += AlignLeft_Click;
             PdfSurface.AlignRightItem.Click += AlignRight_Click;
@@ -647,8 +686,11 @@ namespace PDF_simple_edit
             BtnSelectGraphics.IsEnabled = hasDoc;
             BtnAddText.IsEnabled = hasDoc;
             BtnHighlight.IsEnabled = hasDoc;
+            BtnRedactRegion.IsEnabled = hasDoc;
             BtnHighlightSettings.IsEnabled = hasDoc;
             BtnSignature.IsEnabled = hasDoc;
+            EditorToolbar.DrawingButton.IsEnabled = hasDoc;
+            EditorToolbar.DrawingSettingsButton.IsEnabled = hasDoc;
             BtnSignatureSettings.IsEnabled = hasDoc;
             BtnColorPicker.IsEnabled = hasDoc;
             BtnAddImage.IsEnabled = hasDoc;
@@ -917,14 +959,26 @@ namespace PDF_simple_edit
             BtnSelectGraphics.IsChecked = mode == EditToolMode.SelectGraphics;
             BtnAddText.IsChecked = mode == EditToolMode.AddText;
             BtnHighlight.IsChecked = mode == EditToolMode.Highlight;
+            BtnRedactRegion.IsChecked = mode == EditToolMode.RedactRegion;
             BtnSignature.IsChecked = mode == EditToolMode.Signature;
+            foreach (var item in DrawingToolItems)
+                item.IsChecked = item.Tag is string tag && tag == mode.ToString();
+            EditorToolbar.DrawingButton.Content = DrawingToolItems.FirstOrDefault(item => item.IsChecked)?.Text ?? "그리기";
             BtnColorPicker.IsChecked = mode == EditToolMode.ColorPicker;
 
             TxtToolMode.Text = mode switch
             {
                 EditToolMode.AddText => "도구: 텍스트 추가",
                 EditToolMode.Highlight => "도구: 텍스트 강조",
+                EditToolMode.RedactRegion => "도구: 영역 삭제 · 드래그하여 내용 삭제 · Esc: 취소",
                 EditToolMode.Signature => "도구: 서명 그리기",
+                EditToolMode.DrawFreehand => "도구: 자유 그리기 · 드래그하여 그리기 · Esc: 취소",
+                EditToolMode.DrawRectangle => "도구: 사각형 · 드래그하여 그리기 · Esc: 취소",
+                EditToolMode.DrawEllipse => "도구: 타원 · 드래그하여 그리기 · Esc: 취소",
+                EditToolMode.DrawArrow => "도구: 화살표 · 시작점에서 끝점까지 드래그 · Esc: 취소",
+                EditToolMode.DrawTriangleArrow => "도구: 삼각형 머리 화살표 · 시작점에서 끝점까지 드래그 · Esc: 취소",
+                EditToolMode.DrawOutlineArrow => "도구: 테두리 화살표 (삼각형 머리) · 시작점에서 끝점까지 드래그 · Esc: 취소",
+                EditToolMode.DrawPolygon => "도구: 다각형 · 꼭짓점 클릭 · 더블클릭/Enter: 완성 · Esc: 취소",
                 EditToolMode.AddImage => "도구: 이미지 추가",
                 EditToolMode.Select => "도구: 텍스트 선택",
                 EditToolMode.SelectGraphics => "도구: 그래픽 선택 · 클릭/범위 선택 후 Delete로 삭제",
@@ -964,6 +1018,41 @@ namespace PDF_simple_edit
             SetToolMode(_currentTool == EditToolMode.Highlight ? EditToolMode.None : EditToolMode.Highlight);
         }
 
+        private void RedactRegionTool_Click(object sender, RoutedEventArgs e) =>
+            SetToolMode(_currentTool == EditToolMode.RedactRegion ? EditToolMode.None : EditToolMode.RedactRegion);
+
+        private bool _isRedactingRegion;
+
+        private async Task RedactRegionAsync(PdfTextBox region)
+        {
+            if (_isRedactingRegion) return;
+            var manager = _pdfManager;
+            var annotations = _annotations;
+            int pageIndex = _currentPageIndex;
+            _isRedactingRegion = true;
+            LoadingRing.IsActive = true;
+            TxtStatus.Text = "선택 영역의 내용을 삭제하는 중...";
+            try
+            {
+                await new PdfSaveService(new PdfAnnotationDocumentService())
+                    .RedactRegionAsync(manager, annotations, pageIndex, region);
+                if (!ReferenceEquals(manager, _pdfManager)) return;
+                _annotationCanvasController.ClearSelection();
+                await RenderCurrentPageAsync();
+                TxtStatus.Text = "영역 내용이 삭제되었습니다 (Ctrl+Z: 실행 취소, Ctrl+S: 저장).";
+            }
+            catch (Exception ex)
+            {
+                TxtStatus.Text = "영역 삭제에 실패했습니다.";
+                await ShowErrorDialogAsync("영역 삭제 오류", ex.Message);
+            }
+            finally
+            {
+                _isRedactingRegion = false;
+                LoadingRing.IsActive = false;
+            }
+        }
+
         private void HighlightSettings_Click(object sender, RoutedEventArgs e)
         {
             FlyoutBase.ShowAttachedFlyout(BtnHighlight);
@@ -972,6 +1061,33 @@ namespace PDF_simple_edit
         private void SignatureTool_Click(object sender, RoutedEventArgs e)
         {
             SetToolMode(_currentTool == EditToolMode.Signature ? EditToolMode.None : EditToolMode.Signature);
+        }
+
+        private ToggleMenuFlyoutItem[] DrawingToolItems => new[]
+        {
+            EditorToolbar.DrawFreehandItem, EditorToolbar.DrawRectangleItem, EditorToolbar.DrawEllipseItem,
+            EditorToolbar.DrawArrowItem, EditorToolbar.DrawTriangleArrowItem, EditorToolbar.DrawOutlineArrowItem,
+            EditorToolbar.DrawPolygonItem
+        };
+
+        private void DrawingTool_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement { Tag: string tag } && Enum.TryParse(tag, out EditToolMode mode))
+                SetToolMode(_currentTool == mode ? EditToolMode.None : mode);
+        }
+
+        private void ApplySelectedDrawingStyle(bool changeColor)
+        {
+            var selected = _annotationCanvasController.SelectedAnnotations.Where(a => a.Type == AnnotationType.Drawing).ToList();
+            if (selected.Count == 0) return;
+            foreach (var drawing in selected)
+            {
+                if (changeColor) drawing.Color = _drawingColor;
+                else drawing.LineWidth = _drawingLineWidth;
+                drawing.IsApplied = false;
+            }
+            _pdfManager.MarkModified(pageIndex: _currentPageIndex);
+            RenderAnnotationOverlays();
         }
 
         private void SignatureSettings_Click(object sender, RoutedEventArgs e)
@@ -1065,14 +1181,20 @@ namespace PDF_simple_edit
 
         #region Canvas Interaction
 
-        private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEventArgs e) =>
+        private async void OverlayCanvas_PointerPressed(object sender, PointerRoutedEventArgs e)
+        {
+            if (PdfDrawingGeometry.IsDrawingTool(_currentTool)) PdfScrollViewer.Focus(FocusState.Programmatic);
             await _annotationCanvasController.PointerPressedAsync(e);
+        }
 
         private void OverlayCanvas_PointerMoved(object sender, PointerRoutedEventArgs e) =>
             _annotationCanvasController.PointerMoved(e);
 
         private async void OverlayCanvas_PointerReleased(object sender, PointerRoutedEventArgs e) =>
             await _annotationCanvasController.PointerReleasedAsync(e);
+
+        private void OverlayCanvas_PointerCanceled(object sender, PointerRoutedEventArgs e) =>
+            _annotationCanvasController.CancelRegionGesture();
 
         private void OverlayCanvas_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e) =>
             _annotationCanvasController.DoubleTapped(e);
@@ -1186,6 +1308,19 @@ namespace PDF_simple_edit
                 : FocusManager.GetFocusedElement(Content.XamlRoot);
             bool textInputFocused = focusedElement is TextBox or RichEditBox or
                 NumberBox or ComboBox;
+            if (!textInputFocused && !_annotationCanvasController.IsInlineEditing &&
+                _annotationCanvasController.HandleDrawingKey(e.Key))
+            {
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Windows.System.VirtualKey.Escape && !textInputFocused &&
+                _currentTool == EditToolMode.RedactRegion)
+            {
+                SetToolMode(EditToolMode.None);
+                e.Handled = true;
+                return;
+            }
             if (controlDown && !textInputFocused &&
                 !_annotationCanvasController.IsInlineEditing)
             {

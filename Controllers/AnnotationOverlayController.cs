@@ -112,7 +112,7 @@ public sealed class AnnotationOverlayController
 
             if (annotation == primarySelection &&
                 annotation.Type is AnnotationType.Text or AnnotationType.FreeText or
-                AnnotationType.Image or AnnotationType.Highlight or AnnotationType.Signature)
+                AnnotationType.Image or AnnotationType.Highlight or AnnotationType.Signature or AnnotationType.Drawing)
             {
                 AddResizeHandles(
                     canvas,
@@ -200,6 +200,8 @@ public sealed class AnnotationOverlayController
                 IsHitTestVisible = false
             };
         }
+        if (annotation.Type == AnnotationType.Drawing)
+            return DrawingInteractionController.CreateElement(annotation);
         if (annotation.Type == AnnotationType.Signature)
         {
             var polyline = new Microsoft.UI.Xaml.Shapes.Polyline

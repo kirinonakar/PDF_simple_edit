@@ -48,7 +48,7 @@ public sealed class AnnotationClipboardController(
             ? $"{selectedObjects.Count}개 객체를 잘라냈습니다."
             : selectedObjects[0].Type == AnnotationType.Image
                 ? "이미지를 잘라냈습니다."
-                : "텍스트를 잘라냈습니다.";
+                : selectedObjects[0].Type == AnnotationType.Drawing ? "그리기를 잘라냈습니다." : "텍스트를 잘라냈습니다.";
         return true;
     }
 
@@ -94,7 +94,7 @@ public sealed class AnnotationClipboardController(
                 ? $"{selectedObjects.Count}개 객체를 클립보드에 복사했습니다."
                 : selectedObjects[0].Type == AnnotationType.Image
                     ? "이미지를 클립보드에 복사했습니다."
-                    : "텍스트를 클립보드에 복사했습니다.";
+                    : selectedObjects[0].Type == AnnotationType.Drawing ? "그리기를 클립보드에 복사했습니다." : "텍스트를 클립보드에 복사했습니다.";
             return true;
         }
         catch (Exception ex)
@@ -162,7 +162,7 @@ public sealed class AnnotationClipboardController(
             .Where(annotation =>
                 IsTextAnnotation(annotation)
                     ? !string.IsNullOrWhiteSpace(annotation.Content)
-                    : annotation.Type == AnnotationType.Image &&
+                    : annotation.Type == AnnotationType.Drawing || annotation.Type == AnnotationType.Image &&
                       !string.IsNullOrWhiteSpace(annotation.ImagePath) &&
                       File.Exists(annotation.ImagePath))
             .OrderBy(annotation => annotation.PageIndex)
@@ -193,7 +193,7 @@ public sealed class AnnotationClipboardController(
         (double pageWidth, double pageHeight) = getManager().GetPageSize(getCurrentPageIndex());
         var pasted = new List<PdfAnnotation>();
         foreach (PdfAnnotation source in sourceAnnotations.Where(annotation =>
-            IsTextAnnotation(annotation) || annotation.Type == AnnotationType.Image))
+            IsTextAnnotation(annotation) || annotation.Type is AnnotationType.Image or AnnotationType.Drawing))
         {
             if (source.Type == AnnotationType.Image &&
                 (string.IsNullOrWhiteSpace(source.ImagePath) || !File.Exists(source.ImagePath)))
@@ -222,7 +222,7 @@ public sealed class AnnotationClipboardController(
             ? $"{pasted.Count}개 객체를 붙여넣었습니다."
             : pasted[0].Type == AnnotationType.Image
                 ? "이미지를 새 객체로 붙여넣었습니다."
-                : "텍스트를 새 객체로 붙여넣었습니다.";
+                : pasted[0].Type == AnnotationType.Drawing ? "그리기를 새 객체로 붙여넣었습니다." : "텍스트를 새 객체로 붙여넣었습니다.";
         return true;
     }
 

@@ -37,10 +37,37 @@ public sealed class PdfSaveService
         return Task.Run(() => CreateAnnotatedBytes(manager, source, captured));
     }
 
+    public async Task RedactRegionAsync(PdfDocumentManager manager, List<PdfAnnotation> annotations,
+        int pageIndex, PdfTextBox region)
+    {
+        byte[] source = manager.GetPdfBytes() ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+        if (pageIndex < 0 || pageIndex >= manager.PageCount) throw new ArgumentOutOfRangeException(nameof(pageIndex));
+        var size = manager.GetPageSize(pageIndex);
+        region = PdfRegionRedactionService.Clip(region, size.width, size.height);
+        if (region.Width <= 0 || region.Height <= 0) return;
+        long version = manager.EditVersion;
+        object? uiState = manager.GetUIStateFunc?.Invoke();
+        static bool IsPageContent(PdfAnnotation a) => a.Type is AnnotationType.Text or AnnotationType.FreeText
+            or AnnotationType.Highlight or AnnotationType.Image;
+        // Bake pending page overlays first, so a later save cannot bring deleted
+        // text/images back. Other pages and non-overlapping editable paths stay pending.
+        var captured = CaptureAnnotations(annotations.Where(a => a.PageIndex == pageIndex && IsPageContent(a)).ToList());
+        byte[] redacted = await Task.Run(() =>
+        {
+            byte[] annotated = CreateAnnotatedBytes(manager, source, captured);
+            return PdfDocumentManager.RewritePdfBytes(annotated,
+                document => PdfRegionRedactionService.Apply(document, pageIndex, region));
+        });
+        manager.CommitRegionRedaction(source, version, redacted, uiState, pageIndex);
+        // All operator references on the changed page are stale after pdfSweep.
+        annotations.RemoveAll(a => a.PageIndex == pageIndex &&
+            (IsPageContent(a) || PdfRegionRedactionService.Intersects(a, region)));
+    }
+
     private byte[] CreateAnnotatedBytes(PdfDocumentManager manager, byte[] source, List<PdfAnnotation> annotations)
     {
         bool needsAnnotationWrite = annotations.Any(a => a.NativeText == null &&
-            (!a.IsApplied && !a.IsOriginalTextReplacement || a.Type == AnnotationType.Signature));
+            (!a.IsApplied && !a.IsOriginalTextReplacement || a.IsEditablePath));
         bool needsFormRepair = _formService.NeedsAppearanceRepair(source);
         if (!needsAnnotationWrite && !needsFormRepair) return source;
         return PdfDocumentManager.RewritePdfBytes(source, document =>
@@ -65,9 +92,9 @@ public sealed class PdfSaveService
             if (!isUserSave) return (Disk: CreateAnnotatedBytes(manager, source, captured), Editor: source);
             // Bake non-signature overlays into the editor once. Add signatures and
             // encryption together in the disk pass, keeping Ink out of the editor.
-            byte[] editor = CreateAnnotatedBytes(manager, source, captured.Where(a => a.Type != AnnotationType.Signature).ToList());
+            byte[] editor = CreateAnnotatedBytes(manager, source, captured.Where(a => !a.IsEditablePath).ToList());
             await RefreshSavedAnnotationsAsync(manager, editor, captured);
-            var signatures = captured.Where(a => a.Type == AnnotationType.Signature).ToList();
+            var signatures = captured.Where(a => a.IsEditablePath).ToList();
             byte[] disk = signatures.Count == 0 ? PdfSecurityService.Encrypt(editor, protection)
                 : PdfDocumentManager.RewritePdfBytes(editor, document =>
                 {
@@ -159,7 +186,7 @@ public sealed class PdfSaveService
         {
             annotation.IsApplied = true;
         }
-        foreach (PdfAnnotation annotation in annotations.Where(annotation => annotation.Type == AnnotationType.Signature))
+        foreach (PdfAnnotation annotation in annotations.Where(annotation => annotation.IsEditablePath))
             annotation.IsApplied = true;
 
         foreach (var annotation in annotations.Where(a => a.Type == AnnotationType.Highlight))

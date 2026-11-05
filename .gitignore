@@ -19,6 +19,8 @@ tests/*
 !tests/PdfProtection/
 !tests/GraphicSelection/
 !tests/DocumentOperations/
+!tests/DrawingTools/
+!tests/RegionRedaction/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs

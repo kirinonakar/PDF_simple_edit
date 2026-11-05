@@ -26,7 +26,15 @@ public enum EditorMenuCommand
     SelectGraphicsTool,
     AddTextTool,
     HighlightTool,
+    RedactRegionTool,
     SignatureTool,
+    DrawFreehandTool,
+    DrawRectangleTool,
+    DrawEllipseTool,
+    DrawArrowTool,
+    DrawTriangleArrowTool,
+    DrawOutlineArrowTool,
+    DrawPolygonTool,
     AddImageTool,
     ExtractAllImages,
     MergePdf,
@@ -75,7 +83,9 @@ public sealed partial class EditorMenuBar : UserControl
         MenuSelectGraphics.IsEnabled = hasDoc;
         MenuAddText.IsEnabled = hasDoc;
         MenuHighlight.IsEnabled = hasDoc;
+        MenuRedactRegion.IsEnabled = hasDoc;
         MenuSignature.IsEnabled = hasDoc;
+        MenuDrawing.IsEnabled = hasDoc;
         MenuAddImage.IsEnabled = hasDoc;
         MenuExtractImages.IsEnabled = hasDoc;
         MenuSplitPdf.IsEnabled = hasDoc;
@@ -93,7 +103,15 @@ public sealed partial class EditorMenuBar : UserControl
         MenuSelectGraphics.IsChecked = mode == EditToolMode.SelectGraphics;
         MenuAddText.IsChecked = mode == EditToolMode.AddText;
         MenuHighlight.IsChecked = mode == EditToolMode.Highlight;
+        MenuRedactRegion.IsChecked = mode == EditToolMode.RedactRegion;
         MenuSignature.IsChecked = mode == EditToolMode.Signature;
+        MenuDrawFreehand.IsChecked = mode == EditToolMode.DrawFreehand;
+        MenuDrawRectangle.IsChecked = mode == EditToolMode.DrawRectangle;
+        MenuDrawEllipse.IsChecked = mode == EditToolMode.DrawEllipse;
+        MenuDrawArrow.IsChecked = mode == EditToolMode.DrawArrow;
+        MenuDrawTriangleArrow.IsChecked = mode == EditToolMode.DrawTriangleArrow;
+        MenuDrawOutlineArrow.IsChecked = mode == EditToolMode.DrawOutlineArrow;
+        MenuDrawPolygon.IsChecked = mode == EditToolMode.DrawPolygon;
     }
 
     private void InitializeZoomAccelerators()

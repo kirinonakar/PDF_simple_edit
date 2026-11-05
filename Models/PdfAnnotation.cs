@@ -14,8 +14,11 @@ namespace PDF_simple_edit.Models
         Highlight,
         Image,
         FreeText,
-        Signature
+        Signature,
+        Drawing
     }
+
+    public enum DrawingKind { Freehand, Rectangle, Ellipse, Arrow, Polygon, TriangleArrow, OutlineArrow }
 
     /// <summary>
     /// Represents an annotation on a PDF page.
@@ -44,6 +47,11 @@ namespace PDF_simple_edit.Models
         public double Opacity { get; set; } = 1.0;
         public double LineWidth { get; set; } = 2.0;
         public List<PdfPathPoint> SignaturePoints { get; set; } = new();
+        public DrawingKind DrawingKind { get; set; }
+        // Drawing points are relative to the annotation bounds (0..1), so all
+        // existing move, resize, rotation and clipboard operations apply to them.
+        public List<PdfPathPoint> DrawingPoints { get; set; } = new();
+        public bool IsEditablePath => Type is AnnotationType.Signature or AnnotationType.Drawing;
         public string? ImagePath { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public bool IsApplied { get; set; } = false;
@@ -95,6 +103,8 @@ namespace PDF_simple_edit.Models
                 Opacity = this.Opacity,
                 LineWidth = this.LineWidth,
                 SignaturePoints = this.SignaturePoints.Select(point => point.Clone()).ToList(),
+                DrawingKind = this.DrawingKind,
+                DrawingPoints = this.DrawingPoints.Select(point => point.Clone()).ToList(),
                 ImagePath = this.ImagePath,
                 CreatedAt = this.CreatedAt,
                 IsApplied = this.IsApplied,
@@ -141,9 +151,10 @@ namespace PDF_simple_edit.Models
     public static class PdfSignatureMetadata
     {
         public const string Prefix = "PDFSimpleEditor.Signature:";
+        public const string DrawingPrefix = "PDFSimpleEditor.Drawing:";
 
         public static string Serialize(PdfAnnotation annotation) =>
-            Prefix + JsonSerializer.Serialize(new Payload
+            (annotation.Type == AnnotationType.Drawing ? DrawingPrefix : Prefix) + JsonSerializer.Serialize(new Payload
             {
                 PageIndex = annotation.PageIndex,
                 Rotation = annotation.Rotation,
@@ -153,6 +164,8 @@ namespace PDF_simple_edit.Models
                 Height = annotation.Height,
                 Color = annotation.Color,
                 LineWidth = annotation.LineWidth,
+                DrawingKind = annotation.DrawingKind,
+                DrawingPoints = annotation.DrawingPoints.Select(point => point.Clone()).ToList(),
                 Points = annotation.SignaturePoints.Select(point => point.Clone()).ToList()
             });
 
@@ -162,19 +175,31 @@ namespace PDF_simple_edit.Models
             out PdfAnnotation? annotation)
         {
             annotation = null;
+            bool drawing = contents?.StartsWith(DrawingPrefix, StringComparison.Ordinal) == true;
             if (string.IsNullOrWhiteSpace(contents) ||
-                !contents.StartsWith(Prefix, StringComparison.Ordinal))
+                (!drawing && !contents.StartsWith(Prefix, StringComparison.Ordinal)))
                 return false;
 
             try
             {
-                Payload? payload = JsonSerializer.Deserialize<Payload>(contents[Prefix.Length..]);
-                if (payload == null || payload.Points == null || payload.Points.Count < 2)
+                Payload? payload = JsonSerializer.Deserialize<Payload>(contents[(drawing ? DrawingPrefix.Length : Prefix.Length)..]);
+                if (payload == null || !double.IsFinite(payload.X) || !double.IsFinite(payload.Y) ||
+                    !double.IsFinite(payload.Width) || !double.IsFinite(payload.Height) ||
+                    payload.Width <= 0 || payload.Height <= 0 || !double.IsFinite(payload.Rotation) ||
+                    !double.IsFinite(payload.LineWidth))
+                    return false;
+                var pathPoints = drawing ? payload.DrawingPoints : payload.Points;
+                int minimumPoints = drawing && payload.DrawingKind == DrawingKind.Polygon ? 3 :
+                    drawing && payload.DrawingKind == DrawingKind.OutlineArrow ? 7 :
+                    drawing && payload.DrawingKind is DrawingKind.Arrow or DrawingKind.TriangleArrow ? 4 : 2;
+                if (pathPoints == null || pathPoints.Count < minimumPoints ||
+                    pathPoints.Any(p => p == null || !double.IsFinite(p.X) || !double.IsFinite(p.Y)) ||
+                    (drawing && !Enum.IsDefined(payload.DrawingKind)))
                     return false;
 
                 annotation = new PdfAnnotation
                 {
-                    Type = AnnotationType.Signature,
+                    Type = drawing ? AnnotationType.Drawing : AnnotationType.Signature,
                     PageIndex = pageIndex,
                     Rotation = payload.Rotation,
                     X = payload.X,
@@ -184,6 +209,8 @@ namespace PDF_simple_edit.Models
                     Color = string.IsNullOrWhiteSpace(payload.Color) ? "#000000" : payload.Color,
                     LineWidth = payload.LineWidth > 0 ? payload.LineWidth : 2,
                     SignaturePoints = payload.Points.Select(point => point.Clone()).ToList(),
+                    DrawingKind = payload.DrawingKind,
+                    DrawingPoints = payload.DrawingPoints.Select(point => point.Clone()).ToList(),
                     IsApplied = true
                 };
                 return true;
@@ -205,6 +232,8 @@ namespace PDF_simple_edit.Models
             public string Color { get; set; } = "#000000";
             public double LineWidth { get; set; } = 2;
             public List<PdfPathPoint> Points { get; set; } = new();
+            public DrawingKind DrawingKind { get; set; }
+            public List<PdfPathPoint> DrawingPoints { get; set; } = new();
         }
     }
 
@@ -259,7 +288,15 @@ namespace PDF_simple_edit.Models
         Signature,
         MoveText,
         ColorPicker,
-        SelectGraphics
+        SelectGraphics,
+        DrawFreehand,
+        DrawRectangle,
+        DrawEllipse,
+        DrawArrow,
+        DrawPolygon,
+        RedactRegion,
+        DrawTriangleArrow,
+        DrawOutlineArrow
     }
 
     /// <summary>

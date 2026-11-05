@@ -141,6 +141,10 @@ namespace PDF_simple_edit.Helpers
             CommitPdfBytes(expectedBytes, editedBytes, GetUIStateFunc?.Invoke(),
                 pageIndex.HasValue ? PdfDocumentChange.Page(pageIndex.Value) : new());
 
+        internal void CommitRegionRedaction(byte[] expectedBytes, long expectedVersion,
+            byte[] editedBytes, object? uiState, int pageIndex) =>
+            CommitPdfBytes(expectedBytes, editedBytes, uiState, PdfDocumentChange.Page(pageIndex), expectedVersion);
+
         private void CommitPdfBytes(byte[] expectedBytes, byte[] editedBytes, object? uiState,
             PdfDocumentChange? change = null, long? expectedVersion = null, int? pageCount = null)
         {
@@ -416,7 +420,9 @@ namespace PDF_simple_edit.Helpers
                 return false;
 
             string? contents = annotation.GetContents()?.ToUnicodeString();
-            return contents?.StartsWith(PdfSignatureMetadata.Prefix, StringComparison.Ordinal) == true;
+            // Only detach metadata that can actually be restored as an overlay.
+            // Malformed or unrelated imported ink must remain in the PDF.
+            return PdfSignatureMetadata.TryDeserialize(contents, 0, out _);
         }
 
         public void AddText(int pageIndex, double x, double y, string text,
@@ -495,6 +501,19 @@ namespace PDF_simple_edit.Helpers
             string? metadata = null)
         {
             _contentWriter.AddSignature(doc, pageIndex, points, color, lineWidth, metadata);
+        }
+
+        public void AddDrawingInternal(PdfDocument doc, PdfAnnotation annotation, Color color)
+        {
+            var bounds = new PdfTextBox(annotation.X, annotation.Y, annotation.Width, annotation.Height);
+            var rotation = PdfAffineTransform.Between(bounds, bounds, annotation.Rotation);
+            var strokes = PdfDrawingGeometry.GetStrokes(annotation).Select(stroke => stroke.Select(point =>
+            {
+                var mapped = rotation.Map(point.X, point.Y);
+                return new PdfPathPoint { X = mapped.X, Y = mapped.Y };
+            }).ToList()).ToList();
+            _contentWriter.AddPaths(doc, annotation.PageIndex, strokes, color, annotation.LineWidth,
+                PdfSignatureMetadata.Serialize(annotation), annotation.DrawingKind == DrawingKind.TriangleArrow ? new HashSet<int> { 1 } : null);
         }
 
         public void AddImage(

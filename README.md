@@ -23,11 +23,13 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
   - Use `Alt+Drag` to move graphics. Drag box handles to resize text, images, and graphics; corner handles preserve proportions and text scales with its box.
   - Drag the round handle above a selection to rotate it; hold `Shift` for 15-degree increments. Changes to original text and graphics support undo/redo and preserve surrounding page content.
 - **Images**: Insert images, save a selected image as a file, or extract all embedded images to a folder.
+- **Region deletion (pdfSweep)**: Choose **Tools → Region deletion** or press `R`, then drag a rectangle to delete contents.
 
 ### 🖋️ Annotation & Highlighting
 - **Smooth Highlighting**: Add semi-transparent highlights to text blocks.
 - **Advanced Color Control**: Integrated color picker (eyedropper) and transparency sliders to customize highlight styles.
 - **Signature Tool**: Draw, customize, select, move, resize proportionally, edit, and save mouse-drawn signatures for reuse after reopening the PDF.
+- **Drawing Tools**: Choose smooth Freehand, Rectangle, Ellipse, Arrow, Triangle-head Arrow, Outline Arrow, or Polygon from the drawing menu. Drag to draw; for polygons, click vertices and double-click, press `Enter`, or click the first vertex to close. Press `Esc` to cancel. Set the stroke color and width beside the drawing menu.
 
 ### 📂 Document Management
 - **Multi-Tab Interface**: Work on multiple PDF files simultaneously using a modern tabbed layout.
@@ -44,6 +46,7 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
   - `S`: Switch to **Text Selection**
   - `G`: Switch to **Graphic Selection**
   - `A`: Switch to **Add Text Tool**
+  - `R`: Switch to **Region Deletion**
   - `Ctrl+O`: Open File
   - `Ctrl+S`: Save File
   - `Ctrl+F`: Find Text

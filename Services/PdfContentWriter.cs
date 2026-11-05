@@ -822,34 +822,44 @@ namespace PDF_simple_edit.Services
             double lineWidth,
             string? metadata = null)
         {
-            if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages() || points.Count < 2)
+            AddPaths(doc, pageIndex, new[] { points }, color, lineWidth, metadata);
+        }
+
+        public void AddPaths(PdfDocument doc, int pageIndex,
+            IEnumerable<IReadOnlyList<PdfPathPoint>> strokes, Color color, double lineWidth, string? metadata = null,
+            IReadOnlySet<int>? filledStrokeIndexes = null)
+        {
+            if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages())
                 return;
 
             PdfPage page = doc.GetPage(pageIndex + 1);
             var toPdf = PdfPageCoordinates.ToDisplay(page).Inverse();
 
-            var validPoints = points
-                .Where(point => double.IsFinite(point.X) && double.IsFinite(point.Y))
-                .ToList();
-            if (validPoints.Count < 2)
+            var validStrokes = strokes.Select(stroke => stroke
+                .Where(point => double.IsFinite(point.X) && double.IsFinite(point.Y)).ToList())
+                .Where(stroke => stroke.Count >= 2).ToList();
+            if (validStrokes.Count == 0)
                 return;
 
-            var mapped = validPoints.Select(point => toPdf.Map(point.X, point.Y)).ToList();
+            var mappedStrokes = validStrokes.Select(stroke => stroke.Select(point => toPdf.Map(point.X, point.Y)).ToList()).ToList();
+            var mapped = mappedStrokes.SelectMany(stroke => stroke).ToList();
             double padding = Math.Clamp(lineWidth, 0.1, 100) / 2;
             var rectangle = new Rectangle(
                 (float)(mapped.Min(point => point.X) - padding),
                 (float)(mapped.Min(point => point.Y) - padding),
                 (float)Math.Max(mapped.Max(point => point.X) - mapped.Min(point => point.X) + padding * 2, 1),
                 (float)Math.Max(mapped.Max(point => point.Y) - mapped.Min(point => point.Y) + padding * 2, 1));
-            var inkPath = new PdfArray();
-            foreach (var point in mapped)
-            {
-                inkPath.Add(new PdfNumber(point.X));
-                inkPath.Add(new PdfNumber(point.Y));
-            }
-
             var inkList = new PdfArray();
-            inkList.Add(inkPath);
+            foreach (var stroke in mappedStrokes)
+            {
+                var inkPath = new PdfArray();
+                foreach (var point in stroke)
+                {
+                    inkPath.Add(new PdfNumber(point.X));
+                    inkPath.Add(new PdfNumber(point.Y));
+                }
+                inkList.Add(inkPath);
+            }
             var inkAnnotation = new iText.Kernel.Pdf.Annot.PdfInkAnnotation(rectangle, inkList);
             inkAnnotation.SetColor(color ?? ColorConstants.BLACK);
             var borderStyle = new PdfDictionary();
@@ -860,6 +870,24 @@ namespace PDF_simple_edit.Services
             inkAnnotation.SetFlag(iText.Kernel.Pdf.Annot.PdfAnnotation.PRINT);
             if (!string.IsNullOrEmpty(metadata))
                 inkAnnotation.SetContents(metadata);
+            // Supply the appearance explicitly: readers differ in whether they
+            // synthesize appearances for an InkList without an /AP stream.
+            var appearance = new iText.Kernel.Pdf.Xobject.PdfFormXObject(rectangle);
+            var appearanceCanvas = new PdfCanvas(appearance, doc);
+            appearanceCanvas.SetStrokeColor(color ?? ColorConstants.BLACK)
+                .SetFillColor(color ?? ColorConstants.BLACK)
+                .SetLineWidth((float)Math.Clamp(lineWidth, .1, 100))
+                .SetLineCapStyle(1).SetLineJoinStyle(1);
+            for (int i = 0; i < mappedStrokes.Count; i++)
+            {
+                var stroke = mappedStrokes[i];
+                appearanceCanvas.MoveTo(stroke[0].X, stroke[0].Y);
+                foreach (var point in stroke.Skip(1)) appearanceCanvas.LineTo(point.X, point.Y);
+                if (filledStrokeIndexes?.Contains(i) == true) appearanceCanvas.ClosePathFillStroke();
+                else appearanceCanvas.Stroke();
+            }
+            appearanceCanvas.Release();
+            inkAnnotation.SetNormalAppearance(appearance.GetPdfObject());
             page.AddAnnotation(inkAnnotation);
         }
 

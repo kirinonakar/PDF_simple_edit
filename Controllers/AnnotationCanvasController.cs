@@ -51,6 +51,7 @@ public sealed class AnnotationCanvasController
     private readonly AnnotationInteractionController _interactionController = new();
     private readonly InlineTextEditorController _inlineTextEditorController = new();
     private readonly AnnotationSelectionController _selectionController;
+    private readonly DrawingInteractionController _drawingController;
 
     private uint? _pendingSelectPointerId;
     private long _selectPointerPressSequence;
@@ -62,6 +63,9 @@ public sealed class AnnotationCanvasController
     private PdfTextPoint? _pendingInlineCaret;
     private Point? _regionStart;
     private Rectangle? _regionPreview;
+    private (PdfDocumentManager Manager, int Page, long Version, uint PointerId)? _redactionGesture;
+
+    public Func<PdfTextBox, Task>? RegionRedactionRequested { get; set; }
 
     public AnnotationCanvasController(
         Canvas canvas,
@@ -76,6 +80,8 @@ public sealed class AnnotationCanvasController
         TextFontSettings fontSettings,
         Func<string> getSignatureColor,
         Func<double> getSignatureLineWidth,
+        Func<string> getDrawingColor,
+        Func<double> getDrawingLineWidth,
         Action<Windows.UI.Color> applyPickedHighlightColor,
         Func<Task> renderCurrentPageAsync,
         Action<bool> focusAfterInlineEdit)
@@ -96,6 +102,13 @@ public sealed class AnnotationCanvasController
         _renderCurrentPageAsync = renderCurrentPageAsync;
         _focusAfterInlineEdit = focusAfterInlineEdit;
         _selectionController = new AnnotationSelectionController(_contentService);
+        _drawingController = new DrawingInteractionController(canvas, statusText, getManager, getPageIndex,
+            getToolMode, getDrawingColor, getDrawingLineWidth, annotation =>
+            {
+                _getAnnotations().Add(annotation);
+                _getManager().MarkModified(pageIndex: annotation.PageIndex);
+                Render();
+            });
     }
 
     private PdfAnnotation? _primarySelection;
@@ -132,9 +145,14 @@ public sealed class AnnotationCanvasController
 
     public void CancelSelectionGesture()
     {
+        _drawingController.Cancel();
+        if (_signaturePreview != null) _canvas.Children.Remove(_signaturePreview);
+        _signaturePreview = null;
+        _signaturePoints.Clear();
         _selectPointerPressSequence++;
         _pendingSelectPointerId = null;
         _regionStart = null;
+        _redactionGesture = null;
         if (_regionPreview != null) _canvas.Children.Remove(_regionPreview);
         _regionPreview = null;
         bool cancelled = _interactionController.CancelMove();
@@ -142,6 +160,14 @@ public sealed class AnnotationCanvasController
         if (cancelled) CancelNativeMovePreview();
         _canvas.ReleasePointerCaptures();
     }
+
+    public void CancelRegionGesture()
+    {
+        if (_regionStart != null) CancelSelectionGesture();
+    }
+
+    private Point ClipRegionPoint(Point point) => new(
+        Math.Clamp(point.X, 0, _canvas.Width), Math.Clamp(point.Y, 0, _canvas.Height));
 
     public void SelectOnly(PdfAnnotation annotation)
     {
@@ -167,7 +193,13 @@ public sealed class AnnotationCanvasController
         double pdfY = position.Y / PdfToPixels;
         EditToolMode toolMode = _getToolMode();
 
-        if (!isLeftButton && toolMode is EditToolMode.Select or EditToolMode.SelectGraphics or EditToolMode.Signature)
+        if (PdfDrawingGeometry.IsDrawingTool(toolMode))
+        {
+            _drawingController.Pressed(e);
+            return;
+        }
+
+        if (!isLeftButton && toolMode is EditToolMode.Select or EditToolMode.SelectGraphics or EditToolMode.Signature or EditToolMode.RedactRegion)
             return;
 
         if (isLeftButton && toolMode is EditToolMode.Select or EditToolMode.SelectGraphics)
@@ -180,6 +212,17 @@ public sealed class AnnotationCanvasController
 
         switch (toolMode)
         {
+            case EditToolMode.RedactRegion:
+                CancelSelectionGesture();
+                ClearSelection();
+                Render();
+                _focusAfterInlineEdit(false);
+                _regionStart = ClipRegionPoint(position);
+                _redactionGesture = (manager, _getPageIndex(), manager.EditVersion, e.Pointer.PointerId);
+                _canvas.CapturePointer(e.Pointer);
+                _statusText.Text = "삭제할 영역을 드래그하세요 (마우스를 놓으면 삭제, Esc: 취소).";
+                e.Handled = true;
+                break;
             case EditToolMode.Select:
             case EditToolMode.SelectGraphics:
                 bool alt = InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Menu)
@@ -230,17 +273,24 @@ public sealed class AnnotationCanvasController
 
     public void PointerMoved(PointerRoutedEventArgs e)
     {
+        if (PdfDrawingGeometry.IsDrawingTool(_getToolMode()))
+        {
+            _drawingController.Moved(e);
+            return;
+        }
         var pointerPoint = e.GetCurrentPoint(_canvas);
 
         if (_regionStart is Point start)
         {
+            if (_redactionGesture is { } gesture && gesture.PointerId != e.Pointer.PointerId) return;
             if (!pointerPoint.Properties.IsLeftButtonPressed) return;
-            var end = pointerPoint.Position;
+            var end = _redactionGesture.HasValue ? ClipRegionPoint(pointerPoint.Position) : pointerPoint.Position;
             if (Math.Abs(end.X - start.X) + Math.Abs(end.Y - start.Y) < 4) return;
             if (_regionPreview == null)
             {
-                _regionPreview = new Rectangle { Stroke = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue),
-                    StrokeThickness = 1, Fill = new SolidColorBrush(Windows.UI.Color.FromArgb(30, 30, 120, 255)), IsHitTestVisible = false };
+                bool redacting = _redactionGesture.HasValue;
+                _regionPreview = new Rectangle { Stroke = new SolidColorBrush(redacting ? Microsoft.UI.Colors.Red : Microsoft.UI.Colors.DodgerBlue),
+                    StrokeThickness = 1, Fill = new SolidColorBrush(redacting ? Windows.UI.Color.FromArgb(45, 255, 0, 0) : Windows.UI.Color.FromArgb(30, 30, 120, 255)), IsHitTestVisible = false };
                 _canvas.Children.Add(_regionPreview);
             }
             Canvas.SetLeft(_regionPreview, Math.Min(start.X, end.X)); Canvas.SetTop(_regionPreview, Math.Min(start.Y, end.Y));
@@ -284,15 +334,40 @@ public sealed class AnnotationCanvasController
 
     public async Task PointerReleasedAsync(PointerRoutedEventArgs e)
     {
+        if (PdfDrawingGeometry.IsDrawingTool(_getToolMode()))
+        {
+            _drawingController.Released(e);
+            return;
+        }
         if (_regionStart is Point start)
         {
+            var redaction = _redactionGesture;
+            if (redaction.HasValue && redaction.Value.PointerId != e.Pointer.PointerId) return;
             _regionStart = null;
+            _redactionGesture = null;
             var end = e.GetCurrentPoint(_canvas).Position;
+            if (redaction.HasValue) end = ClipRegionPoint(end);
             if (_regionPreview != null) _canvas.Children.Remove(_regionPreview);
             _regionPreview = null;
             _canvas.ReleasePointerCapture(e.Pointer);
             _pendingSelectPointerId = null;
             long sequence = ++_selectPointerPressSequence;
+            if (redaction is { } gesture)
+            {
+                e.Handled = true;
+                if (_getToolMode() != EditToolMode.RedactRegion || gesture.Manager != _getManager() ||
+                    gesture.Page != _getPageIndex() || gesture.Version != gesture.Manager.EditVersion) return;
+                if (Math.Abs(end.X - start.X) < 3 || Math.Abs(end.Y - start.Y) < 3)
+                {
+                    _statusText.Text = "삭제할 영역을 사각형으로 드래그해 주세요.";
+                    return;
+                }
+                if (RegionRedactionRequested != null)
+                    await RegionRedactionRequested(new PdfTextBox(Math.Min(start.X, end.X) / PdfToPixels,
+                        Math.Min(start.Y, end.Y) / PdfToPixels, Math.Abs(end.X - start.X) / PdfToPixels,
+                        Math.Abs(end.Y - start.Y) / PdfToPixels));
+                return;
+            }
             if (Math.Abs(end.X - start.X) + Math.Abs(end.Y - start.Y) < 4)
                 await BeginSelectionAsync(e, end, end.X / PdfToPixels, end.Y / PdfToPixels, sequence);
             else
@@ -369,7 +444,12 @@ public sealed class AnnotationCanvasController
 
     public void DoubleTapped(DoubleTappedRoutedEventArgs e)
     {
-        if (IsInlineEditing || _getToolMode() == EditToolMode.SelectGraphics)
+        if (PdfDrawingGeometry.IsDrawingTool(_getToolMode()))
+        {
+            _drawingController.DoubleTapped(e);
+            return;
+        }
+        if (IsInlineEditing || _getToolMode() is EditToolMode.SelectGraphics or EditToolMode.RedactRegion)
             return;
 
         Point position = e.GetPosition(_canvas);
@@ -413,7 +493,11 @@ public sealed class AnnotationCanvasController
             shape => SetElementCursor(
                 _canvas,
                 InputSystemCursor.Create(shape)));
+        _drawingController.Redraw();
     }
+
+    public bool HandleDrawingKey(Windows.System.VirtualKey key) => _drawingController.HandleKey(key);
+    public void CancelDrawing() => _drawingController.Cancel();
 
     private void EnsureCanvasSize()
     {

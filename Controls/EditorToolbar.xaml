@@ -15,16 +15,86 @@
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
-        <StackPanel Grid.Row="1" Grid.ColumnSpan="5" Orientation="Horizontal" Spacing="10" Margin="4,5,0,2">
-            <TextBlock Text="텍스트 편집 방식" VerticalAlignment="Center"/>
-            <ComboBox x:Name="TextEditingModeComboBox" x:FieldModifier="public" Width="168" SelectedIndex="1"
-                      AutomationProperties.Name="텍스트 편집 방식">
-                <ComboBoxItem Content="대체 방식"/>
-                <ComboBoxItem Content="원본 보존 방식"/>
-            </ComboBox>
-            <TextBlock x:Name="TextEditingModeDescription" x:FieldModifier="public" VerticalAlignment="Center" FontSize="12"
-                       Text="원본 유지 · 글꼴·크기·색상·굵게·기울임 변경 · Alt+드래그 이동"/>
-        </StackPanel>
+        <Grid Grid.Row="1" Grid.ColumnSpan="5" Margin="4,5,0,2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Grid Grid.Column="0" Margin="0,0,16,0" VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="텍스트 편집 방식" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <ComboBox x:Name="TextEditingModeComboBox" x:FieldModifier="public" Grid.Column="1" Width="168" SelectedIndex="1"
+                          AutomationProperties.Name="텍스트 편집 방식">
+                    <ComboBoxItem Content="대체 방식"/>
+                    <ComboBoxItem Content="원본 보존 방식"/>
+                </ComboBox>
+                <TextBlock x:Name="TextEditingModeDescription" x:FieldModifier="public" Grid.Column="2" Margin="10,0,0,0"
+                           VerticalAlignment="Center" FontSize="12" TextTrimming="CharacterEllipsis"
+                           Text="원본 유지 · 글꼴·크기·색상·굵게·기울임 변경 · Alt+드래그 이동"/>
+            </Grid>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Spacing="2">
+                <DropDownButton x:Name="DrawingButton" x:FieldModifier="public" Content="그리기" IsEnabled="False" Padding="8,6" AutomationProperties.Name="그리기 도구" ToolTipService.ToolTip="자유 · 사각형 · 타원 · 화살표 · 다각형">
+                    <DropDownButton.Flyout>
+                        <MenuFlyout FlyoutBase.Placement="BottomEdgeAlignedRight">
+                            <ToggleMenuFlyoutItem x:Name="DrawFreehandItem" x:FieldModifier="public" Text="자유 그리기" Tag="DrawFreehand"/>
+                            <ToggleMenuFlyoutItem x:Name="DrawRectangleItem" x:FieldModifier="public" Text="사각형" Tag="DrawRectangle"/>
+                            <ToggleMenuFlyoutItem x:Name="DrawEllipseItem" x:FieldModifier="public" Text="타원" Tag="DrawEllipse"/>
+                            <ToggleMenuFlyoutItem x:Name="DrawArrowItem" x:FieldModifier="public" Text="화살표" Tag="DrawArrow"/>
+                            <ToggleMenuFlyoutItem x:Name="DrawTriangleArrowItem" x:FieldModifier="public" Text="삼각형 머리 화살표" Tag="DrawTriangleArrow"/>
+                            <ToggleMenuFlyoutItem x:Name="DrawOutlineArrowItem" x:FieldModifier="public" Text="테두리 화살표" Tag="DrawOutlineArrow"/>
+                            <ToggleMenuFlyoutItem x:Name="DrawPolygonItem" x:FieldModifier="public" Text="다각형" Tag="DrawPolygon"/>
+                        </MenuFlyout>
+                    </DropDownButton.Flyout>
+                </DropDownButton>
+                <DropDownButton x:Name="DrawingSettingsButton" x:FieldModifier="public" IsEnabled="False" Padding="6" Height="{Binding ActualHeight, ElementName=DrawingButton}" VerticalAlignment="Center" ToolTipService.ToolTip="그리기 색상 및 선 두께" AutomationProperties.Name="그리기 설정">
+                    <Border x:Name="DrawingColorIndicator" x:FieldModifier="public" Width="14" Height="4" Background="Black"/>
+                    <DropDownButton.Flyout>
+                        <Flyout FlyoutBase.Placement="BottomEdgeAlignedRight">
+                            <StackPanel Spacing="10" Width="360">
+                                <TextBlock Text="그리기 선 설정" FontWeight="Bold"/>
+                                <ColorPicker x:Name="DrawingColorPicker" x:FieldModifier="public" Width="340" HorizontalAlignment="Left" IsAlphaEnabled="False"/>
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="선 두께" VerticalAlignment="Center"/>
+                                    <Slider x:Name="DrawingWidthSlider" x:FieldModifier="public" Minimum="0.5" Maximum="12" StepFrequency="0.5" Value="2" Width="150"/>
+                                    <TextBlock x:Name="DrawingWidthText" x:FieldModifier="public" Text="2 pt" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Flyout>
+                    </DropDownButton.Flyout>
+                </DropDownButton>
+                <ToggleButton x:Name="SignatureButton" x:FieldModifier="public" ToolTipService.ToolTip="서명 그리기" IsEnabled="False" Padding="8,6" Height="{Binding ActualHeight, ElementName=DrawingButton}" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <FontIcon Glyph="&#xE929;" FontSize="16"/>
+                        <Border x:Name="SignatureColorIndicator" x:FieldModifier="public" Width="12" Height="4" CornerRadius="1"
+                                VerticalAlignment="Bottom" Margin="0,0,0,2" Background="Black"/>
+                    </StackPanel>
+                    <FlyoutBase.AttachedFlyout>
+                        <Flyout x:Name="SignatureSettingsFlyout" x:FieldModifier="public" FlyoutBase.Placement="BottomEdgeAlignedRight">
+                            <StackPanel Spacing="10" Width="360" HorizontalAlignment="Left">
+                                <TextBlock Text="서명 선 설정" FontWeight="Bold"/>
+                                <ColorPicker x:Name="SignatureColorPicker" x:FieldModifier="public" Width="340" HorizontalAlignment="Left"
+                                             IsAlphaEnabled="False" IsColorSpectrumVisible="True"
+                                             IsColorSliderVisible="True" IsHexInputVisible="True"/>
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="선 두께" VerticalAlignment="Center"/>
+                                    <Slider x:Name="SignatureWidthSlider" x:FieldModifier="public" Minimum="0.5" Maximum="12"
+                                            StepFrequency="0.5" Value="2" Width="150"/>
+                                    <TextBlock x:Name="SignatureWidthText" x:FieldModifier="public" Text="2 pt" VerticalAlignment="Center" FontSize="12"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Flyout>
+                    </FlyoutBase.AttachedFlyout>
+                </ToggleButton>
+                <Button x:Name="SignatureSettingsButton" x:FieldModifier="public" ToolTipService.ToolTip="서명 설정"
+                        Padding="4,6" Height="{Binding ActualHeight, ElementName=DrawingButton}" VerticalAlignment="Center" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                    <FontIcon Glyph="&#xE713;" FontSize="12"/>
+                </Button>
+            </StackPanel>
+        </Grid>
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2">
             <Button x:Name="OpenButton" x:FieldModifier="public" ToolTipService.ToolTip="열기 (Ctrl+O)" Padding="8,6" Background="Transparent" BorderThickness="0">
                 <FontIcon Glyph="&#xE8E5;" FontSize="16"/>
@@ -52,11 +122,14 @@
             <ToggleButton x:Name="SelectButton" x:FieldModifier="public" ToolTipService.ToolTip="텍스트 선택 (S)" AutomationProperties.Name="텍스트 선택" IsEnabled="False" Padding="8,6">
                 <FontIcon Glyph="&#xEF20;" FontSize="16"/>
             </ToggleButton>
-            <ToggleButton x:Name="SelectGraphicsButton" x:FieldModifier="public" ToolTipService.ToolTip="그래픽 선택 (G) · 표 테두리, 선, 도형, 이미지" AutomationProperties.Name="그래픽 선택" IsEnabled="False" Padding="8,6">
-                <PathIcon Data="M1,1 H15 V3 H1 Z M1,13 H15 V15 H1 Z M1,3 H3 V13 H1 Z M13,3 H15 V13 H13 Z M6,3 H7 V13 H6 Z M10,3 H11 V13 H10 Z M3,6 H13 V7 H3 Z M3,10 H13 V11 H3 Z" />
+            <ToggleButton x:Name="SelectGraphicsButton" x:FieldModifier="public" ToolTipService.ToolTip="그래픽 선택 (G) · 표 테두리, 선, 도형, 이미지" AutomationProperties.Name="그래픽 선택" IsEnabled="False" Padding="8,6" Height="{Binding ActualHeight, ElementName=SelectButton}" VerticalAlignment="Center">
+                <PathIcon Width="16" Height="16" Data="M1,1 H15 V3 H1 Z M1,13 H15 V15 H1 Z M1,3 H3 V13 H1 Z M13,3 H15 V13 H13 Z M6,3 H7 V13 H6 Z M10,3 H11 V13 H10 Z M3,6 H13 V7 H3 Z M3,10 H13 V11 H3 Z" />
             </ToggleButton>
             <ToggleButton x:Name="AddTextButton" x:FieldModifier="public" ToolTipService.ToolTip="텍스트 추가 (A)" IsEnabled="False" Padding="8,6">
                 <FontIcon Glyph="&#xE8D2;" FontSize="16"/>
+            </ToggleButton>
+            <ToggleButton x:Name="RedactRegionButton" x:FieldModifier="public" ToolTipService.ToolTip="영역 삭제 (R) · 드래그한 영역의 내용 삭제" AutomationProperties.Name="영역 삭제" IsEnabled="False" Padding="8,6">
+                <FontIcon Glyph="&#xE75C;" FontSize="16"/>
             </ToggleButton>
             <ToggleButton x:Name="HighlightButton" x:FieldModifier="public" ToolTipService.ToolTip="텍스트 강조" IsEnabled="False" Padding="8,6">
                 <StackPanel Orientation="Horizontal" Spacing="4">
@@ -82,33 +155,6 @@
                 </FlyoutBase.AttachedFlyout>
             </ToggleButton>
             <Button x:Name="HighlightSettingsButton" x:FieldModifier="public" ToolTipService.ToolTip="강조 설정"
-                    Padding="4,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
-                <FontIcon Glyph="&#xE713;" FontSize="12"/>
-            </Button>
-            <ToggleButton x:Name="SignatureButton" x:FieldModifier="public" ToolTipService.ToolTip="서명 그리기" IsEnabled="False" Padding="8,6">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                    <FontIcon Glyph="&#xE929;" FontSize="16"/>
-                    <Border x:Name="SignatureColorIndicator" x:FieldModifier="public" Width="12" Height="4" CornerRadius="1"
-                            VerticalAlignment="Bottom" Margin="0,0,0,2" Background="Black"/>
-                </StackPanel>
-                <FlyoutBase.AttachedFlyout>
-                    <Flyout x:Name="SignatureSettingsFlyout" x:FieldModifier="public" FlyoutBase.Placement="BottomEdgeAlignedRight">
-                        <StackPanel Spacing="10" Width="360" HorizontalAlignment="Left">
-                            <TextBlock Text="서명 선 설정" FontWeight="Bold"/>
-                            <ColorPicker x:Name="SignatureColorPicker" x:FieldModifier="public" Width="340" HorizontalAlignment="Left"
-                                         IsAlphaEnabled="False" IsColorSpectrumVisible="True"
-                                         IsColorSliderVisible="True" IsHexInputVisible="True"/>
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <TextBlock Text="선 두께" VerticalAlignment="Center"/>
-                                <Slider x:Name="SignatureWidthSlider" x:FieldModifier="public" Minimum="0.5" Maximum="12"
-                                        StepFrequency="0.5" Value="2" Width="150"/>
-                                <TextBlock x:Name="SignatureWidthText" x:FieldModifier="public" Text="2 pt" VerticalAlignment="Center" FontSize="12"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </Flyout>
-                </FlyoutBase.AttachedFlyout>
-            </ToggleButton>
-            <Button x:Name="SignatureSettingsButton" x:FieldModifier="public" ToolTipService.ToolTip="서명 설정"
                     Padding="4,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
                 <FontIcon Glyph="&#xE713;" FontSize="12"/>
             </Button>
