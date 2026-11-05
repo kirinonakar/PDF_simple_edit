@@ -1,5 +1,6 @@
 using Loc = PDF_simple_edit.Services.LocalizationService;
 using iText.Kernel.Pdf;
+using PDF_simple_edit.Helpers;
 using PDF_simple_edit.Models;
 using System;
 using System.IO;
@@ -26,7 +27,7 @@ internal sealed class LegacyTextPreviewService
         return await Task.Run(() =>
         {
             using var output = new MemoryStream();
-            using (var document = new PdfDocument(new PdfReader(new MemoryStream(source)), new PdfWriter(output)))
+            using (var document = new PdfDocument(new PdfEditingReader(new MemoryStream(source)), new PdfWriter(output)))
                 if (!new PdfContentStreamEditor().RemoveTextAnnotations(document, pageIndex, targets))
                     throw new InvalidOperationException(Loc.Get("ThisTextCannotBeEditedWhilePreservingTheBackground"));
             return output.ToArray();

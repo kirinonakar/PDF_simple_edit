@@ -323,7 +323,7 @@ public sealed partial class NativePdfTextService
         // PDFs after an incremental update (including the AJCC9 abstract). Write
         // a complete current revision so preview, saved output and extraction
         // agree. PatchSource still preserves untouched content stream bytes.
-        using (var doc = new PdfDocument(new PdfReader(input), new PdfWriter(output,
+        using (var doc = new PdfDocument(new PdfEditingReader(input), new PdfWriter(output,
             new WriterProperties().SetCompressionLevel(preview ? CompressionConstants.NO_COMPRESSION : CompressionConstants.DEFAULT_COMPRESSION))))
         {
             var page = doc.GetPage(pageIndex + 1);

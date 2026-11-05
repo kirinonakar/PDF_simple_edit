@@ -324,7 +324,7 @@ namespace PDF_simple_edit.Helpers
         {
             using var input = new MemoryStream(snapshot, writable: false);
             using var output = new MemoryStream();
-            using (var document = new PdfDocument(new PdfReader(input), new PdfWriter(output, writerProperties ?? new WriterProperties())))
+            using (var document = new PdfDocument(new PdfEditingReader(input), new PdfWriter(output, writerProperties ?? new WriterProperties())))
                 editAction(document);
             return output.ToArray();
         }

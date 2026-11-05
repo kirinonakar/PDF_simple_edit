@@ -52,18 +52,15 @@ public static class AnnotationTextLayoutService
             double widestLine = 0;
             foreach (string line in SplitLines(text))
             {
-                TextBlock sample = CreateTextBlock(
-                    line,
-                    annotation.FontFamily,
-                    annotation.FontSize,
-                    annotation.IsBold,
-                    annotation.IsItalic,
-                    annotation.FontWeight);
-                sample.CharacterSpacing = characterSpacing;
-                sample.Measure(new Windows.Foundation.Size(
-                    double.PositiveInfinity,
-                    double.PositiveInfinity));
-                widestLine = Math.Max(widestLine, sample.DesiredSize.Width);
+                double Measure(string value)
+                {
+                    TextBlock sample = CreateTextBlock(value, annotation.FontFamily, annotation.FontSize,
+                        annotation.IsBold, annotation.IsItalic, annotation.FontWeight);
+                    sample.CharacterSpacing = characterSpacing;
+                    sample.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+                    return sample.DesiredSize.Width;
+                }
+                widestLine = Math.Max(widestLine, TextInputLayoutService.MeasureLineWidth(line, Measure));
             }
 
             return Math.Max((widestLine + 2.0) / PdfToPixels, 1.0 / PdfToPixels);

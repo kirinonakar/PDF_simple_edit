@@ -89,6 +89,7 @@ public sealed class NativeInlineTextEditorController
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_input, Loc.Get("EditOriginalPDFText"));
         Canvas.SetLeft(_input, annotation.X * Scale); Canvas.SetTop(_input, annotation.Y * Scale);
         _input.Document.SetText(TextSetOptions.None, _layout.Text);
+        UpdateInputBounds();
         _input.TextChanged += TextChanged;
         _input.SelectionChanged += (_, _) => { _caretVisible = true; DrawSelection(); };
         _input.PreviewKeyDown += KeyDown;
@@ -168,9 +169,7 @@ public sealed class NativeInlineTextEditorController
                 var bitmap = new BitmapImage(); await bitmap.SetSourceAsync(rendered.AsRandomAccessStream());
                 if (version != _version || _input == null) return;
                 _pageImage!.Source = bitmap; _preview = result; _previewText = text; _layout = result.Layout;
-                var bounds = _layout.Bounds;
-                _input.Width = Math.Max((_session!.Annotation.Width + Math.Max(0, bounds.Right - _session.Annotation.NativeText!.Bounds.Right)) * Scale, 20);
-                _input.Height = Math.Max((_session.Annotation.Height + Math.Max(0, bounds.Bottom - _session.Annotation.NativeText!.Bounds.Bottom)) * Scale, 20);
+                UpdateInputBounds();
                 _status?.Invoke(result.FontSubstitutionStatus is string substitution
                     ? substitution + Loc.Get("CtrlEnterFinishEscCancel")
                     : source.Lines.Count > 1
@@ -194,13 +193,23 @@ public sealed class NativeInlineTextEditorController
         }
     }
 
+    private void UpdateInputBounds()
+    {
+        if (_input == null || _layout == null || _session == null) return;
+        var annotation = _session.Annotation;
+        var bounds = TextInputLayoutService.GetEditingBounds(_layout);
+        _input.Width = Math.Max(Math.Max(annotation.Width, bounds.Right - annotation.X) * Scale + 3, 20);
+        _input.Height = Math.Max(Math.Max(annotation.Height, bounds.Bottom - annotation.Y) * Scale + 6, 20);
+    }
+
     private void DrawSelection()
     {
         if (_input == null || _layout == null || _decoration == null) return;
         _decoration.Children.Clear();
         int start = Math.Min(_input.Document.Selection.StartPosition, _input.Document.Selection.EndPosition);
         int end = Math.Max(_input.Document.Selection.StartPosition, _input.Document.Selection.EndPosition);
-        if (_layout.Bounds.Height > 0) AddBox(_layout.Bounds, false);
+        var editingBounds = TextInputLayoutService.GetEditingBounds(_layout);
+        if (editingBounds.Height > 0) AddBox(editingBounds, false);
         foreach (var glyph in _layout.Glyphs.Where(g => g.TextIndex < end && g.TextIndex + g.Text.Length > start && g.Text != "\n"))
             AddBox(glyph.Bounds with { Width = glyph.IsSoftBreak ? Math.Max(glyph.Bounds.Width, 1) :
                 Math.Max(glyph.Bounds.Width, Math.Abs(glyph.End.X - glyph.Origin.X)) }, true);
