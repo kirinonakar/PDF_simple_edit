@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using iText.Forms;
 using iText.Forms.Fields;
 using iText.Kernel.Pdf;
@@ -96,11 +97,11 @@ public sealed class PdfFormService
         manager.ApplyBatchEdit(document =>
         {
             var field = PdfAcroForm.GetAcroForm(document, false)?.GetField(input.Name)
-                ?? throw new InvalidOperationException($"양식 필드를 찾을 수 없습니다: {input.Name}");
+                ?? throw new InvalidOperationException(Loc.Format("CannotFindTheFormField", input.Name));
             foreach (var widget in field.GetWidgets())
                 if (widget.GetPage() is { } widgetPage) affectedPages.Add(document.GetPageNumber(widgetPage) - 1);
             if (field.GetFieldFlag(1))
-                throw new InvalidOperationException("읽기 전용 양식 필드는 수정할 수 없습니다.");
+                throw new InvalidOperationException(Loc.Get("ReadOnlyFormFieldsCannotBeEdited"));
             if (field is PdfButtonFormField button && !button.IsPushButton())
             {
                 // Existing widgets already have the form author's checked and

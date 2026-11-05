@@ -2,64 +2,65 @@
 <UserControl
     x:Class="PDF_simple_edit.Controls.EditorMenuBar"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="using:PDF_simple_edit.Localization">
     <!-- Menu Bar -->
     <MenuBar>
-        <MenuBarItem Title="파일">
-            <MenuFlyoutItem Text="새로 만들기" Tag="NewDocument" Click="Command_Click">
+        <MenuBarItem Title="{loc:LocalizedString Key=File}">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=New}" Tag="NewDocument" Click="Command_Click">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8A5;"/></MenuFlyoutItem.Icon>
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Modifiers="Control" Key="N"/>
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="열기..." Tag="OpenFile" Click="Command_Click">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=Open2}" Tag="OpenFile" Click="Command_Click">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E5;"/></MenuFlyoutItem.Icon>
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Modifiers="Control" Key="O"/>
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
-            <MenuFlyoutSubItem x:Name="MenuRecentFiles" Text="최근 파일">
+            <MenuFlyoutSubItem x:Name="MenuRecentFiles" Text="{loc:LocalizedString Key=RecentFiles}">
                 <MenuFlyoutSubItem.Icon><FontIcon Glyph="&#xE81C;"/></MenuFlyoutSubItem.Icon>
-                <MenuFlyoutItem Text="최근 파일 없음" IsEnabled="False"/>
+                <MenuFlyoutItem Text="{loc:LocalizedString Key=NoRecentFiles}" IsEnabled="False"/>
             </MenuFlyoutSubItem>
-            <MenuFlyoutItem Text="저장" x:Name="MenuSave" Tag="SaveFile" Click="Command_Click" IsEnabled="False">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=Save}" x:Name="MenuSave" Tag="SaveFile" Click="Command_Click" IsEnabled="False">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74E;"/></MenuFlyoutItem.Icon>
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Modifiers="Control" Key="S"/>
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="다른 이름으로 저장..." x:Name="MenuSaveAs" Tag="SaveAsFile" Click="Command_Click" IsEnabled="False">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=SaveAs}" x:Name="MenuSaveAs" Tag="SaveAsFile" Click="Command_Click" IsEnabled="False">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE792;"/></MenuFlyoutItem.Icon>
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Modifiers="Control,Shift" Key="S"/>
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
             <MenuFlyoutSeparator/>
-            <MenuFlyoutItem Text="인쇄..." x:Name="MenuPrint" Tag="Print" Click="Command_Click" IsEnabled="False">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=Print}" x:Name="MenuPrint" Tag="Print" Click="Command_Click" IsEnabled="False">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE749;"/></MenuFlyoutItem.Icon>
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Modifiers="Control" Key="P"/>
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
             <MenuFlyoutSeparator/>
-            <MenuFlyoutItem Text="닫기" x:Name="MenuClose" Tag="CloseFile" Click="Command_Click" IsEnabled="False"/>
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=Close}" x:Name="MenuClose" Tag="CloseFile" Click="Command_Click" IsEnabled="False"/>
         </MenuBarItem>
 
-        <MenuBarItem Title="편집">
-            <MenuFlyoutItem Text="실행 취소" x:Name="MenuUndo" Tag="Undo" Click="Command_Click" IsEnabled="False">
+        <MenuBarItem Title="{loc:LocalizedString Key=Edit}">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=Undo}" x:Name="MenuUndo" Tag="Undo" Click="Command_Click" IsEnabled="False">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE7A7;"/></MenuFlyoutItem.Icon>
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Modifiers="Control" Key="Z"/>
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="다시 실행" x:Name="MenuRedo" Tag="Redo" Click="Command_Click" IsEnabled="False">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=Redo}" x:Name="MenuRedo" Tag="Redo" Click="Command_Click" IsEnabled="False">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE7A6;"/></MenuFlyoutItem.Icon>
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Modifiers="Control" Key="Y"/>
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
             <MenuFlyoutSeparator/>
-            <MenuFlyoutItem Text="찾기..." x:Name="MenuFind" Tag="Find" Click="Command_Click" IsEnabled="False">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=Find}" x:Name="MenuFind" Tag="Find" Click="Command_Click" IsEnabled="False">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE721;"/></MenuFlyoutItem.Icon>
                 <MenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Modifiers="Control" Key="F"/>
@@ -67,92 +68,92 @@
             </MenuFlyoutItem>
         </MenuBarItem>
 
-        <MenuBarItem Title="보기" x:Name="MenuViewItem">
-            <MenuFlyoutItem x:Name="MenuZoomIn" Text="확대" Tag="ZoomIn" Click="Command_Click">
+        <MenuBarItem Title="{loc:LocalizedString Key=View}" x:Name="MenuViewItem">
+            <MenuFlyoutItem x:Name="MenuZoomIn" Text="{loc:LocalizedString Key=ZoomIn}" Tag="ZoomIn" Click="Command_Click">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8A3;"/></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
-            <MenuFlyoutItem x:Name="MenuZoomOut" Text="축소" Tag="ZoomOut" Click="Command_Click">
+            <MenuFlyoutItem x:Name="MenuZoomOut" Text="{loc:LocalizedString Key=ZoomOut}" Tag="ZoomOut" Click="Command_Click">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE71F;"/></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="페이지에 맞추기" Tag="FitToPage" Click="Command_Click"/>
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=FitToPage}" Tag="FitToPage" Click="Command_Click"/>
             <MenuFlyoutSeparator/>
-            <ToggleMenuFlyoutItem Text="페이지 패널 표시" x:Name="MenuShowPagePanel"
+            <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=ShowPagePanel}" x:Name="MenuShowPagePanel"
                                    IsChecked="True" Tag="TogglePagePanel" Click="Command_Click"/>
         </MenuBarItem>
 
-        <MenuBarItem Title="도구">
-            <ToggleMenuFlyoutItem Text="텍스트 선택" x:Name="MenuSelect" Tag="SelectTool" Click="Command_Click" IsEnabled="False">
+        <MenuBarItem Title="{loc:LocalizedString Key=Tools}">
+            <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=SelectText}" x:Name="MenuSelect" Tag="SelectTool" Click="Command_Click" IsEnabled="False">
                 <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xEF20;"/></ToggleMenuFlyoutItem.Icon>
                 <ToggleMenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="S" Invoked="ToolAccelerator_Invoked"/>
                 </ToggleMenuFlyoutItem.KeyboardAccelerators>
             </ToggleMenuFlyoutItem>
-            <ToggleMenuFlyoutItem Text="그래픽 선택" x:Name="MenuSelectGraphics" Tag="SelectGraphicsTool" Click="Command_Click" IsEnabled="False">
+            <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=SelectGraphics}" x:Name="MenuSelectGraphics" Tag="SelectGraphicsTool" Click="Command_Click" IsEnabled="False">
                 <ToggleMenuFlyoutItem.Icon><PathIcon Data="M1,1 H15 V3 H1 Z M1,13 H15 V15 H1 Z M1,3 H3 V13 H1 Z M13,3 H15 V13 H13 Z M6,3 H7 V13 H6 Z M10,3 H11 V13 H10 Z M3,6 H13 V7 H3 Z M3,10 H13 V11 H3 Z" /></ToggleMenuFlyoutItem.Icon>
                 <ToggleMenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="G" Invoked="ToolAccelerator_Invoked"/>
                 </ToggleMenuFlyoutItem.KeyboardAccelerators>
             </ToggleMenuFlyoutItem>
-            <ToggleMenuFlyoutItem Text="텍스트 추가" x:Name="MenuAddText" Tag="AddTextTool" Click="Command_Click" IsEnabled="False">
+            <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=AddText}" x:Name="MenuAddText" Tag="AddTextTool" Click="Command_Click" IsEnabled="False">
                 <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE8D2;"/></ToggleMenuFlyoutItem.Icon>
                 <ToggleMenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="A" Invoked="ToolAccelerator_Invoked"/>
                 </ToggleMenuFlyoutItem.KeyboardAccelerators>
             </ToggleMenuFlyoutItem>
-            <ToggleMenuFlyoutItem Text="영역 삭제" x:Name="MenuRedactRegion" Tag="RedactRegionTool" Click="Command_Click" IsEnabled="False">
+            <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=RedactRegion}" x:Name="MenuRedactRegion" Tag="RedactRegionTool" Click="Command_Click" IsEnabled="False">
                 <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE75C;"/></ToggleMenuFlyoutItem.Icon>
                 <ToggleMenuFlyoutItem.KeyboardAccelerators>
                     <KeyboardAccelerator Key="R" Invoked="ToolAccelerator_Invoked"/>
                 </ToggleMenuFlyoutItem.KeyboardAccelerators>
             </ToggleMenuFlyoutItem>
-            <ToggleMenuFlyoutItem Text="텍스트 강조" x:Name="MenuHighlight" Tag="HighlightTool" Click="Command_Click" IsEnabled="False">
+            <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=HighlightText}" x:Name="MenuHighlight" Tag="HighlightTool" Click="Command_Click" IsEnabled="False">
                 <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE7E6;"/></ToggleMenuFlyoutItem.Icon>
             </ToggleMenuFlyoutItem>
-            <MenuFlyoutSubItem x:Name="MenuDrawing" Text="그리기" IsEnabled="False">
-                <ToggleMenuFlyoutItem x:Name="MenuDrawFreehand" Text="자유 그리기" Tag="DrawFreehandTool" Click="Command_Click"/>
-                <ToggleMenuFlyoutItem x:Name="MenuDrawRectangle" Text="사각형" Tag="DrawRectangleTool" Click="Command_Click"/>
-                <ToggleMenuFlyoutItem x:Name="MenuDrawEllipse" Text="타원" Tag="DrawEllipseTool" Click="Command_Click"/>
-                <ToggleMenuFlyoutItem x:Name="MenuDrawArrow" Text="화살표" Tag="DrawArrowTool" Click="Command_Click"/>
-                <ToggleMenuFlyoutItem x:Name="MenuDrawTriangleArrow" Text="삼각형 머리 화살표" Tag="DrawTriangleArrowTool" Click="Command_Click"/>
-                <ToggleMenuFlyoutItem x:Name="MenuDrawOutlineArrow" Text="테두리 화살표" Tag="DrawOutlineArrowTool" Click="Command_Click"/>
-                <ToggleMenuFlyoutItem x:Name="MenuDrawPolygon" Text="다각형" Tag="DrawPolygonTool" Click="Command_Click"/>
+            <MenuFlyoutSubItem x:Name="MenuDrawing" Text="{loc:LocalizedString Key=Drawing}" IsEnabled="False">
+                <ToggleMenuFlyoutItem x:Name="MenuDrawFreehand" Text="{loc:LocalizedString Key=Freehand}" Tag="DrawFreehandTool" Click="Command_Click"/>
+                <ToggleMenuFlyoutItem x:Name="MenuDrawRectangle" Text="{loc:LocalizedString Key=Rectangle}" Tag="DrawRectangleTool" Click="Command_Click"/>
+                <ToggleMenuFlyoutItem x:Name="MenuDrawEllipse" Text="{loc:LocalizedString Key=Ellipse}" Tag="DrawEllipseTool" Click="Command_Click"/>
+                <ToggleMenuFlyoutItem x:Name="MenuDrawArrow" Text="{loc:LocalizedString Key=Arrow}" Tag="DrawArrowTool" Click="Command_Click"/>
+                <ToggleMenuFlyoutItem x:Name="MenuDrawTriangleArrow" Text="{loc:LocalizedString Key=TriangleArrow}" Tag="DrawTriangleArrowTool" Click="Command_Click"/>
+                <ToggleMenuFlyoutItem x:Name="MenuDrawOutlineArrow" Text="{loc:LocalizedString Key=OutlineArrow}" Tag="DrawOutlineArrowTool" Click="Command_Click"/>
+                <ToggleMenuFlyoutItem x:Name="MenuDrawPolygon" Text="{loc:LocalizedString Key=Polygon}" Tag="DrawPolygonTool" Click="Command_Click"/>
             </MenuFlyoutSubItem>
-            <ToggleMenuFlyoutItem Text="서명 그리기" x:Name="MenuSignature" Tag="SignatureTool" Click="Command_Click" IsEnabled="False">
+            <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=DrawSignature}" x:Name="MenuSignature" Tag="SignatureTool" Click="Command_Click" IsEnabled="False">
                 <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE929;"/></ToggleMenuFlyoutItem.Icon>
             </ToggleMenuFlyoutItem>
-            <MenuFlyoutItem Text="이미지 추가" x:Name="MenuAddImage" Tag="AddImageTool" Click="Command_Click" IsEnabled="False">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=AddImage}" x:Name="MenuAddImage" Tag="AddImageTool" Click="Command_Click" IsEnabled="False">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B9;"/></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="모든 이미지 추출..." x:Name="MenuExtractImages" Tag="ExtractAllImages" Click="Command_Click" IsEnabled="False">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=ExtractAllImages}" x:Name="MenuExtractImages" Tag="ExtractAllImages" Click="Command_Click" IsEnabled="False">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE91B;"/></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
             <MenuFlyoutSeparator/>
-            <MenuFlyoutItem Text="PDF 합치기..." Tag="MergePdf" Click="Command_Click">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=MergePDFs2}" Tag="MergePdf" Click="Command_Click">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xEB4E;"/></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="이미지를 PDF로..." Tag="ImagesToPdf" Click="Command_Click">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=ImagesToPDF}" Tag="ImagesToPdf" Click="Command_Click">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B9;"/></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="PDF 나누기..." x:Name="MenuSplitPdf" Tag="SplitPdf" Click="Command_Click" IsEnabled="False">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=SplitPDF2}" x:Name="MenuSplitPdf" Tag="SplitPdf" Click="Command_Click" IsEnabled="False">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xF156;"/></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="페이지 삭제" x:Name="MenuDeletePage" Tag="DeletePage" Click="Command_Click" IsEnabled="False">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=DeletePages}" x:Name="MenuDeletePage" Tag="DeletePage" Click="Command_Click" IsEnabled="False">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74D;"/></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
         </MenuBarItem>
 
-        <MenuBarItem Title="보호">
-            <MenuFlyoutItem Text="암호화 및 비밀번호 설정·변경..." x:Name="MenuProtectionSettings" Tag="ProtectionSettings" Click="Command_Click" IsEnabled="False">
+        <MenuBarItem Title="{loc:LocalizedString Key=Protection}">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=SetOrChangeEncryptionAndPasswords}" x:Name="MenuProtectionSettings" Tag="ProtectionSettings" Click="Command_Click" IsEnabled="False">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72E;"/></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="모든 비밀번호 삭제 / 보호 해제..." x:Name="MenuRemoveProtection" Tag="RemoveProtection" Click="Command_Click" IsEnabled="False"/>
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=RemoveAllPasswordsRemoveProtection2}" x:Name="MenuRemoveProtection" Tag="RemoveProtection" Click="Command_Click" IsEnabled="False"/>
         </MenuBarItem>
 
-        <MenuBarItem Title="설정">
-            <MenuFlyoutItem Text="환경 설정..." Tag="Settings" Click="Command_Click">
+        <MenuBarItem Title="{loc:LocalizedString Key=Settings}">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=Preferences2}" Tag="Settings" Click="Command_Click">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE713;"/></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
-            <MenuFlyoutItem Text="정보" Tag="About" Click="Command_Click">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=About}" Tag="About" Click="Command_Click">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE946;"/></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
         </MenuBarItem>

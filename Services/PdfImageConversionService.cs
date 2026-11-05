@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -19,7 +20,7 @@ public sealed class PdfImageConversionService
         ArgumentNullException.ThrowIfNull(imagePaths);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
         if (imagePaths.Count == 0)
-            throw new ArgumentException("변환할 이미지를 선택해 주세요.", nameof(imagePaths));
+            throw new ArgumentException(Loc.Get("SelectImagesToConvert"), nameof(imagePaths));
 
         return Task.Run(() => Create(imagePaths, outputPath));
     }
@@ -41,16 +42,16 @@ public sealed class PdfImageConversionService
                     ImageData data;
                     try
                     {
-                        data = ImageDataFactory.Create(imagePath);
+                        data = PdfImageDataLoader.Create(imagePath);
                     }
                     catch (Exception ex)
                     {
                         throw new InvalidDataException(
-                            $"'{Path.GetFileName(imagePath)}' 이미지를 읽을 수 없습니다.", ex);
+                            Loc.Format("CannotReadTheImage", Path.GetFileName(imagePath)), ex);
                     }
 
                     if (data.GetWidth() <= 0 || data.GetHeight() <= 0)
-                        throw new InvalidDataException($"'{Path.GetFileName(imagePath)}' 이미지의 크기가 올바르지 않습니다.");
+                        throw new InvalidDataException(Loc.Format("TheImageHasInvalidDimensions", Path.GetFileName(imagePath)));
 
                     PageSize pageSize = data.GetWidth() > data.GetHeight()
                         ? PageSize.A4.Rotate()

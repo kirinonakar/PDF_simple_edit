@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -10,7 +11,7 @@ namespace PDF_simple_edit
 {
     public class PdfDocumentTab : INotifyPropertyChanged
     {
-        private string _header = "새 문서";
+        private string _header = Loc.Get("NewDocument");
         public string? Id { get; set; } = Guid.NewGuid().ToString();
         
         public string Header 

@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -47,12 +48,12 @@ public sealed class DocumentFileController(
             if (await RequestProtectionAsync(manager, removeAll))
             {
                 updateUIState();
-                statusText.Text = "보호 설정이 변경되었습니다. PDF를 저장하면 반영됩니다.";
+                statusText.Text = Loc.Get("ProtectionSettingsChangedSaveThePDFToApplyThem");
             }
         }
         catch (Exception ex)
         {
-            await showErrorAsync("보호 설정 오류", ex.Message);
+            await showErrorAsync(Loc.Get("ProtectionSettingsError"), ex.Message);
         }
     }
 
@@ -74,7 +75,7 @@ public sealed class DocumentFileController(
 
     public void NewDocument()
     {
-        var newTab = new PdfDocumentTab { Header = "새 문서" };
+        var newTab = new PdfDocumentTab { Header = Loc.Get("NewDocument") };
         newTab.PdfManager.NewDocument();
 
         addTab(newTab);
@@ -104,7 +105,7 @@ public sealed class DocumentFileController(
     public async Task OpenPdfFileAsync(StorageFile file)
     {
         loadingIndicator.IsActive = true;
-        statusText.Text = "파일을 여는 중...";
+        statusText.Text = Loc.Get("OpeningFile");
 
         try
         {
@@ -118,12 +119,12 @@ public sealed class DocumentFileController(
             bool isRetry = false;
             while (status is PdfOpenStatus.PasswordRequired or PdfOpenStatus.WrongPassword)
             {
-                statusText.Text = "암호 입력 대기 중...";
+                statusText.Text = Loc.Get("WaitingForPassword");
                 string? password = await dialogService.ShowPasswordPromptAsync(getXamlRoot(), file.Name, isRetry);
                 if (password == null)
                 {
                     // 사용자가 암호 입력을 취소하면 파일을 열지 않는다.
-                    statusText.Text = "파일 열기가 취소되었습니다.";
+                    statusText.Text = Loc.Get("FileOpeningCanceled");
                     return;
                 }
 
@@ -134,19 +135,19 @@ public sealed class DocumentFileController(
             if (status == PdfOpenStatus.Success)
             {
                 if (newTab.PdfManager.HasDigitalSignatures)
-                    await showErrorAsync("전자서명 문서", "이 문서는 전자서명되어 있습니다. 편집한 사본의 전자서명은 유효하지 않으며, 원본을 보호하기 위해 다른 이름으로만 저장할 수 있습니다.");
+                    await showErrorAsync(Loc.Get("DigitallySignedDocument"), Loc.Get("ThisDocumentIsDigitallySignedTheSignatureOnAn"));
                 newTab.Annotations.AddRange(await Task.Run(newTab.PdfManager.LoadSavedSignatures));
                 addTab(newTab);
                 addRecentFile(file.Path);
             }
             else
             {
-                await showErrorAsync("오류", "PDF 파일을 열 수 없습니다.");
+                await showErrorAsync(Loc.Get("Error"), Loc.Get("CannotOpenThePDFFile"));
             }
         }
         catch (Exception ex)
         {
-            await showErrorAsync("오류", $"파일을 여는 중 오류가 발생했습니다: {ex.Message}");
+            await showErrorAsync(Loc.Get("Error"), Loc.Format("AnErrorOccurredWhileOpeningTheFile", ex.Message));
         }
         finally
         {
@@ -180,9 +181,9 @@ public sealed class DocumentFileController(
         var manager = getManager();
 
         var picker = new FileSavePicker();
-        picker.FileTypeChoices.Add("PDF 파일", new List<string> { ".pdf" });
+        picker.FileTypeChoices.Add(Loc.Get("PDFFile"), new List<string> { ".pdf" });
         picker.SuggestedFileName = getManager().FilePath != null
-            ? Path.GetFileName(getManager().FilePath) : "새문서.pdf";
+            ? Path.GetFileName(getManager().FilePath) : Loc.Get("NewDocumentPdf");
 
         var hwnd = getWindowHandle();
         InitializeWithWindow.Initialize(picker, hwnd);
@@ -216,7 +217,7 @@ public sealed class DocumentFileController(
         }
         catch (Exception ex)
         {
-            await showErrorAsync("인쇄 오류", $"인쇄 중 오류가 발생했습니다: {ex.Message}");
+            await showErrorAsync(Loc.Get("PrintingError"), Loc.Format("AnErrorOccurredWhilePrinting", ex.Message));
         }
         finally { PdfTemporaryFiles.TryDelete(tempPath); }
     }
@@ -230,7 +231,7 @@ public sealed class DocumentFileController(
         var manager = getManager();
         var annotations = getAnnotations();
         var tab = getActiveTab();
-        statusText.Text = isUserSave ? "저장 중..." : "렌더링 준비 중...";
+        statusText.Text = isUserSave ? Loc.Get("Saving") : Loc.Get("PreparingToRender");
         loadingIndicator.IsActive = true;
 
         try
@@ -247,7 +248,7 @@ public sealed class DocumentFileController(
             bool savedCurrent = await saveService.SaveAsync(manager, annotations, filePath, isUserSave);
             if (!savedCurrent)
             {
-                await showErrorAsync("추가 저장 필요", "파일은 저장했지만 저장 중 추가된 편집이 있습니다. 다시 저장해 주세요.");
+                await showErrorAsync(Loc.Get("SaveAgain"), Loc.Get("TheFileWasSavedButMoreEditsWereMade"));
                 return false;
             }
 
@@ -266,7 +267,7 @@ public sealed class DocumentFileController(
         }
         catch (Exception ex)
         {
-            await showErrorAsync("저장 오류", $"저장 중 오류가 발생했습니다: {ex.Message}");
+            await showErrorAsync(Loc.Get("SaveError"), Loc.Format("AnErrorOccurredWhileSaving", ex.Message));
             return false;
         }
         finally

@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using iText.IO.Font;
 using iText.Kernel.Colors;
 using iText.Kernel.Font;
@@ -34,10 +35,10 @@ public sealed partial class NativePdfTextService
     private static NativePdfTextBlock ApplyStyle(PdfDocument doc, PageData data, NativePdfTextBlock block, NativePdfTextStyle style)
     {
         if (style.FontSize is double size && (!double.IsFinite(size) || size <= 0))
-            throw new ArgumentOutOfRangeException(nameof(style), "글자 크기는 0보다 큰 숫자여야 합니다.");
+            throw new ArgumentOutOfRangeException(nameof(style), Loc.Get("FontSizeMustBeANumberGreaterThanZero"));
         if (style.Color is string color && (color.Length != 7 || color[0] != '#' ||
             !int.TryParse(color.AsSpan(1), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _)))
-            throw new ArgumentException("올바른 RGB 글자색을 선택해 주세요.", nameof(style));
+            throw new ArgumentException(Loc.Get("SelectAValidRGBTextColor"), nameof(style));
 
         var runs = block.Runs.ToDictionary(r => r.Id);
         var fonts = new Dictionary<string, PdfFont?>();
@@ -81,7 +82,7 @@ public sealed partial class NativePdfTextService
                 font.GetPdfObject().MakeIndirect(doc); doc.AddFont(font);
                 return (font, italic && !synthetic);
             }
-            throw new InvalidOperationException($"'{text}'에 요청한 굵기·기울임을 지원하는 글꼴이 설치되어 있지 않습니다. 다른 글꼴을 선택해 주세요.");
+            throw new InvalidOperationException(Loc.Format("NoFontSupportingTheRequestedWeightAndSlantFor", text));
         }
 
         bool metricsChanged = false;
@@ -130,7 +131,7 @@ public sealed partial class NativePdfTextService
         }
         if (!metricsChanged) return block with { Glyphs = tokens };
         if (block.Glyphs.Any(g => !g.IsVirtual && (Math.Abs(g.End.Y - g.Origin.Y) > .1 || g.End.X < g.Origin.X)))
-            throw new InvalidOperationException("회전되거나 오른쪽에서 왼쪽으로 배치된 텍스트는 현재 글자색만 변경할 수 있습니다.");
+            throw new InvalidOperationException(Loc.Get("OnlyTheTextColorCanCurrentlyBeChangedFor"));
         double Width(NativePdfGlyph g) => g.Text == "\n" ? 0 : g.IsVirtual
             ? Math.Max(g.End.X - g.Origin.X, 0) : DisplayAdvance(runs[g.RunId], g.Advance, data.Map);
         var tokenIndexes = tokens.Select((g, i) => (g, i)).ToDictionary(p => p.g, p => p.i);

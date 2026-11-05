@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using PDF_simple_edit.Helpers;
@@ -48,11 +49,11 @@ public sealed class PdfOperationService
         {
             var dialog = new ContentDialog
             {
-                Title = "PDF 합치기",
-                Content = $"선택한 {files.Count}개 파일을 현재 문서에 합치시겠습니까?",
-                PrimaryButtonText = "현재 문서에 합치기",
-                SecondaryButtonText = "새 파일로 저장",
-                CloseButtonText = "취소",
+                Title = Loc.Get("MergePDFs"),
+                Content = Loc.Format("MergeTheSelectedFilesIntoTheCurrentDocument", files.Count),
+                PrimaryButtonText = Loc.Get("MergeIntoCurrentDocument"),
+                SecondaryButtonText = Loc.Get("SaveAsANewFile"),
+                CloseButtonText = Loc.Get("Cancel"),
                 XamlRoot = xamlRoot
             };
             ContentDialogResult result = await dialog.ShowAsync();
@@ -74,7 +75,7 @@ public sealed class PdfOperationService
     public async Task ExecuteMergeAsync(PdfDocumentManager manager, PdfMergeRequest request, byte[]? annotatedSnapshot)
     {
         if (request.Target != PdfMergeTarget.NewFile || string.IsNullOrWhiteSpace(request.OutputPath))
-            throw new InvalidOperationException("새 병합 파일의 저장 경로가 필요합니다.");
+            throw new InvalidOperationException(Loc.Get("ASavePathIsRequiredForTheNewMerged"));
         await manager.MergeFilesAsync(request.SourcePaths.ToList(), request.OutputPath, annotatedSnapshot);
     }
 
@@ -85,18 +86,18 @@ public sealed class PdfOperationService
     {
         var everyPage = new RadioButton
         {
-            Content = "페이지별로 나누기",
+            Content = Loc.Get("SplitIntoIndividualPages"),
             IsChecked = true,
             GroupName = "SplitMode"
         };
         var byPageCount = new RadioButton
         {
-            Content = "지정 페이지 수로 나누기",
+            Content = Loc.Get("SplitByPageCount"),
             GroupName = "SplitMode"
         };
         var byRange = new RadioButton
         {
-            Content = "페이지 범위로 나누기",
+            Content = Loc.Get("SplitByPageRanges"),
             GroupName = "SplitMode"
         };
         var pagesPerFile = new NumberBox
@@ -105,14 +106,14 @@ public sealed class PdfOperationService
             Minimum = 1,
             Maximum = totalPages,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
-            Header = "파일당 페이지 수:",
+            Header = Loc.Get("PagesPerFile"),
             Width = 150,
             Visibility = Visibility.Collapsed
         };
         var rangesText = new TextBox
         {
-            PlaceholderText = "예: 1-3, 4-6, 7-10",
-            Header = "페이지 범위 (쉼표로 구분):",
+            PlaceholderText = Loc.Get("Example1346710"),
+            Header = Loc.Get("PageRangesCommaSeparated"),
             Visibility = Visibility.Collapsed
         };
 
@@ -121,7 +122,7 @@ public sealed class PdfOperationService
         byRange.Checked += (_, _) => SetSplitInputVisibility(false, true, pagesPerFile, rangesText);
 
         var panel = new StackPanel { Spacing = 12, MinWidth = 350 };
-        panel.Children.Add(new TextBlock { Text = $"총 {totalPages} 페이지" });
+        panel.Children.Add(new TextBlock { Text = Loc.Format("PagesInTotal", totalPages) });
         panel.Children.Add(everyPage);
         panel.Children.Add(byPageCount);
         panel.Children.Add(pagesPerFile);
@@ -130,10 +131,10 @@ public sealed class PdfOperationService
 
         var dialog = new ContentDialog
         {
-            Title = "PDF 나누기",
+            Title = Loc.Get("SplitPDF"),
             Content = panel,
-            PrimaryButtonText = "나누기",
-            CloseButtonText = "취소",
+            PrimaryButtonText = Loc.Get("Split"),
+            CloseButtonText = Loc.Get("Cancel"),
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = xamlRoot
         };
@@ -145,7 +146,7 @@ public sealed class PdfOperationService
             {
                 if (byPageCount.IsChecked == true && (!double.IsFinite(pagesPerFile.Value) ||
                     pagesPerFile.Value < 1 || pagesPerFile.Value > totalPages || pagesPerFile.Value != Math.Truncate(pagesPerFile.Value)))
-                    throw new ArgumentException($"파일당 페이지 수는 1~{totalPages} 사이의 정수여야 합니다.");
+                    throw new ArgumentException(Loc.Format("PagesPerFileMustBeAnIntegerBetween1", totalPages));
                 BuildRanges(totalPages, everyPage.IsChecked == true, byPageCount.IsChecked == true,
                     (int)pagesPerFile.Value, rangesText.Text);
             }
@@ -173,7 +174,7 @@ public sealed class PdfOperationService
     private static async Task<string?> PickMergedOutputPathAsync(IntPtr windowHandle)
     {
         var picker = new FileSavePicker { SuggestedFileName = "merged.pdf" };
-        picker.FileTypeChoices.Add("PDF 파일", new List<string> { ".pdf" });
+        picker.FileTypeChoices.Add(Loc.Get("PDFFile"), new List<string> { ".pdf" });
         InitializeWithWindow.Initialize(picker, windowHandle);
         return (await picker.PickSaveFileAsync())?.Path;
     }
@@ -205,7 +206,7 @@ public sealed class PdfOperationService
 
         if (byPageCount)
         {
-            if (pagesPerFile < 1) throw new ArgumentException("파일당 페이지 수는 1 이상이어야 합니다.");
+            if (pagesPerFile < 1) throw new ArgumentException(Loc.Get("PagesPerFileMustBeAtLeast1"));
             for (int page = 1; page <= totalPages; page += pagesPerFile)
                 ranges.Add((page, Math.Min(page + pagesPerFile - 1, totalPages)));
             return ranges;
@@ -220,10 +221,10 @@ public sealed class PdfOperationService
                      int.TryParse(bounds[0].Trim(), out int start) &&
                      int.TryParse(bounds[1].Trim(), out int end))
                 ranges.Add((start, end));
-            else throw new ArgumentException($"페이지 범위를 확인해 주세요: '{part}'");
+            else throw new ArgumentException(Loc.Format("CheckThePageRange", part));
         }
         foreach (var (start, end) in ranges) PdfFileOperationService.ValidateRange(start, end, totalPages);
-        if (ranges.Count == 0) throw new ArgumentException("페이지 범위를 입력해 주세요.");
+        if (ranges.Count == 0) throw new ArgumentException(Loc.Get("EnterPageRanges"));
         return ranges;
     }
 }

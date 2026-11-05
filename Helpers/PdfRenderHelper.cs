@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -152,7 +153,7 @@ namespace PDF_simple_edit.Helpers
 
         public async Task PrintAsync(string filePath, IntPtr windowHandle)
         {
-            if (IsPrinting) throw new InvalidOperationException("이전 인쇄 작업이 아직 진행 중입니다.");
+            if (IsPrinting) throw new InvalidOperationException(Loc.Get("ThePreviousPrintJobIsStillInProgress"));
             _dispatcher = DispatcherQueue.GetForCurrentThread();
             _filePath = filePath;
             _completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -161,14 +162,14 @@ namespace PDF_simple_edit.Helpers
             try
             {
                 if (!PrintManager.IsSupported())
-                    throw new InvalidOperationException("이 장치에서는 인쇄를 지원하지 않습니다.");
+                    throw new InvalidOperationException(Loc.Get("PrintingIsNotSupportedOnThisDevice"));
 
                 // Paginate 이벤트는 동기적으로 페이지 수를 받아야 하므로,
                 // 인쇄 UI를 표시하기 전에 PDF의 페이지 수를 준비합니다.
                 _renderer = await PdfRenderDocument.LoadAsync(await File.ReadAllBytesAsync(filePath));
                 _totalPageCount = _renderer.PageCount;
                 if (_totalPageCount <= 0)
-                    throw new InvalidOperationException("인쇄할 PDF 페이지를 찾을 수 없습니다.");
+                    throw new InvalidOperationException(Loc.Get("CannotFindPDFPagesToPrint"));
 
                 _filePath = filePath;
                 _windowHandle = windowHandle;
@@ -216,7 +217,7 @@ namespace PDF_simple_edit.Helpers
                 {
                     if (!ReferenceEquals(taskCompletion, _completion)) return;
                     if (e.Completion == PrintTaskCompletion.Failed)
-                        _completion?.TrySetException(new IOException("프린터가 인쇄 작업을 완료하지 못했습니다."));
+                        _completion?.TrySetException(new IOException(Loc.Get("ThePrinterCouldNotCompleteThePrintJob")));
                     Cleanup();
                 }
                 if (dispatcher?.HasThreadAccess == true) Complete();
@@ -292,7 +293,7 @@ namespace PDF_simple_edit.Helpers
                     UIElement? page = _pageCache.TryGetValue(i, out var cached) && cached.Scale >= 3.0
                         ? cached.Page : await CreatePrintPageAsync(i, 3.0);
                     if (generation != _generation || !ReferenceEquals(printDocument, _printDocument)) return;
-                    if (page == null) throw new IOException($"{i + 1}페이지를 인쇄용으로 렌더링할 수 없습니다.");
+                    if (page == null) throw new IOException(Loc.Format("CannotRenderPageForPrinting", i + 1));
                     printDocument.AddPage(page);
                     _pageCache.Remove(i);
                 }

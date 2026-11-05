@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -244,7 +245,7 @@ public sealed class InlineTextEditorController
             byte[] preview = await new LegacyTextPreviewService().CreateAsync(source, pageIndex, session.Annotation);
             using var stream = new MemoryStream(preview);
             using var rendered = await PdfRenderHelper.RenderPageWithWindowsPdfStreamAsync(stream.AsRandomAccessStream(), pageIndex, 2);
-            if (rendered == null) throw new InvalidOperationException("편집 배경을 렌더링할 수 없습니다.");
+            if (rendered == null) throw new InvalidOperationException(Loc.Get("CannotRenderTheEditingBackground"));
             var bitmap = new BitmapImage(); await bitmap.SetSourceAsync(rendered.AsRandomAccessStream());
             if (_activeEditor != editor || session.IsFinishing) return true;
             session.PageImage!.Source = bitmap;
@@ -368,7 +369,7 @@ public sealed class InlineTextEditorController
                 MoveCaretToEnd(editor);
                 session.SuppressTextChanged = false;
                 session.HasLiveChanges = false;
-                _setStatus?.Invoke("배경을 보존하면서 수정할 수 없는 PDF 텍스트입니다.");
+                _setStatus?.Invoke(Loc.Get("ThisPDFTextCannotBeEditedWhilePreservingThe"));
                 return;
             }
         }
@@ -383,8 +384,8 @@ public sealed class InlineTextEditorController
         session.Annotation.Content = changedText;
         session.Annotation.IsApplied = false;
         _setStatus?.Invoke(string.IsNullOrEmpty(changedText)
-            ? "텍스트가 삭제되었습니다 (편집 중)"
-            : "텍스트 편집 내용이 실시간 반영 중입니다.");
+            ? Loc.Get("TextDeletedEditing")
+            : Loc.Get("TextEditsAreBeingPreviewedInRealTime"));
     }
 
     private async Task<bool> RemoveOriginalTextForLiveEditAsync(InlineTextEditSession session)
@@ -584,7 +585,7 @@ public sealed class InlineTextEditorController
                             _pageIndex, new[] { existingAnnotation });
                         if (!textWasRemoved)
                         {
-                            _setStatus?.Invoke("배경을 보존하면서 삭제할 수 없는 PDF 텍스트입니다.");
+                            _setStatus?.Invoke(Loc.Get("ThisPDFTextCannotBeDeletedWhilePreservingThe"));
                             return;
                         }
                     }
@@ -593,7 +594,7 @@ public sealed class InlineTextEditorController
                     _selectedAnnotations.Remove(existingAnnotation);
                     _annotationRemoved?.Invoke(existingAnnotation);
                     _manager.MarkModified(pageIndex: _pageIndex);
-                    _setStatus?.Invoke("텍스트가 삭제되었습니다");
+                    _setStatus?.Invoke(Loc.Get("TextDeleted2"));
                 }
                 else if (editSession?.HasLiveChanges == true || existingAnnotation.Content != text)
                 {
@@ -603,7 +604,7 @@ public sealed class InlineTextEditorController
                             _pageIndex, new[] { existingAnnotation });
                         if (!textWasRemoved)
                         {
-                            _setStatus?.Invoke("배경을 보존하면서 수정할 수 없는 PDF 텍스트입니다.");
+                            _setStatus?.Invoke(Loc.Get("ThisPDFTextCannotBeEditedWhilePreservingThe"));
                             return;
                         }
                         existingAnnotation.IsOriginalTextReplacement = false;
@@ -638,7 +639,7 @@ public sealed class InlineTextEditorController
                     }
                     existingAnnotation.IsApplied = false;
                     _manager.MarkModified(pageIndex: _pageIndex);
-                    _setStatus?.Invoke("텍스트가 수정되었습니다 (저장 시 반영)");
+                    _setStatus?.Invoke(Loc.Get("TextModifiedAppliedWhenSaved"));
                 }
             }
             else if (tag is Point pdfPosition)
@@ -670,7 +671,7 @@ public sealed class InlineTextEditorController
                     IsApplied = false
                 });
                 _manager.MarkModified(pageIndex: _pageIndex);
-                _setStatus?.Invoke("텍스트가 추가되었습니다 (저장 시 반영)");
+                _setStatus?.Invoke(Loc.Get("TextAddedAppliedWhenSaved"));
             }
 
             if (textWasRemoved && _renderPage != null)

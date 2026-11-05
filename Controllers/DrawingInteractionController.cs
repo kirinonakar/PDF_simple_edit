@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -73,14 +74,14 @@ public sealed class DrawingInteractionController
             if (_points.Count == 0 || Distance(point, _points[^1]) > 1)
                 _points.Add(point);
             _hover = null;
-            _status.Text = "다각형: 클릭으로 꼭짓점 추가 · 더블클릭/Enter로 완성 · Esc로 취소";
+            _status.Text = Loc.Get("PolygonClickToAddVerticesDoubleClickEnterTo");
         }
         else
         {
             _points.Add(point); _hover = point;
             _pointerId = e.Pointer.PointerId;
             _canvas.CapturePointer(e.Pointer);
-            _status.Text = "그리는 중... (Esc: 취소)";
+            _status.Text = Loc.Get("DrawingEscCancel");
         }
         Redraw();
         // Keep DoubleTapped available for polygon completion.
@@ -120,7 +121,7 @@ public sealed class DrawingInteractionController
     public bool HandleKey(VirtualKey key)
     {
         if (_manager == null) return false;
-        if (key == VirtualKey.Escape) { Cancel(); _status.Text = "그리기가 취소되었습니다."; return true; }
+        if (key == VirtualKey.Escape) { Cancel(); _status.Text = Loc.Get("DrawingCanceled"); return true; }
         if (key == VirtualKey.Enter && _kind == DrawingKind.Polygon) { Complete(); return true; }
         return false;
     }
@@ -178,10 +179,10 @@ public sealed class DrawingInteractionController
             valid = Math.Abs(area) >= 1;
         }
         if (!valid && _kind == DrawingKind.Polygon)
-        { _status.Text = "다각형에 서로 일직선이 아닌 꼭짓점 3개 이상을 추가하세요."; return; }
+        { _status.Text = Loc.Get("AddAtLeastThreeNonCollinearVerticesToThe"); return; }
         var drawing = valid ? PdfDrawingGeometry.Create(_kind, points, _page, _color, _width) : null;
         Cancel();
-        if (drawing != null) { _commit(drawing); _status.Text = "그리기가 추가되었습니다. 그래픽 선택(G)으로 편집할 수 있습니다."; }
+        if (drawing != null) { _commit(drawing); _status.Text = Loc.Get("DrawingAddedUseSelectGraphicsGToEditIt"); }
     }
 
     private static double Distance(PdfPathPoint a, PdfPathPoint b) =>

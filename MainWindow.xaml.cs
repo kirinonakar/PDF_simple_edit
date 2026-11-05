@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -351,11 +352,11 @@ namespace PDF_simple_edit
             {
                 var dialog = new ContentDialog
                 {
-                    Title = "변경 사항 저장",
-                    Content = $"'{tab.Header}'의 내용이 변경되었습니다. 저장하시겠습니까?",
-                    PrimaryButtonText = "저장",
-                    SecondaryButtonText = "저장하지 않음",
-                    CloseButtonText = "취소",
+                    Title = Loc.Get("SaveChanges"),
+                    Content = Loc.Format("HasChangedSaveYourChanges", tab.Header),
+                    PrimaryButtonText = Loc.Get("Save"),
+                    SecondaryButtonText = Loc.Get("DonTSave"),
+                    CloseButtonText = Loc.Get("Cancel"),
                     XamlRoot = this.Content.XamlRoot
                 };
 
@@ -658,7 +659,7 @@ namespace PDF_simple_edit
             if (_activeTab != null)
             {
                 string header = _activeTab.PdfManager.FilePath != null
-                    ? Path.GetFileName(_activeTab.PdfManager.FilePath) : "새 문서";
+                    ? Path.GetFileName(_activeTab.PdfManager.FilePath) : Loc.Get("NewDocument");
                 if (_activeTab.IsModified) header = "● " + header;
                 _activeTab.Header = header;
             }
@@ -700,8 +701,8 @@ namespace PDF_simple_edit
 
             if (hasDoc)
             {
-                TxtPageInfo.Text = $"페이지: {_currentPageIndex + 1} / {_pdfManager.PageCount}";
-                TxtStatus.Text = "준비";
+                TxtPageInfo.Text = Loc.Format("Page", _currentPageIndex + 1, _pdfManager.PageCount);
+                TxtStatus.Text = Loc.Get("Ready");
 
                 if (_pdfManager.FilePath != null && File.Exists(_pdfManager.FilePath))
                 {
@@ -710,13 +711,13 @@ namespace PDF_simple_edit
                 }
                 else
                 {
-                    TxtFileInfo.Text = "새 문서";
+                    TxtFileInfo.Text = Loc.Get("NewDocument");
                 }
             }
             else
             {
-                TxtPageInfo.Text = "페이지: 0 / 0";
-                TxtStatus.Text = "준비";
+                TxtPageInfo.Text = Loc.Get("Page00");
+                TxtStatus.Text = Loc.Get("Ready");
                 TxtFileInfo.Text = "";
             }
 
@@ -738,11 +739,11 @@ namespace PDF_simple_edit
 
                 var dialog = new ContentDialog
                 {
-                    Title = "종료 확인",
-                    Content = $"저장되지 않은 변경 사항이 있는 {modifiedTabs.Count}개의 탭이 있습니다. 그래도 종료하시겠습니까?",
-                    PrimaryButtonText = "저장하고 종료 (순회)",
-                    SecondaryButtonText = "그냥 종료",
-                    CloseButtonText = "취소",
+                    Title = Loc.Get("ConfirmExit"),
+                    Content = Loc.Format("TabsHaveUnsavedChangesDoYouWantToExit", modifiedTabs.Count),
+                    PrimaryButtonText = Loc.Get("SaveAllAndExit"),
+                    SecondaryButtonText = Loc.Get("ExitWithoutSaving"),
+                    CloseButtonText = Loc.Get("Cancel"),
                     XamlRoot = this.Content.XamlRoot
                 };
 
@@ -772,7 +773,7 @@ namespace PDF_simple_edit
             string title = "PDF Simple Editor";
             if (_pdfManager.IsLoaded)
             {
-                string filePath = _pdfManager.FilePath ?? "새 문서";
+                string filePath = _pdfManager.FilePath ?? Loc.Get("NewDocument");
                 title = $"PDF Simple Editor - {filePath}{(_pdfManager.IsModified ? " ●" : "")}";
             }
             TitleText.Text = title;
@@ -831,14 +832,14 @@ namespace PDF_simple_edit
                 !e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
             {
                 e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move;
-                e.DragUIOverride.Caption = "페이지 순서 변경";
+                e.DragUIOverride.Caption = Loc.Get("ReorderPages");
                 e.DragUIOverride.IsCaptionVisible = true;
                 e.Handled = true;
                 return;
             }
 
             e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
-            e.DragUIOverride.Caption = "PDF 열기";
+            e.DragUIOverride.Caption = Loc.Get("OpenPDF");
             e.DragUIOverride.IsCaptionVisible = true;
         }
 
@@ -915,7 +916,7 @@ namespace PDF_simple_edit
             if (_pdfManager.CanUndo)
             {
                 _pdfManager.Undo();
-                TxtStatus.Text = "실행 취소됨";
+                TxtStatus.Text = Loc.Get("Undone");
             }
         }
 
@@ -924,7 +925,7 @@ namespace PDF_simple_edit
             if (_pdfManager.CanRedo)
             {
                 _pdfManager.Redo();
-                TxtStatus.Text = "다시 실행됨";
+                TxtStatus.Text = Loc.Get("Redone");
             }
         }
 
@@ -963,26 +964,26 @@ namespace PDF_simple_edit
             BtnSignature.IsChecked = mode == EditToolMode.Signature;
             foreach (var item in DrawingToolItems)
                 item.IsChecked = item.Tag is string tag && tag == mode.ToString();
-            EditorToolbar.DrawingButton.Content = DrawingToolItems.FirstOrDefault(item => item.IsChecked)?.Text ?? "그리기";
+            EditorToolbar.DrawingButton.Content = DrawingToolItems.FirstOrDefault(item => item.IsChecked)?.Text ?? Loc.Get("Drawing");
             BtnColorPicker.IsChecked = mode == EditToolMode.ColorPicker;
 
             TxtToolMode.Text = mode switch
             {
-                EditToolMode.AddText => "도구: 텍스트 추가",
-                EditToolMode.Highlight => "도구: 텍스트 강조",
-                EditToolMode.RedactRegion => "도구: 영역 삭제 · 드래그하여 내용 삭제 · Esc: 취소",
-                EditToolMode.Signature => "도구: 서명 그리기",
-                EditToolMode.DrawFreehand => "도구: 자유 그리기 · 드래그하여 그리기 · Esc: 취소",
-                EditToolMode.DrawRectangle => "도구: 사각형 · 드래그하여 그리기 · Esc: 취소",
-                EditToolMode.DrawEllipse => "도구: 타원 · 드래그하여 그리기 · Esc: 취소",
-                EditToolMode.DrawArrow => "도구: 화살표 · 시작점에서 끝점까지 드래그 · Esc: 취소",
-                EditToolMode.DrawTriangleArrow => "도구: 삼각형 머리 화살표 · 시작점에서 끝점까지 드래그 · Esc: 취소",
-                EditToolMode.DrawOutlineArrow => "도구: 테두리 화살표 (삼각형 머리) · 시작점에서 끝점까지 드래그 · Esc: 취소",
-                EditToolMode.DrawPolygon => "도구: 다각형 · 꼭짓점 클릭 · 더블클릭/Enter: 완성 · Esc: 취소",
-                EditToolMode.AddImage => "도구: 이미지 추가",
-                EditToolMode.Select => "도구: 텍스트 선택",
-                EditToolMode.SelectGraphics => "도구: 그래픽 선택 · 클릭/범위 선택 후 Delete로 삭제",
-                EditToolMode.ColorPicker => "도구: 색상 추출",
+                EditToolMode.AddText => Loc.Get("ToolAddText"),
+                EditToolMode.Highlight => Loc.Get("ToolHighlightText"),
+                EditToolMode.RedactRegion => Loc.Get("ToolRedactRegionDragToRemoveContentEscCancel"),
+                EditToolMode.Signature => Loc.Get("ToolDrawSignature"),
+                EditToolMode.DrawFreehand => Loc.Get("ToolFreehandDragToDrawEscCancel"),
+                EditToolMode.DrawRectangle => Loc.Get("ToolRectangleDragToDrawEscCancel"),
+                EditToolMode.DrawEllipse => Loc.Get("ToolEllipseDragToDrawEscCancel"),
+                EditToolMode.DrawArrow => Loc.Get("ToolArrowDragFromStartToEndEscCancel"),
+                EditToolMode.DrawTriangleArrow => Loc.Get("ToolTriangleArrowDragFromStartToEndEsc"),
+                EditToolMode.DrawOutlineArrow => Loc.Get("ToolOutlineArrowTriangleHeadDragFromStartTo"),
+                EditToolMode.DrawPolygon => Loc.Get("ToolPolygonClickVerticesDoubleClickEnterFinishEsc"),
+                EditToolMode.AddImage => Loc.Get("ToolAddImage"),
+                EditToolMode.Select => Loc.Get("ToolSelectText"),
+                EditToolMode.SelectGraphics => Loc.Get("ToolSelectGraphicsClickOrSelectARegionThen"),
+                EditToolMode.ColorPicker => Loc.Get("ToolColorPicker"),
                 _ => ""
             };
 
@@ -1031,7 +1032,7 @@ namespace PDF_simple_edit
             int pageIndex = _currentPageIndex;
             _isRedactingRegion = true;
             LoadingRing.IsActive = true;
-            TxtStatus.Text = "선택 영역의 내용을 삭제하는 중...";
+            TxtStatus.Text = Loc.Get("RemovingContentFromTheSelectedRegion");
             try
             {
                 await new PdfSaveService(new PdfAnnotationDocumentService())
@@ -1039,12 +1040,12 @@ namespace PDF_simple_edit
                 if (!ReferenceEquals(manager, _pdfManager)) return;
                 _annotationCanvasController.ClearSelection();
                 await RenderCurrentPageAsync();
-                TxtStatus.Text = "영역 내용이 삭제되었습니다 (Ctrl+Z: 실행 취소, Ctrl+S: 저장).";
+                TxtStatus.Text = Loc.Get("RegionContentRemovedCtrlZUndoCtrlSSave");
             }
             catch (Exception ex)
             {
-                TxtStatus.Text = "영역 삭제에 실패했습니다.";
-                await ShowErrorDialogAsync("영역 삭제 오류", ex.Message);
+                TxtStatus.Text = Loc.Get("FailedToRedactTheRegion");
+                await ShowErrorDialogAsync(Loc.Get("RegionRedactionError"), ex.Message);
             }
             finally
             {
@@ -1245,7 +1246,7 @@ namespace PDF_simple_edit
             if (!_pdfManager.IsLoaded || string.IsNullOrWhiteSpace(TxtFindText.Text)) return;
 
             string searchText = TxtFindText.Text;
-            TxtStatus.Text = "검색 중...";
+            TxtStatus.Text = Loc.Get("Searching");
             LoadingRing.IsActive = true;
 
             try
@@ -1400,7 +1401,8 @@ namespace PDF_simple_edit
         private async void Settings_Click(object sender, RoutedEventArgs e)
         {
             EditorPreferences preferences = await _dialogService.ShowSettingsAsync(
-                Content.XamlRoot, _renderScale, _fontSettings);
+                Content.XamlRoot, _renderScale, _fontSettings, new EditorSettingsService().LoadLanguage());
+            new EditorSettingsService().SaveLanguage(preferences.Language);
             _renderScale = preferences.RenderScale;
             _fontSettings.FontFamily = preferences.FontFamily;
             _fontSettings.FontSize = preferences.FontSize;

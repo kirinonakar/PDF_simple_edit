@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using iText.IO.Source;
 using iText.IO.Font;
 using iText.Kernel.Font;
@@ -101,7 +102,7 @@ public sealed partial class NativePdfTextService
     {
         int number = stream.GetIndirectReference()?.GetObjNumber() ?? -1;
         if (number > 0 && !ancestors.Add(number))
-            throw new InvalidOperationException("순환 참조된 PDF Form입니다.");
+            throw new InvalidOperationException(Loc.Get("ThePDFFormContainsACircularReference"));
         var source = new Source { Path = path, Stream = stream, Resources = resources, Bytes = stream.GetBytes() };
         var tokenizer = new PdfTokenizer(new RandomAccessFileOrArray(new RandomAccessSourceFactory().CreateSource(source.Bytes)));
         try
@@ -304,7 +305,7 @@ public sealed partial class NativePdfTextService
     public NativePdfTextResult EditMany(byte[] bytes, int pageIndex, IReadOnlyList<NativePdfTextEdit> edits)
     {
         ArgumentNullException.ThrowIfNull(bytes);
-        if (edits.Count == 0) throw new ArgumentException("편집할 텍스트가 없습니다.", nameof(edits));
+        if (edits.Count == 0) throw new ArgumentException(Loc.Get("NoTextToEdit"), nameof(edits));
         if (edits.All(e => e.Transform == null && e.Style == null && e.Text == e.Block.Text && e.DeltaX == 0 && e.DeltaY == 0))
             return new(bytes, edits[0].Block);
         using var input = new MemoryStream(bytes);
@@ -326,9 +327,9 @@ public sealed partial class NativePdfTextService
                 var original = data.Runs.Where(r => ids.Contains(r.Id)).ToList();
                 if (original.Count != edit.Block.Runs.Count || original.Any(r =>
                     !r.Glyphs.SelectMany(g => g.Code).SequenceEqual(edit.Block.Runs.Single(b => b.Id == r.Id).Glyphs.SelectMany(g => g.Code))))
-                    throw new InvalidOperationException("PDF 내용이 변경되었습니다. 텍스트를 다시 선택해 주세요.");
+                    throw new InvalidOperationException(Loc.Get("ThePDFContentChangedSelectTheTextAgain"));
                 if (original.Any(r => r.IsVertical || Math.Abs(r.HorizontalScale * r.FontSize) < 0.0001 || r.RenderMode >= 4))
-                    throw new InvalidOperationException("세로쓰기 또는 클리핑 텍스트의 원본 보존 편집은 아직 지원하지 않습니다.");
+                    throw new InvalidOperationException(Loc.Get("OriginalPreservingEditingOfVerticalOrClippedTextIs"));
                 layout = Layout(doc, data, edit);
                 if (edit.Style != null) layout = ApplyStyle(doc, data, layout, edit.Style);
                 if (edit.Transform is { } transform)
@@ -367,7 +368,7 @@ public sealed partial class NativePdfTextService
                     {
                         var originalCodes = selectedIndexes.Select(i => run.Glyphs[i].Code).ToHashSet();
                         if (prior.Count(g => originalCodes.Contains(g.Code)) != selectedIndexes.Count)
-                            throw new InvalidOperationException("겹치는 텍스트 선택입니다.");
+                            throw new InvalidOperationException(Loc.Get("TheSelectedTextRegionsOverlap"));
                         int insertion = prior.FindIndex(g => originalCodes.Contains(g.Code));
                         prior.RemoveAll(g => originalCodes.Contains(g.Code));
                         prior.InsertRange(insertion, editedGlyphs);
@@ -429,7 +430,7 @@ public sealed partial class NativePdfTextService
             foreach (var glyph in layouts.SelectMany(b => b.Glyphs).Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text)))
                 if (other.Any(g => Math.Min(g.Bounds.Right, glyph.Bounds.Right) - Math.Max(g.Bounds.X, glyph.Bounds.X) > .25 &&
                     Math.Min(g.Bounds.Bottom, glyph.Bounds.Bottom) - Math.Max(g.Bounds.Y, glyph.Bounds.Y) > .25))
-                    throw new InvalidOperationException("변경한 스타일이 주변 텍스트와 겹칩니다. 크기를 줄이거나 더 넓은 텍스트 영역을 선택해 주세요.");
+                    throw new InvalidOperationException(Loc.Get("TheModifiedStyleOverlapsNearbyTextReduceTheSize"));
         }
         if (edits.Count == 1 && edits[0].Text != edits[0].Block.Text)
         {
@@ -441,7 +442,7 @@ public sealed partial class NativePdfTextService
             foreach (var glyph in layout.Glyphs.Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text) && !Selected(g)))
                 if (other.Any(g => Math.Min(g.Bounds.Right, glyph.Bounds.Right) - Math.Max(g.Bounds.X, glyph.Bounds.X) > .25 &&
                     Math.Min(g.Bounds.Bottom, glyph.Bounds.Bottom) - Math.Max(g.Bounds.Y, glyph.Bounds.Y) > .25))
-                    throw new InvalidOperationException("추가한 줄이 다른 원본 텍스트와 겹칩니다. 내용을 줄이거나 텍스트 영역을 먼저 이동해 주세요.");
+                    throw new InvalidOperationException(Loc.Get("TheAddedLinesOverlapOtherOriginalTextShortenThe"));
         }
         return new(resultBytes, layout) { Layouts = layouts };
     }
@@ -528,7 +529,7 @@ public sealed partial class NativePdfTextService
                     return candidate;
                 }
             }
-            throw new InvalidOperationException($"'{char.ConvertFromUtf32(unicode)}' 글리프를 지원하는 대체 글꼴이 설치되어 있지 않습니다.");
+            throw new InvalidOperationException(Loc.Format("NoFallbackFontSupportingTheGlyphIsInstalled", char.ConvertFromUtf32(unicode)));
         }
         double SpaceWidth(NativePdfRun run)
         {
@@ -610,7 +611,7 @@ public sealed partial class NativePdfTextService
         }
         if (tokens.Count == 0) return block with { Text = "", Glyphs = new(), Lines = new(), Bounds = default };
         bool horizontal = original.Where(g => !g.IsVirtual).All(g => Math.Abs(g.End.Y - g.Origin.Y) < 0.1 && g.End.X >= g.Origin.X);
-        if (!horizontal) throw new InvalidOperationException("회전되거나 오른쪽에서 왼쪽으로 배치된 텍스트는 현재 이동과 전체 삭제만 지원합니다.");
+        if (!horizontal) throw new InvalidOperationException(Loc.Get("RotatedOrRightToLeftTextCurrentlySupportsOnly"));
         double Width(NativePdfGlyph token)
         {
             if (token.Text == "\n") return 0;
@@ -768,13 +769,13 @@ public sealed partial class NativePdfTextService
                 int offset = f.GetCharsetOffset();
                 var names = new HashSet<string>(StringComparer.Ordinal) { ".notdef" };
                 if (offset == 0) { for (int i = 1; i < count; i++) names.Add(GetString((char)i)); return names; }
-                if (offset is 1 or 2) throw new InvalidOperationException("Expert CFF 문자셋은 아직 편집할 수 없습니다.");
+                if (offset is 1 or 2) throw new InvalidOperationException(Loc.Get("ExpertCFFCharacterSetsCannotBeEditedYet"));
                 position = offset; int format = Read8();
                 int glyph = 1;
                 while (glyph < count)
                 {
                     int sid = Read16();
-                    int remaining = format switch { 0 => 0, 1 => Read8(), 2 => Read16(), _ => throw new InvalidOperationException("잘못된 CFF 문자셋입니다.") };
+                    int remaining = format switch { 0 => 0, 1 => Read8(), 2 => Read16(), _ => throw new InvalidOperationException(Loc.Get("InvalidCFFCharacterSet")) };
                     for (int j = 0; j <= remaining && glyph < count; j++, glyph++) names.Add(GetString((char)(sid + j)));
                 }
                 return names;
@@ -819,7 +820,7 @@ public sealed partial class NativePdfTextService
             var matrix = MatrixOf(run.TextMatrix).Multiply(MatrixOf(run.Ctm));
             double a = matrix.Get(0), b = matrix.Get(1), c = matrix.Get(3), d = matrix.Get(4);
             double determinant = a * d - b * c;
-            if (Math.Abs(determinant) < 1e-12) throw new InvalidOperationException("역변환할 수 없는 PDF 텍스트 행렬입니다.");
+            if (Math.Abs(determinant) < 1e-12) throw new InvalidOperationException(Loc.Get("ThePDFTextMatrixCannotBeInverted"));
             foreach (var glyph in glyphs)
             {
                 var originalOrigin = run.Glyphs[0].Origin;
@@ -849,7 +850,7 @@ public sealed partial class NativePdfTextService
                     var tm = run.TextMatrix;
                     double ta = tm[0], tb = tm[1], tc = tm[2], td = tm[3];
                     double det = ta * td - tb * tc;
-                    if (Math.Abs(det) < 1e-12) throw new InvalidOperationException("역변환할 수 없는 PDF 텍스트 행렬입니다.");
+                    if (Math.Abs(det) < 1e-12) throw new InvalidOperationException(Loc.Get("ThePDFTextMatrixCannotBeInverted"));
                     double x = tm[4] + textX * ta + nextRise * tc, y = tm[5] + textX * tb + nextRise * td;
                     double sa = 1 - shear * ta * tb / det, sb = -shear * tb * tb / det;
                     double sc = shear * ta * ta / det, sd = 1 + shear * ta * tb / det;

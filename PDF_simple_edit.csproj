@@ -4,6 +4,7 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>PDF_simple_edit</RootNamespace>
+    <DefaultLanguage>en-US</DefaultLanguage>
     <AssemblyName>PDFSimpleEditor</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x64</Platforms>
@@ -23,6 +24,18 @@
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
+
+  <!-- Share the same .resw files with unpackaged and single-file deployments. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Strings\ko-KR\Resources.resw">
+      <LogicalName>PDF_simple_edit.Strings.ko-KR.Resources.resw</LogicalName>
+      <WithCulture>false</WithCulture>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Strings\en-US\Resources.resw">
+      <LogicalName>PDF_simple_edit.Strings.en-US.Resources.resw</LogicalName>
+      <WithCulture>false</WithCulture>
+    </EmbeddedResource>
+  </ItemGroup>
 
   <!-- Embed the manifest version so packaged and unpackaged apps share one source. -->
   <Target Name="ReadAppManifestVersion" BeforeTargets="GetAssemblyVersion">
@@ -71,15 +84,13 @@
 
   <ItemGroup>
     <PackageReference Include="itext" Version="9.8.0" />
-    <PackageReference Include="itext.webp-image-support" Version="9.8.0" />
     <PackageReference Include="PDFiumCore" Version="157.0.8100" />
     <PackageReference Include="itext.bouncy-castle-adapter" Version="9.8.0" />
     <PackageReference Include="itext.pdfsweep" Version="5.0.8" />
     <!-- pdfSweep's partial-image cleanup loads System.Drawing at runtime. -->
     <PackageReference Include="System.Drawing.Common" Version="10.0.14" />
-    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2957" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
 
   </ItemGroup>
 

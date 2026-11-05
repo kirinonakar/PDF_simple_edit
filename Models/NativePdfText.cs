@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -87,6 +88,6 @@ public sealed record NativePdfTextResult(byte[] Bytes, NativePdfTextBlock Layout
 {
     public IReadOnlyList<NativePdfTextBlock> Layouts { get; init; } = new[] { Layout };
     public string? FontSubstitutionStatus => Layout.Glyphs.Any(g => !g.IsVirtual && g.ReplacementFontName != null)
-        ? "글리프 누락으로 글꼴 대체: " + string.Join(", ", Layout.Glyphs.Where(g => !g.IsVirtual)
+        ? Loc.Get("FontSubstitutionForMissingGlyphs") + string.Join(", ", Layout.Glyphs.Where(g => !g.IsVirtual)
             .Select(g => g.ReplacementFontName).Where(n => n != null).Distinct()) : null;
 }

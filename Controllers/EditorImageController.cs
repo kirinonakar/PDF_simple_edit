@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -71,7 +72,7 @@ public sealed class EditorImageController(
             // 새 이미지를 선택 상태로 둡니다.
             setToolMode(EditToolMode.SelectGraphics);
             canvasController.SelectOnly(imageAnnotation);
-            statusText.Text = "이미지가 추가되었습니다 (저장 시 반영)";
+            statusText.Text = Loc.Get("ImageAddedAppliedWhenSaved");
             canvasController.Render();
         }
     }
@@ -97,7 +98,7 @@ public sealed class EditorImageController(
             ? Path.GetFileNameWithoutExtension(getManager().FilePath) ?? "document"
             : "document";
 
-        statusText.Text = "이미지 추출 중...";
+        statusText.Text = Loc.Get("ExtractingImages");
         loadingIndicator.IsActive = true;
         try
         {
@@ -108,17 +109,17 @@ public sealed class EditorImageController(
 
             statusText.Text = result switch
             {
-                { SavedCount: 0, FailedCount: 0 } => "추출할 이미지가 없습니다.",
-                { FailedCount: 0 } => $"이미지 추출 완료: {result.SavedCount}개",
-                _ => $"이미지 {result.SavedCount}개 추출, {result.FailedCount}개 실패"
+                { SavedCount: 0, FailedCount: 0 } => Loc.Get("NoImagesToExtract"),
+                { FailedCount: 0 } => Loc.Format("ExtractedImages", result.SavedCount),
+                _ => Loc.Format("ExtractedImagesFailed", result.SavedCount, result.FailedCount)
             };
         }
         catch (Exception ex)
         {
             await showErrorAsync(
-                "이미지 추출 오류",
-                $"이미지 추출 중 오류가 발생했습니다: {ex.Message}");
-            statusText.Text = "이미지 추출에 실패했습니다.";
+                Loc.Get("ImageExtractionError"),
+                Loc.Format("AnErrorOccurredWhileExtractingImages", ex.Message));
+            statusText.Text = Loc.Get("FailedToExtractImages");
         }
         finally
         {
@@ -136,7 +137,7 @@ public sealed class EditorImageController(
             : null;
         if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
         {
-            statusText.Text = "저장할 이미지 파일을 찾을 수 없습니다.";
+            statusText.Text = Loc.Get("CannotFindTheImageFileToSave");
             return;
         }
 
@@ -167,26 +168,26 @@ public sealed class EditorImageController(
             string targetFullPath = Path.GetFullPath(targetFile.Path);
             if (!string.Equals(sourceFullPath, targetFullPath, StringComparison.OrdinalIgnoreCase))
                 await Task.Run(() => File.Copy(sourceFullPath, targetFullPath, true));
-            statusText.Text = $"이미지 저장 완료: {targetFile.Name}";
+            statusText.Text = Loc.Format("ImageSaved", targetFile.Name);
         }
         catch (Exception ex)
         {
             await showErrorAsync(
-                "이미지 저장 오류",
-                $"이미지를 저장하는 중 오류가 발생했습니다: {ex.Message}");
-            statusText.Text = "이미지 저장에 실패했습니다.";
+                Loc.Get("ImageSaveError"),
+                Loc.Format("AnErrorOccurredWhileSavingTheImage", ex.Message));
+            statusText.Text = Loc.Get("FailedToSaveTheImage");
         }
     }
 
     private static string GetImageFileTypeDescription(string extension) =>
         extension switch
         {
-            ".jpg" or ".jpeg" => "JPEG 이미지",
-            ".tif" or ".tiff" => "TIFF 이미지",
-            ".jp2" => "JPEG 2000 이미지",
-            ".bmp" => "BMP 이미지",
-            ".gif" => "GIF 이미지",
-            ".jbig2" => "JBIG2 이미지",
-            _ => "PNG 이미지"
+            ".jpg" or ".jpeg" => Loc.Get("JPEGImage"),
+            ".tif" or ".tiff" => Loc.Get("TIFFImage"),
+            ".jp2" => Loc.Get("JPEG2000Image"),
+            ".bmp" => Loc.Get("BMPImage"),
+            ".gif" => Loc.Get("GIFImage"),
+            ".jbig2" => Loc.Get("JBIG2Image"),
+            _ => Loc.Get("PNGImage")
         };
 }

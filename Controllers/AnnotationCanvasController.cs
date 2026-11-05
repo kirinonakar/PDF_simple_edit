@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
@@ -220,7 +221,7 @@ public sealed class AnnotationCanvasController
                 _regionStart = ClipRegionPoint(position);
                 _redactionGesture = (manager, _getPageIndex(), manager.EditVersion, e.Pointer.PointerId);
                 _canvas.CapturePointer(e.Pointer);
-                _statusText.Text = "삭제할 영역을 드래그하세요 (마우스를 놓으면 삭제, Esc: 취소).";
+                _statusText.Text = Loc.Get("DragARegionToRedactReleaseToRemoveContent");
                 e.Handled = true;
                 break;
             case EditToolMode.Select:
@@ -313,7 +314,7 @@ public sealed class AnnotationCanvasController
             {
                 CancelNativeMovePreview();
                 _canvas.ReleasePointerCapture(e.Pointer);
-                _statusText.Text = "객체 선택됨 (드래그하여 이동)";
+                _statusText.Text = Loc.Get("ObjectSelectedDragToMove");
                 Render();
             }
             return;
@@ -359,7 +360,7 @@ public sealed class AnnotationCanvasController
                     gesture.Page != _getPageIndex() || gesture.Version != gesture.Manager.EditVersion) return;
                 if (Math.Abs(end.X - start.X) < 3 || Math.Abs(end.Y - start.Y) < 3)
                 {
-                    _statusText.Text = "삭제할 영역을 사각형으로 드래그해 주세요.";
+                    _statusText.Text = Loc.Get("DragARectangleAroundTheRegionToRedact");
                     return;
                 }
                 if (RegionRedactionRequested != null)
@@ -393,7 +394,7 @@ public sealed class AnnotationCanvasController
                     if (annotation == null) continue;
                     _getAnnotations().Add(annotation); SelectedAnnotations.Add(annotation); PrimarySelection ??= annotation;
                 }
-                _statusText.Text = blocks.Count > 0 ? "텍스트 편집 구역 선택됨 (더블클릭: 편집, Alt+드래그: 이동)" : "범위 안에 텍스트가 없습니다.";
+                _statusText.Text = blocks.Count > 0 ? Loc.Get("TextRegionSelectedDoubleClickEditAltDragMove") : Loc.Get("NoTextInTheSelectedRegion");
                 Render();
             }
             return;
@@ -436,7 +437,7 @@ public sealed class AnnotationCanvasController
             {
                 _getAnnotations().Add(highlight);
                 manager.MarkModified(pageIndex: _getPageIndex());
-                _statusText.Text = "텍스트 강조가 추가되었습니다 (저장 시 반영)";
+                _statusText.Text = Loc.Get("TextHighlightAddedAppliedWhenSaved");
                 Render();
             }
         }
@@ -521,7 +522,7 @@ public sealed class AnnotationCanvasController
             if (PrimarySelection != null)
                 _interactionController.BeginResize(PrimarySelection, direction, position);
             _canvas.CapturePointer(e.Pointer);
-            _statusText.Text = "크기 조정 중...";
+            _statusText.Text = Loc.Get("Resizing");
             return;
         }
 
@@ -542,7 +543,7 @@ public sealed class AnnotationCanvasController
             pdfX,
             pdfY,
             controlPressed,
-            () => _statusText.Text = "페이지 콘텐츠 분석 중...",
+            () => _statusText.Text = Loc.Get("AnalyzingPageContent"),
             selectionMode, IsCurrent);
         if (!IsCurrent()) return;
 
@@ -551,11 +552,11 @@ public sealed class AnnotationCanvasController
         {
             _statusText.Text = added.IsOriginalTextReplacement
                 ? _fontSettings.TextEditingMode == TextEditingMode.Legacy
-                    ? "대체 텍스트 편집 구역 선택됨 (더블클릭: 편집, 드래그: 이동)"
-                    : "텍스트 편집 구역 선택됨 (더블클릭: 편집, Alt+드래그: 이동)"
+                    ? Loc.Get("ReplacementTextRegionSelectedDoubleClickEditDragMove")
+                    : Loc.Get("TextRegionSelectedDoubleClickEditAltDragMove")
                 : added.IsOriginalVectorGraphic
-                    ? "그래픽 선택됨 (Alt+드래그: 이동, 핸들: 크기/회전, Delete: 삭제)"
-                    : "이미지가 선택되었습니다. 드래그하여 이동하거나 핸들로 크기를 조정하세요.";
+                    ? Loc.Get("GraphicsSelectedAltDragMoveHandlesResizeRotateDelete")
+                    : Loc.Get("ImageSelectedDragToMoveOrUseTheHandles");
         }
 
         if (selection.SelectionChanged)
@@ -577,8 +578,8 @@ public sealed class AnnotationCanvasController
             if (!moveTarget.IsOriginalTextReplacement)
             {
                 _statusText.Text = SelectedAnnotations.Count > 1
-                    ? $"{SelectedAnnotations.Count}개 객체 선택됨"
-                    : "객체 선택됨 (드래그하여 이동)";
+                    ? Loc.Format("ObjectsSelected", SelectedAnnotations.Count)
+                    : Loc.Get("ObjectSelectedDragToMove");
             }
         }
         else
@@ -586,7 +587,7 @@ public sealed class AnnotationCanvasController
             if (_pendingSelectPointerId == e.Pointer.PointerId)
                 _pendingSelectPointerId = null;
             if (PrimarySelection == null)
-                _statusText.Text = "준비";
+                _statusText.Text = Loc.Get("Ready");
         }
     }
 
@@ -600,8 +601,8 @@ public sealed class AnnotationCanvasController
             if (!SelectedAnnotations.Contains(annotation)) SelectedAnnotations.Add(annotation);
         PrimarySelection = SelectedAnnotations.LastOrDefault();
         _statusText.Text = SelectedAnnotations.Count > 0
-            ? $"{SelectedAnnotations.Count}개 그래픽 선택됨 (Delete: 삭제)"
-            : "범위 안에 그래픽이 없습니다. 객체 전체를 감싸서 선택하세요.";
+            ? Loc.Format("GraphicsSelectedDeleteRemove", SelectedAnnotations.Count)
+            : Loc.Get("NoGraphicsInTheRegionEncloseEntireObjectsTo");
     }
 
     private void BeginSignature(
@@ -622,7 +623,7 @@ public sealed class AnnotationCanvasController
         _signaturePreview.Points.Add(position);
         _canvas.Children.Add(_signaturePreview);
         _canvas.CapturePointer(e.Pointer);
-        _statusText.Text = "서명을 그리는 중...";
+        _statusText.Text = Loc.Get("DrawingSignature");
     }
 
     private void ContinueSignature(PointerPoint pointerPoint)
@@ -667,12 +668,12 @@ public sealed class AnnotationCanvasController
             };
             _getAnnotations().Add(signature);
             _getManager().MarkModified(pageIndex: _getPageIndex());
-            _statusText.Text = "서명이 추가되었습니다 (저장 시 반영)";
+            _statusText.Text = Loc.Get("SignatureAddedAppliedWhenSaved");
             Render();
         }
         else
         {
-            _statusText.Text = "서명이 너무 짧습니다.";
+            _statusText.Text = Loc.Get("TheSignatureIsTooShort");
         }
 
         _signaturePoints.Clear();
@@ -680,14 +681,14 @@ public sealed class AnnotationCanvasController
 
     private async Task PickHighlightColorAsync(PointerRoutedEventArgs e)
     {
-        _statusText.Text = "색상 추출 중...";
+        _statusText.Text = Loc.Get("PickingAColor");
         Windows.UI.Color? pickedColor = await _screenColorPickerService.PickAsync(
             _pageImage, e.GetCurrentPoint(_pageImage).Position);
         if (!pickedColor.HasValue)
             return;
 
         _applyPickedHighlightColor(pickedColor.Value);
-        _statusText.Text = $"색상이 추출되었습니다: {pickedColor.Value}";
+        _statusText.Text = Loc.Format("ColorPicked", pickedColor.Value);
         _setToolMode(EditToolMode.Highlight);
     }
 
@@ -701,14 +702,14 @@ public sealed class AnnotationCanvasController
         if (result == AnnotationResizeResult.OriginalTextRemovalFailed)
         {
             CancelNativeMovePreview();
-            _statusText.Text = "이 PDF의 텍스트는 배경을 보존한 상태로 변환할 수 없습니다.";
+            _statusText.Text = Loc.Get("TheTextInThisPDFCannotBeTransformedWhile");
             Render();
             return;
         }
         if (result == AnnotationResizeResult.OriginalImageRemovalFailed)
         {
             CancelNativeMovePreview();
-            _statusText.Text = "이 PDF의 그래픽은 원본을 보존한 상태로 변환할 수 없습니다.";
+            _statusText.Text = Loc.Get("TheGraphicsInThisPDFCannotBeTransformedWhile");
             Render();
             return;
         }
@@ -718,7 +719,7 @@ public sealed class AnnotationCanvasController
         if (SelectedAnnotations.Any(a => a.NativeText != null))
             _getAnnotations().RemoveAll(a => a.PageIndex == _getPageIndex() && a.NativeText != null && !SelectedAnnotations.Contains(a));
         RefreshSelectionControls();
-        _statusText.Text = "크기/회전 변경됨";
+        _statusText.Text = Loc.Get("SizeRotationChanged");
         if (!IsInlineEditing)
             await _renderCurrentPageAsync();
         Render();
@@ -736,11 +737,11 @@ public sealed class AnnotationCanvasController
         string? failureMessage = result switch
         {
             AnnotationMoveResult.OriginalTextRemovalFailed =>
-                "이 PDF의 텍스트는 배경을 보존한 상태로 이동할 수 없습니다.",
+                Loc.Get("TheTextInThisPDFCannotBeMovedWhile"),
             AnnotationMoveResult.OriginalImageRemovalFailed =>
-                "이 PDF의 이미지는 원본을 보존한 상태로 이동할 수 없습니다.",
+                Loc.Get("TheImagesInThisPDFCannotBeMovedWhile"),
             AnnotationMoveResult.MixedOriginalContentRemovalFailed =>
-                "원본 텍스트와 이미지는 한 번에 함께 이동할 수 없습니다.",
+                Loc.Get("OriginalTextAndImagesCannotBeMovedTogether"),
             _ => null
         };
 
@@ -757,7 +758,7 @@ public sealed class AnnotationCanvasController
         _moveOriginalImage = null;
         if (SelectedAnnotations.Any(a => a.NativeText != null))
             await RefreshNativeSelectionAsync(pageIndex);
-        _statusText.Text = "위치 이동됨 (저장 시 반영)";
+        _statusText.Text = Loc.Get("PositionChangedAppliedWhenSaved");
         if (!IsInlineEditing)
         {
             await _renderCurrentPageAsync();

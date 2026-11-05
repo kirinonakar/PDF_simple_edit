@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Xaml.Controls;
 using PDF_simple_edit.Helpers;
 using PDF_simple_edit.Models;
@@ -69,7 +70,7 @@ public sealed class AnnotationEditController
 
         if (originalTextTargets.Count > 0 && originalImageTargets.Count > 0)
         {
-            _statusText.Text = "원본 텍스트와 이미지는 한 번에 함께 삭제할 수 없습니다.";
+            _statusText.Text = Loc.Get("OriginalTextAndImagesCannotBeDeletedTogether");
             return false;
         }
 
@@ -78,7 +79,7 @@ public sealed class AnnotationEditController
         if (originalTextTargets.Count > 0 &&
             !await manager.RemoveOriginalTextAnnotationsAsync(pageIndex, originalTextTargets))
         {
-            _statusText.Text = "배경을 보존하면서 삭제할 수 없는 PDF 텍스트입니다.";
+            _statusText.Text = Loc.Get("ThisPDFTextCannotBeDeletedWhilePreservingThe");
             return false;
         }
 
@@ -93,7 +94,7 @@ public sealed class AnnotationEditController
                 annotation.Height);
             if (!removed)
             {
-                _statusText.Text = "저장된 텍스트를 안전하게 삭제할 수 없습니다.";
+                _statusText.Text = Loc.Get("TheSavedTextCannotBeDeletedSafely");
                 return false;
             }
         }
@@ -101,7 +102,7 @@ public sealed class AnnotationEditController
         if (originalImageTargets.Count > 0 &&
             !await manager.RemoveOriginalImageAnnotationsAsync(pageIndex, originalImageTargets))
         {
-            _statusText.Text = "이 PDF의 그래픽을 안전하게 삭제할 수 없습니다.";
+            _statusText.Text = Loc.Get("TheGraphicsInThisPDFCannotBeDeletedSafely");
             return false;
         }
 
@@ -120,14 +121,14 @@ public sealed class AnnotationEditController
         }
         _canvasController.Render();
         _statusText.Text = targets.Count > 1
-            ? $"{targets.Count}개 객체 삭제됨"
+            ? Loc.Format("DeletedObjects", targets.Count)
             : targets[0].IsOriginalVectorGraphic
-                ? "그래픽이 삭제되었습니다."
+                ? Loc.Get("GraphicsDeleted")
                 : targets[0].Type == AnnotationType.Image
-                ? "이미지가 삭제되었습니다."
+                ? Loc.Get("ImageDeleted")
                 : targets[0].Type == AnnotationType.Drawing
-                ? "그리기가 삭제되었습니다."
-                : "텍스트가 삭제되었습니다.";
+                ? Loc.Get("DrawingDeleted")
+                : Loc.Get("TextDeleted");
         return true;
     }
 
@@ -238,7 +239,7 @@ public sealed class AnnotationEditController
         {
             if (selection.Count < 2) return;
             if (selection.Any(a => a.NativeText == null))
-            { _statusText.Text = "원본 텍스트끼리 선택하여 정렬해 주세요."; return; }
+            { _statusText.Text = Loc.Get("SelectOnlyOriginalTextToAlignIt"); return; }
             var aligned = selection.Select(a => a.Clone()).ToList();
             _alignmentService.Align(aligned, alignment);
             try
@@ -247,7 +248,7 @@ public sealed class AnnotationEditController
                     new NativePdfTextEdit(a.NativeText!, a.NativeText!.Text, a.X - a.NativeText.Bounds.X, a.Y - a.NativeText.Bounds.Y)).ToList());
                 _getAnnotations().RemoveAll(a => a.PageIndex == _getCurrentPageIndex() && a.NativeText != null);
                 _canvasController.ClearSelection(); await _renderCurrentPageAsync();
-                _canvasController.Render(); _statusText.Text = "원본 텍스트가 정렬되었습니다.";
+                _canvasController.Render(); _statusText.Text = Loc.Get("OriginalTextAligned");
             }
             catch (Exception error) { _statusText.Text = error.Message; }
             return;
@@ -280,14 +281,14 @@ public sealed class AnnotationEditController
             var manager = _getManager();
             var annotations = _getAnnotations();
             int pageIndex = _getCurrentPageIndex();
-            byte[] snapshot = manager.GetPdfBytes() ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+            byte[] snapshot = manager.GetPdfBytes() ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
             var edits = targets.Select(a => new NativePdfTextEdit(a.NativeText!, a.NativeText!.Text, Style: style)).ToList();
             var prepared = await Task.Run(() =>
             {
                 var service = new NativePdfTextService();
                 var result = service.EditMany(snapshot, pageIndex, edits);
                 var selections = result.Layouts.Select(layout => service.RefreshSelection(result.Bytes, pageIndex, layout)
-                    ?? throw new InvalidOperationException("수정한 텍스트 영역을 다시 찾을 수 없습니다.")).ToList();
+                    ?? throw new InvalidOperationException(Loc.Get("CouldNotFindTheModifiedTextRegionAgain"))).ToList();
                 return (result, selections);
             });
             manager.CommitNativeTextEdit(snapshot, prepared.result.Bytes, pageIndex);
@@ -297,7 +298,7 @@ public sealed class AnnotationEditController
             if (!ReferenceEquals(manager, _getManager()) || pageIndex != _getCurrentPageIndex()) return true;
             await _renderCurrentPageAsync();
             _canvasController.Render();
-            _statusText.Text = "원본 텍스트 스타일이 변경되었습니다.";
+            _statusText.Text = Loc.Get("OriginalTextStyleChanged");
             return true;
         }
         catch (Exception error) { _statusText.Text = error.Message; return true; }
@@ -316,7 +317,7 @@ public sealed class AnnotationEditController
     {
         if (annotation.NativeText != null)
         {
-            _statusText.Text = "텍스트 편집 구역 선택됨 (더블클릭: 편집, Alt+드래그: 이동)";
+            _statusText.Text = Loc.Get("TextRegionSelectedDoubleClickEditAltDragMove");
             return false;
         }
         PdfDocumentManager manager = _getManager();
@@ -332,7 +333,7 @@ public sealed class AnnotationEditController
                 annotation.Height);
             if (!removed)
             {
-                _statusText.Text = "저장된 텍스트를 안전하게 수정할 수 없습니다.";
+                _statusText.Text = Loc.Get("TheSavedTextCannotBeEditedSafely");
                 return false;
             }
 
@@ -349,7 +350,7 @@ public sealed class AnnotationEditController
             pageIndex, new[] { annotation });
         if (!originalRemoved)
         {
-            _statusText.Text = "배경을 보존하면서 수정할 수 없는 PDF 텍스트입니다.";
+            _statusText.Text = Loc.Get("ThisPDFTextCannotBeEditedWhilePreservingThe");
             return false;
         }
 
@@ -372,7 +373,7 @@ public sealed class AnnotationEditController
             _getCurrentPageIndex(), targets);
         if (!success)
         {
-            _statusText.Text = "배경을 보존하면서 이동할 수 없는 PDF 텍스트입니다.";
+            _statusText.Text = Loc.Get("ThisPDFTextCannotBeMovedWhilePreservingThe");
             return false;
         }
 

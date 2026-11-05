@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -134,7 +135,7 @@ public sealed class PageViewController
         string oldStatus = _statusText.Text;
         try
         {
-            _statusText.Text = "페이지 렌더링 중...";
+            _statusText.Text = Loc.Get("RenderingPage");
             RenderedPdfPage? page = await _renderService.RenderPageAsync(
                 manager,
                 pageIndex,
@@ -171,7 +172,7 @@ public sealed class PageViewController
         {
             if (IsCurrentRequest())
             {
-                _statusText.Text = oldStatus == "페이지 렌더링 중..." ? "준비" : oldStatus;
+                _statusText.Text = oldStatus == Loc.Get("RenderingPage") ? Loc.Get("Ready") : oldStatus;
                 _updateUiState();
                 SyncSelection();
             }
@@ -456,13 +457,13 @@ public sealed class PageViewController
             foreach (int page in pendingPages) _dirtyThumbnailPages.Add(page);
             if (_allThumbnailsDirty || pendingPages.Length > 0)
                 ScheduleThumbnailRefresh(_allThumbnailsDirty ? null : pendingPages);
-            _statusText.Text = "페이지 순서가 변경되었습니다";
+            _statusText.Text = Loc.Get("PageOrderChanged");
             SyncSelection();
         }
         catch (Exception ex)
         {
             _preserveThumbnailsAfterReorder = false;
-            _statusText.Text = "페이지 순서 변경에 실패했습니다: " + ex.Message;
+            _statusText.Text = Loc.Get("FailedToReorderPages") + ex.Message;
             System.Diagnostics.Debug.WriteLine($"Move page error: {ex.Message}");
         }
         finally

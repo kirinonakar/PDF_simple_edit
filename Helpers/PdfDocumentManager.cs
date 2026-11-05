@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using iText.Kernel.Colors;
 using iText.Kernel.Geom;
 using iText.Kernel.Pdf;
@@ -28,7 +29,7 @@ namespace PDF_simple_edit.Helpers
         internal Task<PdfFileVersion> GetSaveFileVersionAsync(string path)
         {
             if (_signedSourcePath != null && SamePath(path, _signedSourcePath))
-                throw new InvalidOperationException("전자서명된 원본은 덮어쓸 수 없습니다. 다른 이름으로 저장해 주세요. 편집한 사본의 전자서명은 유효하지 않습니다.");
+                throw new InvalidOperationException(Loc.Get("TheDigitallySignedOriginalCannotBeOverwrittenSaveUnder"));
             if (_filePath != null && SamePath(path, _filePath) && _diskVersion != null)
                 return Task.FromResult(_diskVersion);
             return Task.Run(() => PdfFileVersion.Read(path));
@@ -86,7 +87,7 @@ namespace PDF_simple_edit.Helpers
                 throw new InvalidOperationException(error);
             lock (_docLock)
             {
-                if (_pdfBytes == null) throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+                if (_pdfBytes == null) throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
                 if (!settings.Enabled) settings = new PdfProtectionSettings();
                 if (_protection == settings) return;
                 _protection = settings;
@@ -152,7 +153,7 @@ namespace PDF_simple_edit.Helpers
             lock (_docLock)
             {
                 if (!ReferenceEquals(_pdfBytes, expectedBytes) || expectedVersion.HasValue && EditVersion != expectedVersion)
-                    throw new InvalidOperationException("편집 중 문서가 변경되었습니다. 다시 시도해 주세요.");
+                    throw new InvalidOperationException(Loc.Get("TheDocumentChangedDuringEditingPleaseTryAgain"));
                 if (ReferenceEquals(expectedBytes, editedBytes) || expectedBytes.AsSpan().SequenceEqual(editedBytes)) return;
                 _undoStack.Push(new(_pdfBytes!, uiState, _stateId, change));
                 _redoStack.Clear();
@@ -176,7 +177,7 @@ namespace PDF_simple_edit.Helpers
 
         public async Task ApplyNativeTextEditsAsync(int pageIndex, IReadOnlyList<NativePdfTextEdit> edits)
         {
-            byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+            byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
             var result = await Task.Run(() => new NativePdfTextService().EditMany(snapshot, pageIndex, edits));
             CommitNativeTextEdit(snapshot, result.Bytes, pageIndex);
         }
@@ -297,7 +298,7 @@ namespace PDF_simple_edit.Helpers
 
         private async Task ApplyEditAsync(Action<PdfDocument> editAction, PdfDocumentChange change)
         {
-            byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+            byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
             long version = EditVersion;
             object? state = GetUIStateFunc?.Invoke();
             var edited = await Task.Run(() =>
@@ -315,7 +316,7 @@ namespace PDF_simple_edit.Helpers
         }
 
         public byte[] CreatePdfBytesWithEdits(Action<PdfDocument> editAction) =>
-            RewritePdfBytes(_pdfBytes ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다."), editAction);
+            RewritePdfBytes(_pdfBytes ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen")), editAction);
 
         public static byte[] RewritePdfBytes(byte[] snapshot, Action<PdfDocument> editAction, WriterProperties? writerProperties = null)
         {
@@ -736,14 +737,14 @@ namespace PDF_simple_edit.Helpers
         public async Task TransformAnnotationsAsync(int pageIndex,
             IReadOnlyList<(PdfAnnotation Source, PdfAnnotation Target)> edits)
         {
-            byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+            byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
             byte[] transformed = snapshot;
             var graphics = edits.Where(e => e.Source.IsOriginalImageReplacement).ToList();
             if (graphics.Count > 0)
             {
                 var contents = await ExtractPageContentsAsync(pageIndex);
                 var sources = _annotationTargetResolver.ResolveImages(graphics.Select(e => e.Source).ToList(), contents)
-                    ?? throw new InvalidOperationException("그래픽을 다시 선택해 주세요.");
+                    ?? throw new InvalidOperationException(Loc.Get("SelectTheGraphicsAgain"));
                 var requests = graphics.Select((e, i) => (sources[i], PdfAffineTransform.Between(
                     new(e.Source.X, e.Source.Y, e.Source.Width, e.Source.Height),
                     new(e.Target.X, e.Target.Y, e.Target.Width, e.Target.Height), e.Target.Rotation - e.Source.Rotation))).ToList();
@@ -773,7 +774,7 @@ namespace PDF_simple_edit.Helpers
                             Lines = selected.SelectMany(b => b.Lines).ToList(),
                             Bounds = PdfTextBox.Union(selected.Select(b => b.Bounds))
                         });
-                        if (block.Glyphs.Count == 0) throw new InvalidOperationException("텍스트를 다시 선택해 주세요.");
+                        if (block.Glyphs.Count == 0) throw new InvalidOperationException(Loc.Get("SelectTheTextAgain"));
                         return new NativePdfTextEdit(block, block.Text, Transform: PdfAffineTransform.Between(
                             new(source.X, source.Y, source.Width, source.Height),
                             new(e.Target.X, e.Target.Y, e.Target.Width, e.Target.Height), e.Target.Rotation - source.Rotation));
@@ -1007,14 +1008,14 @@ namespace PDF_simple_edit.Helpers
 
         public async Task<List<PdfAnnotation>> MergeIntoDocumentAsync(IReadOnlyCollection<string> sourceFiles)
         {
-            byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+            byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
             object? uiState = GetUIStateFunc?.Invoke();
             long version = EditVersion;
             byte[] merged = await _fileOperationService.CreateMergedBytesAsync(snapshot, sourceFiles);
             var signatures = await Task.Run(() => ReadSavedSignatures(merged));
             if (signatures.Count > 0)
                 merged = await Task.Run(() => RewritePdfBytes(merged, RemoveSavedSignatureAnnotations));
-            if (version != EditVersion) throw new InvalidOperationException("합치는 동안 문서가 변경되었습니다. 다시 시도해 주세요.");
+            if (version != EditVersion) throw new InvalidOperationException(Loc.Get("TheDocumentChangedDuringMergingPleaseTryAgain"));
             CommitPdfBytes(snapshot, merged, uiState, new(structureChanged: true), version);
             return signatures;
         }
@@ -1023,14 +1024,14 @@ namespace PDF_simple_edit.Helpers
         {
             if (_filePath != null && SamePath(outputPath, _filePath) ||
                 _signedSourcePath != null && SamePath(outputPath, _signedSourcePath))
-                throw new InvalidOperationException("파생 PDF는 원본과 다른 이름으로 저장해 주세요.");
+                throw new InvalidOperationException(Loc.Get("SaveTheDerivedPDFUnderADifferentNameFrom"));
         }
 
         public Task<bool> MergeFilesAsync(List<string> sourceFiles, string outputPath, byte[]? annotatedSnapshot)
         {
             EnsureDerivedOutputPath(outputPath);
             if (sourceFiles.Any(source => SamePath(source, outputPath)))
-                throw new InvalidOperationException("병합 결과는 입력 파일과 다른 이름으로 저장해 주세요.");
+                throw new InvalidOperationException(Loc.Get("SaveTheMergedOutputUnderADifferentNameFrom"));
             return _fileOperationService.MergeAsync(annotatedSnapshot, sourceFiles, outputPath, CreateProtectedWriterProperties());
         }
 

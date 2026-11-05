@@ -3,20 +3,21 @@
     x:Class="PDF_simple_edit.Controls.PageSidebar"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="using:PDF_simple_edit.Localization"
     xmlns:local="using:PDF_simple_edit">
     <Grid Background="#0A000000" BorderBrush="#20000000" BorderThickness="0,0,1,0">
         <Grid.RowDefinitions>
             <RowDefinition Height="40"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        <TextBlock Text="페이지" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" FontSize="13"/>
+        <TextBlock Text="{loc:LocalizedString Key=Pages}" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" FontSize="13"/>
         <ListView x:Name="PageList" Grid.Row="1" Padding="4"
                   AllowDrop="True" CanReorderItems="False" CanDragItems="True"
                   SelectionMode="Extended">
             <ListView.ContextFlyout>
                 <MenuFlyout x:Name="PageContextMenu">
-                    <MenuFlyoutItem x:Name="ExtractPagesMenuItem" Text="선택한 페이지 추출..."/>
-                    <MenuFlyoutItem x:Name="DeletePagesMenuItem" Text="선택한 페이지 삭제"/>
+                    <MenuFlyoutItem x:Name="ExtractPagesMenuItem" Text="{loc:LocalizedString Key=ExtractSelectedPages}"/>
+                    <MenuFlyoutItem x:Name="DeletePagesMenuItem" Text="{loc:LocalizedString Key=DeleteSelectedPages}"/>
                 </MenuFlyout>
             </ListView.ContextFlyout>
             <ListView.ItemTemplate>

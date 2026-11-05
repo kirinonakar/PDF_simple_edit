@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using iText.IO.Source;
 using iText.Kernel.Pdf;
 using iText.Kernel.Pdf.Canvas.Parser.Util;
@@ -34,7 +35,7 @@ internal static class PdfGraphicTransformService
             {
                 var stream = group.Key.StreamObjectNumber > 0 ? doc.GetPdfObject(group.Key.StreamObjectNumber) as PdfStream
                     : page.GetContentStream(group.Key.StreamIndex);
-                if (stream == null) throw new InvalidOperationException("그래픽 원본을 찾을 수 없습니다.");
+                if (stream == null) throw new InvalidOperationException(Loc.Get("CannotFindTheOriginalGraphic"));
                 var parser = new PdfCanvasParser(new PdfTokenizer(new RandomAccessFileOrArray(new RandomAccessSourceFactory().CreateSource(stream.GetBytes()))));
                 var operations = new List<List<PdfObject>>();
                 while (true)
@@ -60,15 +61,15 @@ internal static class PdfGraphicTransformService
                         (t.Operation.IsImageOperation ? name == "Do" && t.Operation.OperationIndex == imageIndex
                         : t.Operation.IsShadingOperation ? name == "sh" && t.Operation.OperationIndex == shadingIndex
                         : paint && t.Operation.OperationIndex == pathIndex)).ToList();
-                    if (matches.Count > 1) throw new InvalidOperationException("겹치는 그래픽 선택입니다.");
+                    if (matches.Count > 1) throw new InvalidOperationException(Loc.Get("TheSelectedGraphicsOverlap"));
                     if (matches.Count == 1)
                     {
                         var target = matches[0];
                         if (target.Operation.IsClipping || target.Operation.IsShadingOperation)
-                            throw new InvalidOperationException("공유 클리핑 영역이 있는 그래픽은 변환할 수 없습니다.");
+                            throw new InvalidOperationException(Loc.Get("GraphicsWithSharedClippingRegionsCannotBeTransformed"));
                         if (paint)
                         {
-                            if (pathCommands.Count == 0) throw new InvalidOperationException("그래픽 경로를 찾을 수 없습니다.");
+                            if (pathCommands.Count == 0) throw new InvalidOperationException(Loc.Get("CannotFindTheGraphicPath"));
                             // Path operands are local user coordinates. Conjugation
                             // includes the containing form's full placement matrix.
                             foreach (int command in pathCommands)
@@ -86,7 +87,7 @@ internal static class PdfGraphicTransformService
                     }
                     if (paint) pathCommands.Clear();
                 }
-                if (handled != group.Count()) throw new InvalidOperationException("그래픽이 변경되었습니다. 다시 선택해 주세요.");
+                if (handled != group.Count()) throw new InvalidOperationException(Loc.Get("TheGraphicsChangedSelectThemAgain"));
                 using var buffer = new MemoryStream();
                 var writer = new PdfOutputStream(buffer);
                 for (int i = 0; i < operations.Count; i++)

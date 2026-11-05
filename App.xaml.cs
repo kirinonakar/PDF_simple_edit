@@ -16,6 +16,8 @@ namespace PDF_simple_edit
             System.Environment.SetEnvironmentVariable(
                 "MICROSOFT_WINDOWSAPPRUNTIME_BASE_DIRECTORY", 
                 System.AppContext.BaseDirectory);
+            LocalizationService.Initialize(new EditorSettingsService().LoadLanguage());
+            Microsoft.Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = LocalizationService.CurrentLanguage;
             InitializeComponent();
 
             // Global exception handling

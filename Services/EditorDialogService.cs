@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -8,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace PDF_simple_edit.Services;
 
-public sealed record EditorPreferences(double RenderScale, string FontFamily, double FontSize);
+public sealed record EditorPreferences(double RenderScale, string FontFamily, double FontSize, string Language);
 
 public sealed class EditorDialogService
 {
@@ -27,16 +28,27 @@ public sealed class EditorDialogService
     public async Task<EditorPreferences> ShowSettingsAsync(
         XamlRoot xamlRoot,
         double renderScale,
-        TextFontSettings fontSettings)
+        TextFontSettings fontSettings,
+        string languagePreference)
     {
-        var renderQuality = new ComboBox { Header = "렌더링 품질", Width = 200 };
-        renderQuality.Items.Add(new ComboBoxItem { Content = "낮음 (빠름)", Tag = 1.0 });
-        renderQuality.Items.Add(new ComboBoxItem { Content = "보통", Tag = 1.5 });
-        renderQuality.Items.Add(new ComboBoxItem { Content = "높음", Tag = 2.0 });
-        renderQuality.Items.Add(new ComboBoxItem { Content = "최고 (느림)", Tag = 3.0 });
+        var language = new ComboBox { Header = Loc.Get("LanguageLabel"), MinWidth = 240 };
+        language.Items.Add(new ComboBoxItem { Content = Loc.Get("FollowWindowsLanguage"), Tag = Loc.SystemLanguage });
+        language.Items.Add(new ComboBoxItem { Content = Loc.Get("LanguageKorean"), Tag = Loc.Korean });
+        language.Items.Add(new ComboBoxItem { Content = Loc.Get("LanguageEnglish"), Tag = Loc.English });
+        language.SelectedIndex = Loc.NormalizePreference(languagePreference) switch
+        {
+            Loc.Korean => 1,
+            Loc.English => 2,
+            _ => 0
+        };
+        var renderQuality = new ComboBox { Header = Loc.Get("RenderingQuality"), Width = 200 };
+        renderQuality.Items.Add(new ComboBoxItem { Content = Loc.Get("LowFast"), Tag = 1.0 });
+        renderQuality.Items.Add(new ComboBoxItem { Content = Loc.Get("Normal"), Tag = 1.5 });
+        renderQuality.Items.Add(new ComboBoxItem { Content = Loc.Get("High"), Tag = 2.0 });
+        renderQuality.Items.Add(new ComboBoxItem { Content = Loc.Get("HighestSlow"), Tag = 3.0 });
         renderQuality.SelectedIndex = renderScale switch { 1.0 => 0, 1.5 => 1, 3.0 => 3, _ => 2 };
 
-        var fontFamily = new ComboBox { Header = "기본 폰트", Width = 200 };
+        var fontFamily = new ComboBox { Header = Loc.Get("DefaultFont"), Width = 200 };
         foreach (string family in FontFamilies
             .Concat(InstalledFontService.GetInstalledNotoFamilies())
             .Distinct(StringComparer.OrdinalIgnoreCase))
@@ -48,28 +60,42 @@ public sealed class EditorDialogService
             .FirstOrDefault(item => string.Equals(
                 item.Content?.ToString(), fontSettings.FontFamily, StringComparison.OrdinalIgnoreCase));
 
-        var fontSize = new ComboBox { Header = "기본 글자 크기", Width = 150 };
+        var fontSize = new ComboBox { Header = Loc.Get("DefaultFontSize"), Width = 150 };
         foreach (string size in FontSizes)
             fontSize.Items.Add(size);
         fontSize.SelectedItem = fontSettings.FontSize.ToString("0.##");
 
         var panel = new StackPanel { Spacing = 16, MinWidth = 400 };
+        panel.Children.Add(language);
+        panel.Children.Add(new TextBlock
+        {
+            Text = Loc.Get("LanguageRestartNotice"),
+            FontSize = 12,
+            Opacity = 0.7,
+            TextWrapping = TextWrapping.Wrap
+        });
         panel.Children.Add(renderQuality);
         panel.Children.Add(fontFamily);
         panel.Children.Add(fontSize);
         panel.Children.Add(new TextBlock
         {
-            Text = "설정은 자동으로 저장되며 다음 실행에도 적용됩니다.",
+            Text = Loc.Get("SettingsAreSavedAutomaticallyAndRestoredTheNextTime"),
             Opacity = 0.5,
             FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 8, 0, 0)
         });
 
         var dialog = new ContentDialog
         {
-            Title = "환경 설정",
-            Content = panel,
-            CloseButtonText = "닫기",
+            Title = Loc.Get("Preferences"),
+            Content = new ScrollViewer
+            {
+                Content = panel,
+                MaxHeight = Math.Max(180, Math.Min(580, xamlRoot.Size.Height - 220)),
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+            },
+            CloseButtonText = Loc.Get("Close"),
             XamlRoot = xamlRoot
         };
         await dialog.ShowAsync();
@@ -80,7 +106,8 @@ public sealed class EditorDialogService
         double selectedSize = double.TryParse(fontSize.SelectedItem?.ToString(), out double parsedSize)
             ? parsedSize
             : fontSettings.FontSize;
-        return new EditorPreferences(selectedScale, selectedFamily, selectedSize);
+        string selectedLanguage = (language.SelectedItem as ComboBoxItem)?.Tag as string ?? languagePreference;
+        return new EditorPreferences(selectedScale, selectedFamily, selectedSize, selectedLanguage);
     }
 
     public async Task ShowAboutAsync(XamlRoot xamlRoot)
@@ -103,8 +130,8 @@ public sealed class EditorDialogService
         });
         // Assembly version is populated from Package.appxmanifest at build time.
         var version = typeof(EditorDialogService).Assembly.GetName().Version;
-        panel.Children.Add(new TextBlock { Text = $"버전 {version}" });
-        panel.Children.Add(new TextBlock { Text = "WinUI 3 + iText 9 기반 PDF 편집기", Opacity = 0.7 });
+        panel.Children.Add(new TextBlock { Text = Loc.Format("Version", version) });
+        panel.Children.Add(new TextBlock { Text = Loc.Get("PDFEditorBuiltWithWinUI3IText9"), Opacity = 0.7 });
         panel.Children.Add(new HyperlinkButton
         {
             Content = "GitHub: kirinonakar/PDF_simple_edit",
@@ -113,7 +140,7 @@ public sealed class EditorDialogService
         });
         panel.Children.Add(new TextBlock
         {
-            Text = "Third-party libraries",
+            Text = Loc.Get("ThirdPartyLibraries"),
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Margin = new Thickness(0, 12, 0, 0)
         });
@@ -123,7 +150,6 @@ public sealed class EditorDialogService
                 + "iText Bouncy Castle adapter 9.5.0 — GNU AGPL v3 (© iText Group NV)\n"
                 + "iText pdfSweep 5.0.5 — GNU AGPL v3 (© iText Group NV)\n"
                 + "Bouncy Castle Cryptography 2.6.2 — MIT License\n"
-                + "Newtonsoft.Json 13.0.4 — MIT License\n"
                 + "Windows App SDK 1.8.260209005 — Microsoft Software License Terms",
             TextWrapping = TextWrapping.Wrap,
             FontSize = 11,
@@ -132,9 +158,9 @@ public sealed class EditorDialogService
 
         await new ContentDialog
         {
-            Title = "PDF Simple Editor 정보",
+            Title = Loc.Get("AboutPDFSimpleEditor"),
             Content = panel,
-            CloseButtonText = "닫기",
+            CloseButtonText = Loc.Get("Close"),
             XamlRoot = xamlRoot
         }.ShowAsync();
     }
@@ -144,7 +170,7 @@ public sealed class EditorDialogService
         {
             Title = title,
             Content = message,
-            CloseButtonText = "확인",
+            CloseButtonText = Loc.Get("OK"),
             XamlRoot = xamlRoot
         }.ShowAsync().AsTask();
 
@@ -156,7 +182,7 @@ public sealed class EditorDialogService
     {
         var passwordBox = new PasswordBox
         {
-            PlaceholderText = "PDF 암호",
+            PlaceholderText = Loc.Get("PDFPassword"),
             Width = 320,
             PasswordRevealMode = PasswordRevealMode.Peek
         };
@@ -165,18 +191,18 @@ public sealed class EditorDialogService
         panel.Children.Add(new TextBlock
         {
             Text = isRetry
-                ? "암호가 올바르지 않습니다. 다시 입력해 주세요."
-                : $"'{fileName}' 파일은 암호로 보호되어 있습니다.\n문서를 열려면 암호를 입력해 주세요.",
+                ? Loc.Get("IncorrectPasswordPleaseTryAgain")
+                : Loc.Format("IsPasswordProtectedEnterThePasswordToOpenThe", fileName),
             TextWrapping = TextWrapping.Wrap
         });
         panel.Children.Add(passwordBox);
 
         var dialog = new ContentDialog
         {
-            Title = "암호 입력",
+            Title = Loc.Get("EnterPassword"),
             Content = panel,
-            PrimaryButtonText = "열기",
-            CloseButtonText = "취소",
+            PrimaryButtonText = Loc.Get("Open"),
+            CloseButtonText = Loc.Get("Cancel"),
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = xamlRoot
         };

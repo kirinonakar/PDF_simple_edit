@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using PDF_simple_edit.Helpers;
 using PDF_simple_edit.Models;
 using System;
@@ -32,7 +33,7 @@ public sealed class PdfSaveService
 
     public Task<byte[]> CreateAnnotatedBytesAsync(PdfDocumentManager manager, IReadOnlyList<PdfAnnotation> annotations)
     {
-        byte[] source = manager.GetPdfBytes() ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+        byte[] source = manager.GetPdfBytes() ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
         var captured = CaptureAnnotations(annotations);
         return Task.Run(() => CreateAnnotatedBytes(manager, source, captured));
     }
@@ -40,7 +41,7 @@ public sealed class PdfSaveService
     public async Task RedactRegionAsync(PdfDocumentManager manager, List<PdfAnnotation> annotations,
         int pageIndex, PdfTextBox region)
     {
-        byte[] source = manager.GetPdfBytes() ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+        byte[] source = manager.GetPdfBytes() ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
         if (pageIndex < 0 || pageIndex >= manager.PageCount) throw new ArgumentOutOfRangeException(nameof(pageIndex));
         var size = manager.GetPageSize(pageIndex);
         region = PdfRegionRedactionService.Clip(region, size.width, size.height);
@@ -82,7 +83,7 @@ public sealed class PdfSaveService
 
     public async Task<bool> SaveAsync(PdfDocumentManager manager, List<PdfAnnotation> annotations, string filePath, bool isUserSave)
     {
-        byte[] source = manager.GetPdfBytes() ?? throw new InvalidOperationException("열린 PDF 문서가 없습니다.");
+        byte[] source = manager.GetPdfBytes() ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
         long version = manager.EditVersion;
         var protection = manager.Protection;
         var captured = CaptureAnnotations(annotations);
@@ -148,7 +149,7 @@ public sealed class PdfSaveService
                 var match = contents.FirstOrDefault(c => c.Type == PageContentType.Image &&
                     !used.Contains(c) && c.OverlayId == annotation.Id);
                 if (match == null && !annotation.IsApplied)
-                    throw new InvalidOperationException("저장한 이미지의 식별자를 찾을 수 없습니다. 원본 파일은 변경되지 않았습니다.");
+                    throw new InvalidOperationException(Loc.Get("CannotFindTheSavedImageIdentifierTheOriginalFile"));
                 annotation.IsApplied = true;
                 if (match == null) continue;
                 used.Add(match);

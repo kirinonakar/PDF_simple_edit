@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -84,7 +85,7 @@ public sealed class NativeInlineTextEditorController
             Opacity = 0, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
             IsSpellCheckEnabled = false, IsTextPredictionEnabled = false
         };
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_input, "PDF 원본 텍스트 편집");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_input, Loc.Get("EditOriginalPDFText"));
         Canvas.SetLeft(_input, annotation.X * Scale); Canvas.SetTop(_input, annotation.Y * Scale);
         _input.Document.SetText(TextSetOptions.None, _layout.Text);
         _input.TextChanged += TextChanged;
@@ -112,7 +113,7 @@ public sealed class NativeInlineTextEditorController
         _caretTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(530) };
         _caretTimer.Tick += (_, _) => { _caretVisible = !_caretVisible; DrawSelection(); };
         _caretTimer.Start(); _overlays(); DrawSelection();
-        status("원본 글꼴로 인라인 편집 · Ctrl+Enter 완료 · Esc 취소");
+        status(Loc.Get("InlineEditingWithTheOriginalFontCtrlEnterFinish"));
         return true;
     }
 
@@ -148,7 +149,7 @@ public sealed class NativeInlineTextEditorController
             if (version != _version || _input == null) return;
             using var bytes = new MemoryStream(result.Bytes);
             using var rendered = await PdfRenderHelper.RenderPageWithWindowsPdfStreamAsync(bytes.AsRandomAccessStream(), pageIndex, 2);
-            if (rendered == null) throw new InvalidOperationException("수정한 PDF 미리보기를 렌더링할 수 없습니다.");
+            if (rendered == null) throw new InvalidOperationException(Loc.Get("CannotRenderTheModifiedPDFPreview"));
             var bitmap = new BitmapImage(); await bitmap.SetSourceAsync(rendered.AsRandomAccessStream());
             if (version != _version || _input == null) return;
             _pageImage!.Source = bitmap; _preview = result; _previewText = text; _layout = result.Layout;
@@ -156,10 +157,10 @@ public sealed class NativeInlineTextEditorController
             _input.Width = Math.Max((_session!.Annotation.Width + Math.Max(0, bounds.Right - _session.Annotation.NativeText!.Bounds.Right)) * Scale, 20);
             _input.Height = Math.Max((_session.Annotation.Height + Math.Max(0, bounds.Bottom - _session.Annotation.NativeText!.Bounds.Bottom)) * Scale, 20);
             _status?.Invoke(result.FontSubstitutionStatus is string substitution
-                ? substitution + " · Ctrl+Enter 완료 · Esc 취소"
+                ? substitution + Loc.Get("CtrlEnterFinishEscCancel")
                 : source.Lines.Count > 1
-                ? "원본 글꼴로 문단 자동 줄바꿈 중 · Ctrl+Enter 완료 · Esc 취소"
-                : "원본 글꼴로 한 줄 오른쪽 확장 중 · Ctrl+Enter 완료 · Esc 취소");
+                ? Loc.Get("WrappingParagraphsWithTheOriginalFontCtrlEnterFinish")
+                : Loc.Get("ExtendingASingleLineToTheRightWithThe"));
             DrawSelection();
         }
         catch (Exception error)
@@ -299,7 +300,7 @@ public sealed class NativeInlineTextEditorController
             string? substitution = _preview.FontSubstitutionStatus;
             Cleanup(); if (_render != null) await _render(); _overlays?.Invoke();
             if (_restoreFocusOnFinish) _restoreFocus?.Invoke(false);
-            if (substitution != null) _status?.Invoke("텍스트 편집 완료 · " + substitution);
+            if (substitution != null) _status?.Invoke(Loc.Get("TextEditingComplete") + substitution);
         }
         catch (Exception error)
         {

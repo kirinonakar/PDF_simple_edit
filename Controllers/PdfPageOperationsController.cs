@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -51,13 +52,13 @@ public sealed class PdfPageOperationsController(
             SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
             SuggestedFileName = $"{Path.GetFileNameWithoutExtension(images[0].Name)}.pdf"
         };
-        savePicker.FileTypeChoices.Add("PDF 파일", new List<string> { ".pdf" });
+        savePicker.FileTypeChoices.Add(Loc.Get("PDFFile"), new List<string> { ".pdf" });
         InitializeWithWindow.Initialize(savePicker, getWindowHandle());
         StorageFile? outputFile = await savePicker.PickSaveFileAsync();
         if (outputFile == null)
             return;
 
-        statusText.Text = $"이미지 {images.Count}개를 PDF로 변환 중...";
+        statusText.Text = Loc.Format("ConvertingImagesToPDF", images.Count);
         loadingIndicator.IsActive = true;
         try
         {
@@ -72,19 +73,19 @@ public sealed class PdfPageOperationsController(
             if (await newTab.PdfManager.OpenAsync(outputFile.Path))
             {
                 addTab(newTab);
-                statusText.Text = $"PDF 생성 완료: {images.Count}페이지";
+                statusText.Text = Loc.Format("PDFCreatedPages", images.Count);
                 updateUIState();
             }
             else
             {
-                statusText.Text = "PDF는 저장되었지만 열 수 없습니다.";
-                await showErrorAsync("PDF 열기 오류", $"생성한 PDF를 열 수 없습니다: {outputFile.Path}");
+                statusText.Text = Loc.Get("ThePDFWasSavedButCannotBeOpened");
+                await showErrorAsync(Loc.Get("PDFOpeningError"), Loc.Format("CannotOpenTheCreatedPDF", outputFile.Path));
             }
         }
         catch (Exception ex)
         {
-            statusText.Text = "이미지를 PDF로 변환하지 못했습니다.";
-            await showErrorAsync("이미지 PDF 변환 오류", ex.Message);
+            statusText.Text = Loc.Get("CouldNotConvertImagesToPDF");
+            await showErrorAsync(Loc.Get("ImageToPDFConversionError"), ex.Message);
         }
         finally
         {
@@ -99,7 +100,7 @@ public sealed class PdfPageOperationsController(
         PdfMergeRequest? request = await operationService.CreateMergeRequestAsync(
             getXamlRoot(), getWindowHandle(), manager.IsLoaded);
         if (request == null || !ReferenceEquals(manager, getManager())) return;
-        statusText.Text = "PDF 합치기 중...";
+        statusText.Text = Loc.Get("MergingPDFs");
         loadingIndicator.IsActive = true;
         try
         {
@@ -119,19 +120,19 @@ public sealed class PdfPageOperationsController(
                 await operationService.ExecuteMergeAsync(manager, request, annotated);
                 var newTab = new PdfDocumentTab { FilePath = request.OutputPath, Header = Path.GetFileName(request.OutputPath)! };
                 if (await newTab.PdfManager.OpenWithPasswordAsync(request.OutputPath!, manager.SavePassword) != PdfOpenStatus.Success)
-                    throw new IOException("병합 파일은 저장되었지만 다시 열 수 없습니다.");
+                    throw new IOException(Loc.Get("TheMergedFileWasSavedButCannotBeReopened"));
                 newTab.PdfManager.SetProtection(manager.Protection);
                 newTab.PdfManager.MarkModified(false);
                 newTab.Annotations.AddRange(await Task.Run(newTab.PdfManager.LoadSavedSignatures));
                 addTab(newTab);
             }
-            statusText.Text = "PDF 합치기 완료";
+            statusText.Text = Loc.Get("PDFMergeComplete");
             updateUIState();
         }
         catch (Exception ex)
         {
-            statusText.Text = "PDF 합치기에 실패했습니다.";
-            await showErrorAsync("합치기 오류", ex.Message);
+            statusText.Text = Loc.Get("FailedToMergePDFs");
+            await showErrorAsync(Loc.Get("MergeError"), ex.Message);
         }
         finally { loadingIndicator.IsActive = false; }
     }
@@ -150,11 +151,11 @@ public sealed class PdfPageOperationsController(
             return;
         if (request.Ranges.Count == 0)
         {
-            statusText.Text = "나눌 페이지 범위가 올바르지 않습니다.";
+            statusText.Text = Loc.Get("ThePageRangesToSplitAreInvalid");
             return;
         }
 
-        statusText.Text = "PDF 나누기 중...";
+        statusText.Text = Loc.Get("SplittingPDF");
         loadingIndicator.IsActive = true;
         try
         {
@@ -163,12 +164,12 @@ public sealed class PdfPageOperationsController(
             byte[] annotated = await saveService.CreateAnnotatedBytesAsync(manager, tab!.Annotations);
             int resultCount = await manager.SplitFileAsync(
                 request.OutputFolder, request.Ranges.ToList(), annotated);
-            statusText.Text = $"PDF 나누기 완료: {resultCount}개 파일 생성됨";
+            statusText.Text = Loc.Format("PDFSplitCompleteFilesCreated", resultCount);
         }
         catch (Exception ex)
         {
-            statusText.Text = "PDF 나누기에 실패했습니다.";
-            await showErrorAsync("나누기 오류", $"나누기 중 에러 발생: {ex.Message}");
+            statusText.Text = Loc.Get("FailedToSplitThePDF");
+            await showErrorAsync(Loc.Get("SplitError"), Loc.Format("AnErrorOccurredWhileSplitting", ex.Message));
         }
         finally
         {
@@ -193,15 +194,15 @@ public sealed class PdfPageOperationsController(
         int pageCountBeforeDelete = requestedManager.PageCount;
         int currentPageBeforeDelete = getCurrentPageIndex();
         string pageDescription = pageIndices.Count == 1
-            ? $"페이지 {pageIndices[0] + 1}"
-            : $"선택한 {pageIndices.Count}개 페이지";
+            ? Loc.Format("Page2", pageIndices[0] + 1)
+            : Loc.Format("SelectedPages", pageIndices.Count);
 
         var dialog = new ContentDialog
         {
-            Title = "페이지 삭제",
-            Content = $"{pageDescription}를 삭제하시겠습니까?",
-            PrimaryButtonText = "삭제",
-            CloseButtonText = "취소",
+            Title = Loc.Get("DeletePages"),
+            Content = Loc.Format("Delete", pageDescription),
+            PrimaryButtonText = Loc.Get("Delete2"),
+            CloseButtonText = Loc.Get("Cancel"),
             XamlRoot = getXamlRoot()
         };
 
@@ -211,7 +212,7 @@ public sealed class PdfPageOperationsController(
             int deletedBeforeCurrent = pageIndices.Count(index => index < currentPageBeforeDelete);
             var manager = requestedManager;
             try { await manager.DeletePagesAsync(pageIndices); }
-            catch (Exception ex) { await showErrorAsync("페이지 삭제 오류", ex.Message); return; }
+            catch (Exception ex) { await showErrorAsync(Loc.Get("PageDeletionError"), ex.Message); return; }
             if (requestedTab != null)
             {
                 requestedTab.Annotations.RemoveAll(a => pageIndices.Contains(a.PageIndex));
@@ -228,8 +229,8 @@ public sealed class PdfPageOperationsController(
             // Document events refresh the page image and thumbnails after deletion.
             updateUIState();
             statusText.Text = pageCountBeforeDelete == getManager().PageCount + pageIndices.Count
-                ? "페이지가 삭제되었습니다"
-                : "페이지 삭제에 실패했습니다";
+                ? Loc.Get("PagesDeleted")
+                : Loc.Get("FailedToDeletePages");
         }
     }
 
@@ -248,14 +249,14 @@ public sealed class PdfPageOperationsController(
         {
             SuggestedFileName = GetSuggestedExtractFileName()
         };
-        picker.FileTypeChoices.Add("PDF 파일", new List<string> { ".pdf" });
+        picker.FileTypeChoices.Add(Loc.Get("PDFFile"), new List<string> { ".pdf" });
         InitializeWithWindow.Initialize(picker, getWindowHandle());
 
         StorageFile? file = await picker.PickSaveFileAsync();
         if (file == null || !ReferenceEquals(manager, getManager()))
             return;
 
-        statusText.Text = "페이지 추출 중...";
+        statusText.Text = Loc.Get("ExtractingPages");
         loadingIndicator.IsActive = true;
         try
         {
@@ -264,13 +265,13 @@ public sealed class PdfPageOperationsController(
             byte[] annotated = await saveService.CreateAnnotatedBytesAsync(manager, tab!.Annotations);
             bool success = await manager.ExportPagesAsync(file.Path, pageIndices, annotated);
             statusText.Text = success
-                ? $"페이지 추출 완료: {pageIndices.Count}개 페이지"
-                : "페이지 추출에 실패했습니다";
+                ? Loc.Format("ExtractedPages", pageIndices.Count)
+                : Loc.Get("FailedToExtractPages");
         }
         catch (Exception ex)
         {
-            statusText.Text = "페이지 추출에 실패했습니다.";
-            await showErrorAsync("페이지 추출 오류", $"페이지 추출 중 오류가 발생했습니다: {ex.Message}");
+            statusText.Text = Loc.Get("FailedToExtractPages2");
+            await showErrorAsync(Loc.Get("PageExtractionError"), Loc.Format("AnErrorOccurredWhileExtractingPages", ex.Message));
         }
         finally
         {
@@ -281,8 +282,8 @@ public sealed class PdfPageOperationsController(
     private string GetSuggestedExtractFileName()
     {
         string baseName = !string.IsNullOrWhiteSpace(getManager().FilePath)
-            ? Path.GetFileNameWithoutExtension(getManager().FilePath) ?? "문서"
-            : "문서";
-        return $"{baseName}_추출.pdf";
+            ? Path.GetFileNameWithoutExtension(getManager().FilePath) ?? Loc.Get("Document")
+            : Loc.Get("Document");
+        return Loc.Format("ExtractedPdf", baseName);
     }
 }

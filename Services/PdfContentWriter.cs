@@ -898,7 +898,7 @@ namespace PDF_simple_edit.Services
 
             var page = doc.GetPage(pageIndex + 1);
             if (width <= 0 || height <= 0) return;
-            ImageData data = ImageDataFactory.Create(imagePath);
+            ImageData data = PdfImageDataLoader.Create(imagePath);
             // Image coordinates are bottom-up inside the unit square.
             var imageToDisplay = new PdfAffineTransform(width, 0, 0, -height, x, y + height);
             var matrix = PdfPageCoordinates.ToDisplay(page).Inverse().After(imageToDisplay);

@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Xaml;
 using Microsoft.UI;
 using Microsoft.UI.Xaml.Controls;
@@ -64,7 +65,7 @@ public sealed class PdfFormOverlayController(
         }
         catch (Exception ex)
         {
-            statusText.Text = $"양식 필드를 읽을 수 없습니다: {ex.Message}";
+            statusText.Text = Loc.Format("CannotReadFormFields", ex.Message);
         }
     }
 
@@ -115,9 +116,9 @@ public sealed class PdfFormOverlayController(
         {
             string value = input.Value == input.OnValue ? "Off" : input.OnValue;
             _forms.SetValue(getManager(), input, value);
-            statusText.Text = $"양식: {input.Name}";
+            statusText.Text = Loc.Format("Form", input.Name);
         }
-        catch (Exception ex) { statusText.Text = $"양식 입력 오류: {ex.Message}"; }
+        catch (Exception ex) { statusText.Text = Loc.Format("FormInputError", ex.Message); }
     }
 
     public Task FinishActiveEditAsync()
@@ -138,9 +139,9 @@ public sealed class PdfFormOverlayController(
         try
         {
             _forms.SetValue(manager, input, value);
-            statusText.Text = $"양식: {input.Name} · 저장하려면 Ctrl+S";
+            statusText.Text = Loc.Format("FormCtrlSToSave", input.Name);
         }
-        catch (Exception ex) { statusText.Text = $"양식 입력 오류: {ex.Message}"; }
+        catch (Exception ex) { statusText.Text = Loc.Format("FormInputError", ex.Message); }
     }
 
     private void CancelActiveEdit()

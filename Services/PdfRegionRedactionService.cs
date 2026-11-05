@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,7 +19,7 @@ internal static class PdfRegionRedactionService
         if (!double.IsFinite(region.X) || !double.IsFinite(region.Y) ||
             !double.IsFinite(region.Width) || !double.IsFinite(region.Height) ||
             region.Width <= 0 || region.Height <= 0)
-            throw new ArgumentException("삭제할 영역을 드래그해 주세요.", nameof(region));
+            throw new ArgumentException(Loc.Get("DragARegionToRedact"), nameof(region));
         double left = Math.Clamp(region.X, 0, width), top = Math.Clamp(region.Y, 0, height);
         double right = Math.Clamp(region.Right, 0, width), bottom = Math.Clamp(region.Bottom, 0, height);
         return new(left, top, right - left, bottom - top);

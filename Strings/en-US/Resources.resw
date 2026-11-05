@@ -1,0 +1,1324 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="SaveChanges" xml:space="preserve">
+    <value>Save changes</value>
+  </data>
+  <data name="HasChangedSaveYourChanges" xml:space="preserve">
+    <value>'{0}' has changed. Save your changes?</value>
+  </data>
+  <data name="Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="DonTSave" xml:space="preserve">
+    <value>Don't save</value>
+  </data>
+  <data name="Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="NewDocument" xml:space="preserve">
+    <value>New document</value>
+  </data>
+  <data name="Page" xml:space="preserve">
+    <value>Page: {0} / {1}</value>
+  </data>
+  <data name="Ready" xml:space="preserve">
+    <value>Ready</value>
+  </data>
+  <data name="Page00" xml:space="preserve">
+    <value>Page: 0 / 0</value>
+  </data>
+  <data name="ConfirmExit" xml:space="preserve">
+    <value>Confirm exit</value>
+  </data>
+  <data name="TabsHaveUnsavedChangesDoYouWantToExit" xml:space="preserve">
+    <value>{0} tabs have unsaved changes. Do you want to exit?</value>
+  </data>
+  <data name="SaveAllAndExit" xml:space="preserve">
+    <value>Save all and exit</value>
+  </data>
+  <data name="ExitWithoutSaving" xml:space="preserve">
+    <value>Exit without saving</value>
+  </data>
+  <data name="ReorderPages" xml:space="preserve">
+    <value>Reorder pages</value>
+  </data>
+  <data name="OpenPDF" xml:space="preserve">
+    <value>Open PDF</value>
+  </data>
+  <data name="Undone" xml:space="preserve">
+    <value>Undone</value>
+  </data>
+  <data name="Redone" xml:space="preserve">
+    <value>Redone</value>
+  </data>
+  <data name="Drawing" xml:space="preserve">
+    <value>Drawing</value>
+  </data>
+  <data name="ToolAddText" xml:space="preserve">
+    <value>Tool: Add text</value>
+  </data>
+  <data name="ToolHighlightText" xml:space="preserve">
+    <value>Tool: Highlight text</value>
+  </data>
+  <data name="ToolRedactRegionDragToRemoveContentEscCancel" xml:space="preserve">
+    <value>Tool: Redact region · Drag to remove content · Esc: Cancel</value>
+  </data>
+  <data name="ToolDrawSignature" xml:space="preserve">
+    <value>Tool: Draw signature</value>
+  </data>
+  <data name="ToolFreehandDragToDrawEscCancel" xml:space="preserve">
+    <value>Tool: Freehand · Drag to draw · Esc: Cancel</value>
+  </data>
+  <data name="ToolRectangleDragToDrawEscCancel" xml:space="preserve">
+    <value>Tool: Rectangle · Drag to draw · Esc: Cancel</value>
+  </data>
+  <data name="ToolEllipseDragToDrawEscCancel" xml:space="preserve">
+    <value>Tool: Ellipse · Drag to draw · Esc: Cancel</value>
+  </data>
+  <data name="ToolArrowDragFromStartToEndEscCancel" xml:space="preserve">
+    <value>Tool: Arrow · Drag from start to end · Esc: Cancel</value>
+  </data>
+  <data name="ToolTriangleArrowDragFromStartToEndEsc" xml:space="preserve">
+    <value>Tool: Triangle arrow · Drag from start to end · Esc: Cancel</value>
+  </data>
+  <data name="ToolOutlineArrowTriangleHeadDragFromStartTo" xml:space="preserve">
+    <value>Tool: Outline arrow (triangle head) · Drag from start to end · Esc: Cancel</value>
+  </data>
+  <data name="ToolPolygonClickVerticesDoubleClickEnterFinishEsc" xml:space="preserve">
+    <value>Tool: Polygon · Click vertices · Double-click/Enter: Finish · Esc: Cancel</value>
+  </data>
+  <data name="ToolAddImage" xml:space="preserve">
+    <value>Tool: Add image</value>
+  </data>
+  <data name="ToolSelectText" xml:space="preserve">
+    <value>Tool: Select text</value>
+  </data>
+  <data name="ToolSelectGraphicsClickOrSelectARegionThen" xml:space="preserve">
+    <value>Tool: Select graphics · Click or select a region, then press Delete</value>
+  </data>
+  <data name="ToolColorPicker" xml:space="preserve">
+    <value>Tool: Color picker</value>
+  </data>
+  <data name="RemovingContentFromTheSelectedRegion" xml:space="preserve">
+    <value>Removing content from the selected region...</value>
+  </data>
+  <data name="RegionContentRemovedCtrlZUndoCtrlSSave" xml:space="preserve">
+    <value>Region content removed (Ctrl+Z: Undo, Ctrl+S: Save).</value>
+  </data>
+  <data name="FailedToRedactTheRegion" xml:space="preserve">
+    <value>Failed to redact the region.</value>
+  </data>
+  <data name="RegionRedactionError" xml:space="preserve">
+    <value>Region redaction error</value>
+  </data>
+  <data name="Searching" xml:space="preserve">
+    <value>Searching...</value>
+  </data>
+  <data name="DragARegionToRedactReleaseToRemoveContent" xml:space="preserve">
+    <value>Drag a region to redact (release to remove content, Esc: Cancel).</value>
+  </data>
+  <data name="ObjectSelectedDragToMove" xml:space="preserve">
+    <value>Object selected (drag to move)</value>
+  </data>
+  <data name="DragARectangleAroundTheRegionToRedact" xml:space="preserve">
+    <value>Drag a rectangle around the region to redact.</value>
+  </data>
+  <data name="TextRegionSelectedDoubleClickEditAltDragMove" xml:space="preserve">
+    <value>Text region selected (double-click: Edit, Alt+drag: Move)</value>
+  </data>
+  <data name="NoTextInTheSelectedRegion" xml:space="preserve">
+    <value>No text in the selected region.</value>
+  </data>
+  <data name="TextHighlightAddedAppliedWhenSaved" xml:space="preserve">
+    <value>Text highlight added (applied when saved)</value>
+  </data>
+  <data name="Resizing" xml:space="preserve">
+    <value>Resizing...</value>
+  </data>
+  <data name="AnalyzingPageContent" xml:space="preserve">
+    <value>Analyzing page content...</value>
+  </data>
+  <data name="ReplacementTextRegionSelectedDoubleClickEditDragMove" xml:space="preserve">
+    <value>Replacement text region selected (double-click: Edit, drag: Move)</value>
+  </data>
+  <data name="GraphicsSelectedAltDragMoveHandlesResizeRotateDelete" xml:space="preserve">
+    <value>Graphics selected (Alt+drag: Move, handles: Resize/rotate, Delete: Remove)</value>
+  </data>
+  <data name="ImageSelectedDragToMoveOrUseTheHandles" xml:space="preserve">
+    <value>Image selected. Drag to move or use the handles to resize.</value>
+  </data>
+  <data name="ObjectsSelected" xml:space="preserve">
+    <value>{0} objects selected</value>
+  </data>
+  <data name="GraphicsSelectedDeleteRemove" xml:space="preserve">
+    <value>{0} graphics selected (Delete: Remove)</value>
+  </data>
+  <data name="NoGraphicsInTheRegionEncloseEntireObjectsTo" xml:space="preserve">
+    <value>No graphics in the region. Enclose entire objects to select them.</value>
+  </data>
+  <data name="DrawingSignature" xml:space="preserve">
+    <value>Drawing signature...</value>
+  </data>
+  <data name="SignatureAddedAppliedWhenSaved" xml:space="preserve">
+    <value>Signature added (applied when saved)</value>
+  </data>
+  <data name="TheSignatureIsTooShort" xml:space="preserve">
+    <value>The signature is too short.</value>
+  </data>
+  <data name="PickingAColor" xml:space="preserve">
+    <value>Picking a color...</value>
+  </data>
+  <data name="ColorPicked" xml:space="preserve">
+    <value>Color picked: {0}</value>
+  </data>
+  <data name="TheTextInThisPDFCannotBeTransformedWhile" xml:space="preserve">
+    <value>The text in this PDF cannot be transformed while preserving the background.</value>
+  </data>
+  <data name="TheGraphicsInThisPDFCannotBeTransformedWhile" xml:space="preserve">
+    <value>The graphics in this PDF cannot be transformed while preserving the original content.</value>
+  </data>
+  <data name="SizeRotationChanged" xml:space="preserve">
+    <value>Size/rotation changed</value>
+  </data>
+  <data name="TheTextInThisPDFCannotBeMovedWhile" xml:space="preserve">
+    <value>The text in this PDF cannot be moved while preserving the background.</value>
+  </data>
+  <data name="TheImagesInThisPDFCannotBeMovedWhile" xml:space="preserve">
+    <value>The images in this PDF cannot be moved while preserving the original content.</value>
+  </data>
+  <data name="OriginalTextAndImagesCannotBeMovedTogether" xml:space="preserve">
+    <value>Original text and images cannot be moved together.</value>
+  </data>
+  <data name="PositionChangedAppliedWhenSaved" xml:space="preserve">
+    <value>Position changed (applied when saved)</value>
+  </data>
+  <data name="CutObjects" xml:space="preserve">
+    <value>Cut {0} objects.</value>
+  </data>
+  <data name="CutImage" xml:space="preserve">
+    <value>Cut image.</value>
+  </data>
+  <data name="CutDrawing" xml:space="preserve">
+    <value>Cut drawing.</value>
+  </data>
+  <data name="CutText" xml:space="preserve">
+    <value>Cut text.</value>
+  </data>
+  <data name="CopiedObjectsToTheClipboard" xml:space="preserve">
+    <value>Copied {0} objects to the clipboard.</value>
+  </data>
+  <data name="CopiedImageToTheClipboard" xml:space="preserve">
+    <value>Copied image to the clipboard.</value>
+  </data>
+  <data name="CopiedDrawingToTheClipboard" xml:space="preserve">
+    <value>Copied drawing to the clipboard.</value>
+  </data>
+  <data name="CopiedTextToTheClipboard" xml:space="preserve">
+    <value>Copied text to the clipboard.</value>
+  </data>
+  <data name="CouldNotCopyToTheClipboard" xml:space="preserve">
+    <value>Could not copy to the clipboard.</value>
+  </data>
+  <data name="PastedImageAsANewObject" xml:space="preserve">
+    <value>Pasted image as a new object.</value>
+  </data>
+  <data name="PastedTextAsANewObject" xml:space="preserve">
+    <value>Pasted text as a new object.</value>
+  </data>
+  <data name="NoTextOrImagesAvailableToPaste" xml:space="preserve">
+    <value>No text or images available to paste.</value>
+  </data>
+  <data name="CouldNotPasteTheClipboardContents" xml:space="preserve">
+    <value>Could not paste the clipboard contents.</value>
+  </data>
+  <data name="PastedObjects" xml:space="preserve">
+    <value>Pasted {0} objects.</value>
+  </data>
+  <data name="PastedDrawingAsANewObject" xml:space="preserve">
+    <value>Pasted drawing as a new object.</value>
+  </data>
+  <data name="OriginalTextAndImagesCannotBeDeletedTogether" xml:space="preserve">
+    <value>Original text and images cannot be deleted together.</value>
+  </data>
+  <data name="ThisPDFTextCannotBeDeletedWhilePreservingThe" xml:space="preserve">
+    <value>This PDF text cannot be deleted while preserving the background.</value>
+  </data>
+  <data name="TheSavedTextCannotBeDeletedSafely" xml:space="preserve">
+    <value>The saved text cannot be deleted safely.</value>
+  </data>
+  <data name="TheGraphicsInThisPDFCannotBeDeletedSafely" xml:space="preserve">
+    <value>The graphics in this PDF cannot be deleted safely.</value>
+  </data>
+  <data name="DeletedObjects" xml:space="preserve">
+    <value>Deleted {0} objects</value>
+  </data>
+  <data name="GraphicsDeleted" xml:space="preserve">
+    <value>Graphics deleted.</value>
+  </data>
+  <data name="ImageDeleted" xml:space="preserve">
+    <value>Image deleted.</value>
+  </data>
+  <data name="DrawingDeleted" xml:space="preserve">
+    <value>Drawing deleted.</value>
+  </data>
+  <data name="TextDeleted" xml:space="preserve">
+    <value>Text deleted.</value>
+  </data>
+  <data name="SelectOnlyOriginalTextToAlignIt" xml:space="preserve">
+    <value>Select only original text to align it.</value>
+  </data>
+  <data name="OriginalTextAligned" xml:space="preserve">
+    <value>Original text aligned.</value>
+  </data>
+  <data name="NoPDFDocumentIsOpen" xml:space="preserve">
+    <value>No PDF document is open.</value>
+  </data>
+  <data name="CouldNotFindTheModifiedTextRegionAgain" xml:space="preserve">
+    <value>Could not find the modified text region again.</value>
+  </data>
+  <data name="OriginalTextStyleChanged" xml:space="preserve">
+    <value>Original text style changed.</value>
+  </data>
+  <data name="TheSavedTextCannotBeEditedSafely" xml:space="preserve">
+    <value>The saved text cannot be edited safely.</value>
+  </data>
+  <data name="ThisPDFTextCannotBeEditedWhilePreservingThe" xml:space="preserve">
+    <value>This PDF text cannot be edited while preserving the background.</value>
+  </data>
+  <data name="ThisPDFTextCannotBeMovedWhilePreservingThe" xml:space="preserve">
+    <value>This PDF text cannot be moved while preserving the background.</value>
+  </data>
+  <data name="DragToRotateShift15Increments" xml:space="preserve">
+    <value>Drag to rotate · Shift: 15° increments</value>
+  </data>
+  <data name="ProtectionSettingsChangedSaveThePDFToApplyThem" xml:space="preserve">
+    <value>Protection settings changed. Save the PDF to apply them.</value>
+  </data>
+  <data name="ProtectionSettingsError" xml:space="preserve">
+    <value>Protection settings error</value>
+  </data>
+  <data name="OpeningFile" xml:space="preserve">
+    <value>Opening file...</value>
+  </data>
+  <data name="WaitingForPassword" xml:space="preserve">
+    <value>Waiting for password...</value>
+  </data>
+  <data name="FileOpeningCanceled" xml:space="preserve">
+    <value>File opening canceled.</value>
+  </data>
+  <data name="DigitallySignedDocument" xml:space="preserve">
+    <value>Digitally signed document</value>
+  </data>
+  <data name="ThisDocumentIsDigitallySignedTheSignatureOnAn" xml:space="preserve">
+    <value>This document is digitally signed. The signature on an edited copy will be invalid. To protect the original, you can only save under a different name.</value>
+  </data>
+  <data name="Error" xml:space="preserve">
+    <value>Error</value>
+  </data>
+  <data name="CannotOpenThePDFFile" xml:space="preserve">
+    <value>Cannot open the PDF file.</value>
+  </data>
+  <data name="AnErrorOccurredWhileOpeningTheFile" xml:space="preserve">
+    <value>An error occurred while opening the file: {0}</value>
+  </data>
+  <data name="PDFFile" xml:space="preserve">
+    <value>PDF file</value>
+  </data>
+  <data name="NewDocumentPdf" xml:space="preserve">
+    <value>NewDocument.pdf</value>
+  </data>
+  <data name="PrintingError" xml:space="preserve">
+    <value>Printing error</value>
+  </data>
+  <data name="AnErrorOccurredWhilePrinting" xml:space="preserve">
+    <value>An error occurred while printing: {0}</value>
+  </data>
+  <data name="Saving" xml:space="preserve">
+    <value>Saving...</value>
+  </data>
+  <data name="PreparingToRender" xml:space="preserve">
+    <value>Preparing to render...</value>
+  </data>
+  <data name="SaveAgain" xml:space="preserve">
+    <value>Save again</value>
+  </data>
+  <data name="TheFileWasSavedButMoreEditsWereMade" xml:space="preserve">
+    <value>The file was saved, but more edits were made during saving. Please save again.</value>
+  </data>
+  <data name="SaveError" xml:space="preserve">
+    <value>Save error</value>
+  </data>
+  <data name="AnErrorOccurredWhileSaving" xml:space="preserve">
+    <value>An error occurred while saving: {0}</value>
+  </data>
+  <data name="TextNotFound" xml:space="preserve">
+    <value>Text not found.</value>
+  </data>
+  <data name="SearchResults" xml:space="preserve">
+    <value>Search results</value>
+  </data>
+  <data name="CouldNotFind" xml:space="preserve">
+    <value>Could not find '{0}'.</value>
+  </data>
+  <data name="PageMatch" xml:space="preserve">
+    <value>Page {0}: Match {1}/{2}</value>
+  </data>
+  <data name="SearchError" xml:space="preserve">
+    <value>Search error: </value>
+  </data>
+  <data name="PolygonClickToAddVerticesDoubleClickEnterTo" xml:space="preserve">
+    <value>Polygon: Click to add vertices · Double-click/Enter to finish · Esc to cancel</value>
+  </data>
+  <data name="DrawingEscCancel" xml:space="preserve">
+    <value>Drawing... (Esc: Cancel)</value>
+  </data>
+  <data name="DrawingCanceled" xml:space="preserve">
+    <value>Drawing canceled.</value>
+  </data>
+  <data name="AddAtLeastThreeNonCollinearVerticesToThe" xml:space="preserve">
+    <value>Add at least three non-collinear vertices to the polygon.</value>
+  </data>
+  <data name="DrawingAddedUseSelectGraphicsGToEditIt" xml:space="preserve">
+    <value>Drawing added. Use Select graphics (G) to edit it.</value>
+  </data>
+  <data name="PreserveOriginalChangeFontSizeColorBoldItalicAlt" xml:space="preserve">
+    <value>Preserve original · Change font, size, color, bold, italic · Alt+drag to move</value>
+  </data>
+  <data name="ChangeFontAndSizeEditByReplacingOriginalText" xml:space="preserve">
+    <value>Change font and size · Edit by replacing original text</value>
+  </data>
+  <data name="SwitchedToOriginalPreservingModeSelectTheTextAgain" xml:space="preserve">
+    <value>Switched to original-preserving mode. Select the text again.</value>
+  </data>
+  <data name="SwitchedToReplacementModeSelectTheTextAgain" xml:space="preserve">
+    <value>Switched to replacement mode. Select the text again.</value>
+  </data>
+  <data name="ImageAddedAppliedWhenSaved" xml:space="preserve">
+    <value>Image added (applied when saved)</value>
+  </data>
+  <data name="ExtractingImages" xml:space="preserve">
+    <value>Extracting images...</value>
+  </data>
+  <data name="NoImagesToExtract" xml:space="preserve">
+    <value>No images to extract.</value>
+  </data>
+  <data name="ExtractedImages" xml:space="preserve">
+    <value>Extracted {0} images</value>
+  </data>
+  <data name="ExtractedImagesFailed" xml:space="preserve">
+    <value>Extracted {0} images, {1} failed</value>
+  </data>
+  <data name="ImageExtractionError" xml:space="preserve">
+    <value>Image extraction error</value>
+  </data>
+  <data name="AnErrorOccurredWhileExtractingImages" xml:space="preserve">
+    <value>An error occurred while extracting images: {0}</value>
+  </data>
+  <data name="FailedToExtractImages" xml:space="preserve">
+    <value>Failed to extract images.</value>
+  </data>
+  <data name="CannotFindTheImageFileToSave" xml:space="preserve">
+    <value>Cannot find the image file to save.</value>
+  </data>
+  <data name="ImageSaved" xml:space="preserve">
+    <value>Image saved: {0}</value>
+  </data>
+  <data name="ImageSaveError" xml:space="preserve">
+    <value>Image save error</value>
+  </data>
+  <data name="AnErrorOccurredWhileSavingTheImage" xml:space="preserve">
+    <value>An error occurred while saving the image: {0}</value>
+  </data>
+  <data name="FailedToSaveTheImage" xml:space="preserve">
+    <value>Failed to save the image.</value>
+  </data>
+  <data name="JPEGImage" xml:space="preserve">
+    <value>JPEG image</value>
+  </data>
+  <data name="TIFFImage" xml:space="preserve">
+    <value>TIFF image</value>
+  </data>
+  <data name="JPEG2000Image" xml:space="preserve">
+    <value>JPEG 2000 image</value>
+  </data>
+  <data name="BMPImage" xml:space="preserve">
+    <value>BMP image</value>
+  </data>
+  <data name="GIFImage" xml:space="preserve">
+    <value>GIF image</value>
+  </data>
+  <data name="JBIG2Image" xml:space="preserve">
+    <value>JBIG2 image</value>
+  </data>
+  <data name="PNGImage" xml:space="preserve">
+    <value>PNG image</value>
+  </data>
+  <data name="CannotRenderTheEditingBackground" xml:space="preserve">
+    <value>Cannot render the editing background.</value>
+  </data>
+  <data name="TextDeletedEditing" xml:space="preserve">
+    <value>Text deleted (editing)</value>
+  </data>
+  <data name="TextEditsAreBeingPreviewedInRealTime" xml:space="preserve">
+    <value>Text edits are being previewed in real time.</value>
+  </data>
+  <data name="TextDeleted2" xml:space="preserve">
+    <value>Text deleted</value>
+  </data>
+  <data name="TextModifiedAppliedWhenSaved" xml:space="preserve">
+    <value>Text modified (applied when saved)</value>
+  </data>
+  <data name="TextAddedAppliedWhenSaved" xml:space="preserve">
+    <value>Text added (applied when saved)</value>
+  </data>
+  <data name="EditOriginalPDFText" xml:space="preserve">
+    <value>Edit original PDF text</value>
+  </data>
+  <data name="InlineEditingWithTheOriginalFontCtrlEnterFinish" xml:space="preserve">
+    <value>Inline editing with the original font · Ctrl+Enter: Finish · Esc: Cancel</value>
+  </data>
+  <data name="CannotRenderTheModifiedPDFPreview" xml:space="preserve">
+    <value>Cannot render the modified PDF preview.</value>
+  </data>
+  <data name="CtrlEnterFinishEscCancel" xml:space="preserve">
+    <value> · Ctrl+Enter: Finish · Esc: Cancel</value>
+  </data>
+  <data name="WrappingParagraphsWithTheOriginalFontCtrlEnterFinish" xml:space="preserve">
+    <value>Wrapping paragraphs with the original font · Ctrl+Enter: Finish · Esc: Cancel</value>
+  </data>
+  <data name="ExtendingASingleLineToTheRightWithThe" xml:space="preserve">
+    <value>Extending a single line to the right with the original font · Ctrl+Enter: Finish · Esc: Cancel</value>
+  </data>
+  <data name="TextEditingComplete" xml:space="preserve">
+    <value>Text editing complete · </value>
+  </data>
+  <data name="RenderingPage" xml:space="preserve">
+    <value>Rendering page...</value>
+  </data>
+  <data name="PageOrderChanged" xml:space="preserve">
+    <value>Page order changed</value>
+  </data>
+  <data name="FailedToReorderPages" xml:space="preserve">
+    <value>Failed to reorder pages: </value>
+  </data>
+  <data name="CannotReadFormFields" xml:space="preserve">
+    <value>Cannot read form fields: {0}</value>
+  </data>
+  <data name="Form" xml:space="preserve">
+    <value>Form: {0}</value>
+  </data>
+  <data name="FormInputError" xml:space="preserve">
+    <value>Form input error: {0}</value>
+  </data>
+  <data name="FormCtrlSToSave" xml:space="preserve">
+    <value>Form: {0} · Ctrl+S to save</value>
+  </data>
+  <data name="ConvertingImagesToPDF" xml:space="preserve">
+    <value>Converting {0} images to PDF...</value>
+  </data>
+  <data name="PDFCreatedPages" xml:space="preserve">
+    <value>PDF created: {0} pages</value>
+  </data>
+  <data name="ThePDFWasSavedButCannotBeOpened" xml:space="preserve">
+    <value>The PDF was saved but cannot be opened.</value>
+  </data>
+  <data name="PDFOpeningError" xml:space="preserve">
+    <value>PDF opening error</value>
+  </data>
+  <data name="CannotOpenTheCreatedPDF" xml:space="preserve">
+    <value>Cannot open the created PDF: {0}</value>
+  </data>
+  <data name="CouldNotConvertImagesToPDF" xml:space="preserve">
+    <value>Could not convert images to PDF.</value>
+  </data>
+  <data name="ImageToPDFConversionError" xml:space="preserve">
+    <value>Image to PDF conversion error</value>
+  </data>
+  <data name="MergingPDFs" xml:space="preserve">
+    <value>Merging PDFs...</value>
+  </data>
+  <data name="TheMergedFileWasSavedButCannotBeReopened" xml:space="preserve">
+    <value>The merged file was saved but cannot be reopened.</value>
+  </data>
+  <data name="PDFMergeComplete" xml:space="preserve">
+    <value>PDF merge complete</value>
+  </data>
+  <data name="FailedToMergePDFs" xml:space="preserve">
+    <value>Failed to merge PDFs.</value>
+  </data>
+  <data name="MergeError" xml:space="preserve">
+    <value>Merge error</value>
+  </data>
+  <data name="ThePageRangesToSplitAreInvalid" xml:space="preserve">
+    <value>The page ranges to split are invalid.</value>
+  </data>
+  <data name="SplittingPDF" xml:space="preserve">
+    <value>Splitting PDF...</value>
+  </data>
+  <data name="PDFSplitCompleteFilesCreated" xml:space="preserve">
+    <value>PDF split complete: {0} files created</value>
+  </data>
+  <data name="FailedToSplitThePDF" xml:space="preserve">
+    <value>Failed to split the PDF.</value>
+  </data>
+  <data name="SplitError" xml:space="preserve">
+    <value>Split error</value>
+  </data>
+  <data name="AnErrorOccurredWhileSplitting" xml:space="preserve">
+    <value>An error occurred while splitting: {0}</value>
+  </data>
+  <data name="Page2" xml:space="preserve">
+    <value>Page {0}</value>
+  </data>
+  <data name="SelectedPages" xml:space="preserve">
+    <value>{0} selected pages</value>
+  </data>
+  <data name="DeletePages" xml:space="preserve">
+    <value>Delete pages</value>
+  </data>
+  <data name="Delete" xml:space="preserve">
+    <value>Delete {0}?</value>
+  </data>
+  <data name="Delete2" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="PageDeletionError" xml:space="preserve">
+    <value>Page deletion error</value>
+  </data>
+  <data name="PagesDeleted" xml:space="preserve">
+    <value>Pages deleted</value>
+  </data>
+  <data name="FailedToDeletePages" xml:space="preserve">
+    <value>Failed to delete pages</value>
+  </data>
+  <data name="ExtractingPages" xml:space="preserve">
+    <value>Extracting pages...</value>
+  </data>
+  <data name="ExtractedPages" xml:space="preserve">
+    <value>Extracted {0} pages</value>
+  </data>
+  <data name="FailedToExtractPages" xml:space="preserve">
+    <value>Failed to extract pages</value>
+  </data>
+  <data name="FailedToExtractPages2" xml:space="preserve">
+    <value>Failed to extract pages.</value>
+  </data>
+  <data name="PageExtractionError" xml:space="preserve">
+    <value>Page extraction error</value>
+  </data>
+  <data name="AnErrorOccurredWhileExtractingPages" xml:space="preserve">
+    <value>An error occurred while extracting pages: {0}</value>
+  </data>
+  <data name="Document" xml:space="preserve">
+    <value>Document</value>
+  </data>
+  <data name="ExtractedPdf" xml:space="preserve">
+    <value>{0}_extracted.pdf</value>
+  </data>
+  <data name="NoRecentFiles" xml:space="preserve">
+    <value>No recent files</value>
+  </data>
+  <data name="ClearRecentFiles" xml:space="preserve">
+    <value>Clear recent files</value>
+  </data>
+  <data name="FileNotFound" xml:space="preserve">
+    <value>File not found.</value>
+  </data>
+  <data name="TheDigitallySignedOriginalCannotBeOverwrittenSaveUnder" xml:space="preserve">
+    <value>The digitally signed original cannot be overwritten. Save under a different name. The signature on the edited copy will be invalid.</value>
+  </data>
+  <data name="TheDocumentChangedDuringEditingPleaseTryAgain" xml:space="preserve">
+    <value>The document changed during editing. Please try again.</value>
+  </data>
+  <data name="SelectTheGraphicsAgain" xml:space="preserve">
+    <value>Select the graphics again.</value>
+  </data>
+  <data name="SelectTheTextAgain" xml:space="preserve">
+    <value>Select the text again.</value>
+  </data>
+  <data name="TheDocumentChangedDuringMergingPleaseTryAgain" xml:space="preserve">
+    <value>The document changed during merging. Please try again.</value>
+  </data>
+  <data name="SaveTheDerivedPDFUnderADifferentNameFrom" xml:space="preserve">
+    <value>Save the derived PDF under a different name from the original.</value>
+  </data>
+  <data name="SaveTheMergedOutputUnderADifferentNameFrom" xml:space="preserve">
+    <value>Save the merged output under a different name from the input files.</value>
+  </data>
+  <data name="ThePreviousPrintJobIsStillInProgress" xml:space="preserve">
+    <value>The previous print job is still in progress.</value>
+  </data>
+  <data name="PrintingIsNotSupportedOnThisDevice" xml:space="preserve">
+    <value>Printing is not supported on this device.</value>
+  </data>
+  <data name="CannotFindPDFPagesToPrint" xml:space="preserve">
+    <value>Cannot find PDF pages to print.</value>
+  </data>
+  <data name="ThePrinterCouldNotCompleteThePrintJob" xml:space="preserve">
+    <value>The printer could not complete the print job.</value>
+  </data>
+  <data name="CannotRenderPageForPrinting" xml:space="preserve">
+    <value>Cannot render page {0} for printing.</value>
+  </data>
+  <data name="FontSubstitutionForMissingGlyphs" xml:space="preserve">
+    <value>Font substitution for missing glyphs: </value>
+  </data>
+  <data name="ThePDFCoordinatesCannotBeTransformed" xml:space="preserve">
+    <value>The PDF coordinates cannot be transformed.</value>
+  </data>
+  <data name="UnsupportedEncryptionAlgorithm" xml:space="preserve">
+    <value>Unsupported encryption algorithm.</value>
+  </data>
+  <data name="SetAtLeastOneOpenOrPermissionsPassword" xml:space="preserve">
+    <value>Set at least one open or permissions password.</value>
+  </data>
+  <data name="TheExistingPasswordsCouldNotBeRecoveredEnterChange" xml:space="preserve">
+    <value>The existing passwords could not be recovered. Enter, change, or remove them in the Protection menu.</value>
+  </data>
+  <data name="UseDifferentPasswordsForOpeningTheDocumentAndChanging" xml:space="preserve">
+    <value>Use different passwords for opening the document and changing permissions.</value>
+  </data>
+  <data name="PasswordsForThisEncryptionAlgorithmMustBeAtMost" xml:space="preserve">
+    <value>Passwords for this encryption algorithm must be at most {0} UTF-8 bytes. Korean characters typically use 3 bytes each.</value>
+  </data>
+  <data name="SetAPermissionsPasswordToRestrictUsage" xml:space="preserve">
+    <value>Set a permissions password to restrict usage.</value>
+  </data>
+  <data name="RenderingQuality" xml:space="preserve">
+    <value>Rendering quality</value>
+  </data>
+  <data name="LowFast" xml:space="preserve">
+    <value>Low (fast)</value>
+  </data>
+  <data name="Normal" xml:space="preserve">
+    <value>Normal</value>
+  </data>
+  <data name="High" xml:space="preserve">
+    <value>High</value>
+  </data>
+  <data name="HighestSlow" xml:space="preserve">
+    <value>Highest (slow)</value>
+  </data>
+  <data name="DefaultFont" xml:space="preserve">
+    <value>Default font</value>
+  </data>
+  <data name="DefaultFontSize" xml:space="preserve">
+    <value>Default font size</value>
+  </data>
+  <data name="SettingsAreSavedAutomaticallyAndRestoredTheNextTime" xml:space="preserve">
+    <value>Settings are saved automatically and restored the next time you run the app.</value>
+  </data>
+  <data name="Preferences" xml:space="preserve">
+    <value>Preferences</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Version" xml:space="preserve">
+    <value>Version {0}</value>
+  </data>
+  <data name="PDFEditorBuiltWithWinUI3IText9" xml:space="preserve">
+    <value>PDF editor built with WinUI 3 + iText 9</value>
+  </data>
+  <data name="AboutPDFSimpleEditor" xml:space="preserve">
+    <value>About PDF Simple Editor</value>
+  </data>
+  <data name="OK" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="PDFPassword" xml:space="preserve">
+    <value>PDF password</value>
+  </data>
+  <data name="IncorrectPasswordPleaseTryAgain" xml:space="preserve">
+    <value>Incorrect password. Please try again.</value>
+  </data>
+  <data name="IsPasswordProtectedEnterThePasswordToOpenThe" xml:space="preserve">
+    <value>'{0}' is password-protected.
+Enter the password to open the document.</value>
+  </data>
+  <data name="EnterPassword" xml:space="preserve">
+    <value>Enter password</value>
+  </data>
+  <data name="Open" xml:space="preserve">
+    <value>Open</value>
+  </data>
+  <data name="CannotDetermineTheOriginalTextPositionSelectItAgain" xml:space="preserve">
+    <value>Cannot determine the original text position. Select it again.</value>
+  </data>
+  <data name="ThisTextCannotBeEditedWhilePreservingTheBackground" xml:space="preserve">
+    <value>This text cannot be edited while preserving the background.</value>
+  </data>
+  <data name="CannotReadPDFGlyphData" xml:space="preserve">
+    <value>Cannot read PDF glyph data.</value>
+  </data>
+  <data name="CannotReadThePDFPage" xml:space="preserve">
+    <value>Cannot read the PDF page.</value>
+  </data>
+  <data name="CannotReadPDFTextData" xml:space="preserve">
+    <value>Cannot read PDF text data.</value>
+  </data>
+  <data name="ThePDFFormContainsACircularReference" xml:space="preserve">
+    <value>The PDF Form contains a circular reference.</value>
+  </data>
+  <data name="NoTextToEdit" xml:space="preserve">
+    <value>No text to edit.</value>
+  </data>
+  <data name="ThePDFContentChangedSelectTheTextAgain" xml:space="preserve">
+    <value>The PDF content changed. Select the text again.</value>
+  </data>
+  <data name="OriginalPreservingEditingOfVerticalOrClippedTextIs" xml:space="preserve">
+    <value>Original-preserving editing of vertical or clipped text is not supported yet.</value>
+  </data>
+  <data name="TheSelectedTextRegionsOverlap" xml:space="preserve">
+    <value>The selected text regions overlap.</value>
+  </data>
+  <data name="TheModifiedStyleOverlapsNearbyTextReduceTheSize" xml:space="preserve">
+    <value>The modified style overlaps nearby text. Reduce the size or select a wider text region.</value>
+  </data>
+  <data name="TheAddedLinesOverlapOtherOriginalTextShortenThe" xml:space="preserve">
+    <value>The added lines overlap other original text. Shorten the text or move the text region first.</value>
+  </data>
+  <data name="NoFallbackFontSupportingTheGlyphIsInstalled" xml:space="preserve">
+    <value>No fallback font supporting the '{0}' glyph is installed.</value>
+  </data>
+  <data name="RotatedOrRightToLeftTextCurrentlySupportsOnly" xml:space="preserve">
+    <value>Rotated or right-to-left text currently supports only moving and complete deletion.</value>
+  </data>
+  <data name="ExpertCFFCharacterSetsCannotBeEditedYet" xml:space="preserve">
+    <value>Expert CFF character sets cannot be edited yet.</value>
+  </data>
+  <data name="InvalidCFFCharacterSet" xml:space="preserve">
+    <value>Invalid CFF character set.</value>
+  </data>
+  <data name="ThePDFTextMatrixCannotBeInverted" xml:space="preserve">
+    <value>The PDF text matrix cannot be inverted.</value>
+  </data>
+  <data name="FontSizeMustBeANumberGreaterThanZero" xml:space="preserve">
+    <value>Font size must be a number greater than zero.</value>
+  </data>
+  <data name="SelectAValidRGBTextColor" xml:space="preserve">
+    <value>Select a valid RGB text color.</value>
+  </data>
+  <data name="NoFontSupportingTheRequestedWeightAndSlantFor" xml:space="preserve">
+    <value>No font supporting the requested weight and slant for '{0}' is installed. Select another font.</value>
+  </data>
+  <data name="OnlyTheTextColorCanCurrentlyBeChangedFor" xml:space="preserve">
+    <value>Only the text color can currently be changed for rotated or right-to-left text.</value>
+  </data>
+  <data name="CannotFindTheSaveFolder" xml:space="preserve">
+    <value>Cannot find the save folder: {0}</value>
+  </data>
+  <data name="AnotherProgramChangedTheDestinationFileSaveUnderA" xml:space="preserve">
+    <value>Another program changed the destination file. Save under a different name or reopen the file.</value>
+  </data>
+  <data name="SelectPDFFilesToMerge" xml:space="preserve">
+    <value>Select PDF files to merge.</value>
+  </data>
+  <data name="CannotMerge" xml:space="preserve">
+    <value>Cannot merge '{0}': {1}</value>
+  </data>
+  <data name="CannotFindTheOutputFolder" xml:space="preserve">
+    <value>Cannot find the output folder.</value>
+  </data>
+  <data name="EnterThePageRangesToSplit" xml:space="preserve">
+    <value>Enter the page ranges to split.</value>
+  </data>
+  <data name="TheFileAlreadyExistsSelectAnotherFolder" xml:space="preserve">
+    <value>The file already exists. Select another folder: {0}</value>
+  </data>
+  <data name="FailedToSplitThePDF2" xml:space="preserve">
+    <value>Failed to split the PDF: {0}</value>
+  </data>
+  <data name="OutputsThatCouldNotBeDeleted" xml:space="preserve">
+    <value>
+Outputs that could not be deleted: {0}</value>
+  </data>
+  <data name="SelectPagesToExtract" xml:space="preserve">
+    <value>Select pages to extract.</value>
+  </data>
+  <data name="InvalidPageRangeEnterAnAscendingRangeBetween1" xml:space="preserve">
+    <value>Invalid page range {0}-{1}. Enter an ascending range between 1 and {2}.</value>
+  </data>
+  <data name="CannotFindTheFormField" xml:space="preserve">
+    <value>Cannot find the form field: {0}</value>
+  </data>
+  <data name="ReadOnlyFormFieldsCannotBeEdited" xml:space="preserve">
+    <value>Read-only form fields cannot be edited.</value>
+  </data>
+  <data name="CannotFindTheOriginalGraphic" xml:space="preserve">
+    <value>Cannot find the original graphic.</value>
+  </data>
+  <data name="TheSelectedGraphicsOverlap" xml:space="preserve">
+    <value>The selected graphics overlap.</value>
+  </data>
+  <data name="GraphicsWithSharedClippingRegionsCannotBeTransformed" xml:space="preserve">
+    <value>Graphics with shared clipping regions cannot be transformed.</value>
+  </data>
+  <data name="CannotFindTheGraphicPath" xml:space="preserve">
+    <value>Cannot find the graphic path.</value>
+  </data>
+  <data name="TheGraphicsChangedSelectThemAgain" xml:space="preserve">
+    <value>The graphics changed. Select them again.</value>
+  </data>
+  <data name="SelectImagesToConvert" xml:space="preserve">
+    <value>Select images to convert.</value>
+  </data>
+  <data name="CannotReadTheImage" xml:space="preserve">
+    <value>Cannot read the image '{0}'.</value>
+  </data>
+  <data name="TheImageHasInvalidDimensions" xml:space="preserve">
+    <value>The image '{0}' has invalid dimensions.</value>
+  </data>
+  <data name="MergePDFs" xml:space="preserve">
+    <value>Merge PDFs</value>
+  </data>
+  <data name="MergeTheSelectedFilesIntoTheCurrentDocument" xml:space="preserve">
+    <value>Merge the {0} selected files into the current document?</value>
+  </data>
+  <data name="MergeIntoCurrentDocument" xml:space="preserve">
+    <value>Merge into current document</value>
+  </data>
+  <data name="SaveAsANewFile" xml:space="preserve">
+    <value>Save as a new file</value>
+  </data>
+  <data name="ASavePathIsRequiredForTheNewMerged" xml:space="preserve">
+    <value>A save path is required for the new merged file.</value>
+  </data>
+  <data name="SplitIntoIndividualPages" xml:space="preserve">
+    <value>Split into individual pages</value>
+  </data>
+  <data name="SplitByPageCount" xml:space="preserve">
+    <value>Split by page count</value>
+  </data>
+  <data name="SplitByPageRanges" xml:space="preserve">
+    <value>Split by page ranges</value>
+  </data>
+  <data name="PagesPerFile" xml:space="preserve">
+    <value>Pages per file:</value>
+  </data>
+  <data name="Example1346710" xml:space="preserve">
+    <value>Example: 1-3, 4-6, 7-10</value>
+  </data>
+  <data name="PageRangesCommaSeparated" xml:space="preserve">
+    <value>Page ranges (comma-separated):</value>
+  </data>
+  <data name="PagesInTotal" xml:space="preserve">
+    <value>{0} pages in total</value>
+  </data>
+  <data name="SplitPDF" xml:space="preserve">
+    <value>Split PDF</value>
+  </data>
+  <data name="Split" xml:space="preserve">
+    <value>Split</value>
+  </data>
+  <data name="PagesPerFileMustBeAnIntegerBetween1" xml:space="preserve">
+    <value>Pages per file must be an integer between 1 and {0}.</value>
+  </data>
+  <data name="PagesPerFileMustBeAtLeast1" xml:space="preserve">
+    <value>Pages per file must be at least 1.</value>
+  </data>
+  <data name="CheckThePageRange" xml:space="preserve">
+    <value>Check the page range: '{0}'</value>
+  </data>
+  <data name="EnterPageRanges" xml:space="preserve">
+    <value>Enter page ranges.</value>
+  </data>
+  <data name="ChangesTakeEffectWhenYouSaveThePDFClear" xml:space="preserve">
+    <value>Changes take effect when you save the PDF. Clear a password checkbox to remove that password.</value>
+  </data>
+  <data name="SomeExistingPasswordsForThisFileAreUnknownEnter" xml:space="preserve">
+    <value>Some existing passwords for this file are unknown. Enter passwords below to use them when saving. Enter the same passwords to keep the existing values.</value>
+  </data>
+  <data name="EncryptionAlgorithm" xml:space="preserve">
+    <value>Encryption algorithm</value>
+  </data>
+  <data name="AES256Default" xml:space="preserve">
+    <value>AES-256 (default)</value>
+  </data>
+  <data name="AES128Compatibility" xml:space="preserve">
+    <value>AES-128 (compatibility)</value>
+  </data>
+  <data name="EncryptDocumentMetadata" xml:space="preserve">
+    <value>Encrypt document metadata</value>
+  </data>
+  <data name="OpenPasswordOpen" xml:space="preserve">
+    <value>Open password (Open)</value>
+  </data>
+  <data name="OpenPassword" xml:space="preserve">
+    <value>Open password</value>
+  </data>
+  <data name="ConfirmOpenPassword" xml:space="preserve">
+    <value>Confirm open password</value>
+  </data>
+  <data name="PermissionsPasswordPermissionOwner" xml:space="preserve">
+    <value>Permissions password (Permission / Owner)</value>
+  </data>
+  <data name="PermissionsPassword" xml:space="preserve">
+    <value>Permissions password</value>
+  </data>
+  <data name="ConfirmPermissionsPassword" xml:space="preserve">
+    <value>Confirm permissions password</value>
+  </data>
+  <data name="UseThePermissionsPasswordToRestrictUsageRestrictionsMay" xml:space="preserve">
+    <value>Use the permissions password to restrict usage. Restrictions may be applied differently by different PDF programs.</value>
+  </data>
+  <data name="AllowPrinting" xml:space="preserve">
+    <value>Allow printing</value>
+  </data>
+  <data name="NotAllowed" xml:space="preserve">
+    <value>Not allowed</value>
+  </data>
+  <data name="LowResolutionOnly" xml:space="preserve">
+    <value>Low resolution only</value>
+  </data>
+  <data name="HighResolutionAllowed" xml:space="preserve">
+    <value>High resolution allowed</value>
+  </data>
+  <data name="EditContent" xml:space="preserve">
+    <value>Edit content</value>
+  </data>
+  <data name="CopyTextAndImages" xml:space="preserve">
+    <value>Copy text and images</value>
+  </data>
+  <data name="AddAndEditAnnotations" xml:space="preserve">
+    <value>Add and edit annotations</value>
+  </data>
+  <data name="FillInForms" xml:space="preserve">
+    <value>Fill in forms</value>
+  </data>
+  <data name="InsertDeleteAndRotatePages" xml:space="preserve">
+    <value>Insert, delete, and rotate pages</value>
+  </data>
+  <data name="EncryptionAndPasswordSettings" xml:space="preserve">
+    <value>Encryption and password settings</value>
+  </data>
+  <data name="Apply" xml:space="preserve">
+    <value>Apply</value>
+  </data>
+  <data name="TheOpenPasswordAndConfirmationDoNotMatch" xml:space="preserve">
+    <value>The open password and confirmation do not match.</value>
+  </data>
+  <data name="ThePermissionsPasswordAndConfirmationDoNotMatch" xml:space="preserve">
+    <value>The permissions password and confirmation do not match.</value>
+  </data>
+  <data name="RemoveAllPasswordsRemoveProtection" xml:space="preserve">
+    <value>Remove all passwords / Remove protection</value>
+  </data>
+  <data name="RemoveAllOpenAndPermissionsPasswordsEncryptionAndUsage" xml:space="preserve">
+    <value>Remove all open and permissions passwords, encryption, and usage restrictions. Once saved, the PDF can be opened without a password.
+
+To remove passwords individually, use Encryption and password settings.</value>
+  </data>
+  <data name="RemoveProtection" xml:space="preserve">
+    <value>Remove protection</value>
+  </data>
+  <data name="EnterPassword2" xml:space="preserve">
+    <value>Enter password</value>
+  </data>
+  <data name="LeaveBlankToKeepTheExistingPassword" xml:space="preserve">
+    <value>Leave blank to keep the existing password</value>
+  </data>
+  <data name="DragARegionToRedact" xml:space="preserve">
+    <value>Drag a region to redact.</value>
+  </data>
+  <data name="CannotFindTheSavedImageIdentifierTheOriginalFile" xml:space="preserve">
+    <value>Cannot find the saved image identifier. The original file has not been changed.</value>
+  </data>
+  <data name="ThePDFHasNoPagesToSave" xml:space="preserve">
+    <value>The PDF has no pages to save.</value>
+  </data>
+  <data name="File" xml:space="preserve">
+    <value>File</value>
+  </data>
+  <data name="New" xml:space="preserve">
+    <value>New</value>
+  </data>
+  <data name="Open2" xml:space="preserve">
+    <value>Open...</value>
+  </data>
+  <data name="RecentFiles" xml:space="preserve">
+    <value>Recent files</value>
+  </data>
+  <data name="SaveAs" xml:space="preserve">
+    <value>Save as...</value>
+  </data>
+  <data name="Print" xml:space="preserve">
+    <value>Print...</value>
+  </data>
+  <data name="Edit" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="Undo" xml:space="preserve">
+    <value>Undo</value>
+  </data>
+  <data name="Redo" xml:space="preserve">
+    <value>Redo</value>
+  </data>
+  <data name="Find" xml:space="preserve">
+    <value>Find...</value>
+  </data>
+  <data name="View" xml:space="preserve">
+    <value>View</value>
+  </data>
+  <data name="ZoomIn" xml:space="preserve">
+    <value>Zoom in</value>
+  </data>
+  <data name="ZoomOut" xml:space="preserve">
+    <value>Zoom out</value>
+  </data>
+  <data name="FitToPage" xml:space="preserve">
+    <value>Fit to page</value>
+  </data>
+  <data name="ShowPagePanel" xml:space="preserve">
+    <value>Show page panel</value>
+  </data>
+  <data name="Tools" xml:space="preserve">
+    <value>Tools</value>
+  </data>
+  <data name="SelectText" xml:space="preserve">
+    <value>Select text</value>
+  </data>
+  <data name="SelectGraphics" xml:space="preserve">
+    <value>Select graphics</value>
+  </data>
+  <data name="AddText" xml:space="preserve">
+    <value>Add text</value>
+  </data>
+  <data name="RedactRegion" xml:space="preserve">
+    <value>Redact region</value>
+  </data>
+  <data name="HighlightText" xml:space="preserve">
+    <value>Highlight text</value>
+  </data>
+  <data name="Freehand" xml:space="preserve">
+    <value>Freehand</value>
+  </data>
+  <data name="Rectangle" xml:space="preserve">
+    <value>Rectangle</value>
+  </data>
+  <data name="Ellipse" xml:space="preserve">
+    <value>Ellipse</value>
+  </data>
+  <data name="Arrow" xml:space="preserve">
+    <value>Arrow</value>
+  </data>
+  <data name="TriangleArrow" xml:space="preserve">
+    <value>Triangle arrow</value>
+  </data>
+  <data name="OutlineArrow" xml:space="preserve">
+    <value>Outline arrow</value>
+  </data>
+  <data name="Polygon" xml:space="preserve">
+    <value>Polygon</value>
+  </data>
+  <data name="DrawSignature" xml:space="preserve">
+    <value>Draw signature</value>
+  </data>
+  <data name="AddImage" xml:space="preserve">
+    <value>Add image</value>
+  </data>
+  <data name="ExtractAllImages" xml:space="preserve">
+    <value>Extract all images...</value>
+  </data>
+  <data name="MergePDFs2" xml:space="preserve">
+    <value>Merge PDFs...</value>
+  </data>
+  <data name="ImagesToPDF" xml:space="preserve">
+    <value>Images to PDF...</value>
+  </data>
+  <data name="SplitPDF2" xml:space="preserve">
+    <value>Split PDF...</value>
+  </data>
+  <data name="Protection" xml:space="preserve">
+    <value>Protection</value>
+  </data>
+  <data name="SetOrChangeEncryptionAndPasswords" xml:space="preserve">
+    <value>Set or change encryption and passwords...</value>
+  </data>
+  <data name="RemoveAllPasswordsRemoveProtection2" xml:space="preserve">
+    <value>Remove all passwords / Remove protection...</value>
+  </data>
+  <data name="Settings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="Preferences2" xml:space="preserve">
+    <value>Preferences...</value>
+  </data>
+  <data name="About" xml:space="preserve">
+    <value>About</value>
+  </data>
+  <data name="Go" xml:space="preserve">
+    <value>Go</value>
+  </data>
+  <data name="TextEditingMode" xml:space="preserve">
+    <value>Text editing mode</value>
+  </data>
+  <data name="Replacement" xml:space="preserve">
+    <value>Replacement</value>
+  </data>
+  <data name="PreserveOriginal" xml:space="preserve">
+    <value>Preserve original</value>
+  </data>
+  <data name="DrawingTools" xml:space="preserve">
+    <value>Drawing tools</value>
+  </data>
+  <data name="FreehandRectangleEllipseArrowPolygon" xml:space="preserve">
+    <value>Freehand · Rectangle · Ellipse · Arrow · Polygon</value>
+  </data>
+  <data name="DrawingColorAndLineWidth" xml:space="preserve">
+    <value>Drawing color and line width</value>
+  </data>
+  <data name="DrawingSettings" xml:space="preserve">
+    <value>Drawing settings</value>
+  </data>
+  <data name="DrawingLineSettings" xml:space="preserve">
+    <value>Drawing line settings</value>
+  </data>
+  <data name="LineWidth" xml:space="preserve">
+    <value>Line width</value>
+  </data>
+  <data name="SignatureLineSettings" xml:space="preserve">
+    <value>Signature line settings</value>
+  </data>
+  <data name="SignatureSettings" xml:space="preserve">
+    <value>Signature settings</value>
+  </data>
+  <data name="OpenCtrlO" xml:space="preserve">
+    <value>Open (Ctrl+O)</value>
+  </data>
+  <data name="SaveCtrlS" xml:space="preserve">
+    <value>Save (Ctrl+S)</value>
+  </data>
+  <data name="SaveAsCtrlShiftS" xml:space="preserve">
+    <value>Save as (Ctrl+Shift+S)</value>
+  </data>
+  <data name="PrintCtrlP" xml:space="preserve">
+    <value>Print (Ctrl+P)</value>
+  </data>
+  <data name="UndoCtrlZ" xml:space="preserve">
+    <value>Undo (Ctrl+Z)</value>
+  </data>
+  <data name="RedoCtrlY" xml:space="preserve">
+    <value>Redo (Ctrl+Y)</value>
+  </data>
+  <data name="SelectTextS" xml:space="preserve">
+    <value>Select text (S)</value>
+  </data>
+  <data name="SelectGraphicsGTableBordersLinesShapesImages" xml:space="preserve">
+    <value>Select graphics (G) · Table borders, lines, shapes, images</value>
+  </data>
+  <data name="AddTextA" xml:space="preserve">
+    <value>Add text (A)</value>
+  </data>
+  <data name="RedactRegionRRemoveContentInTheDraggedRegion" xml:space="preserve">
+    <value>Redact region (R) · Remove content in the dragged region</value>
+  </data>
+  <data name="HighlightColorAndOpacity" xml:space="preserve">
+    <value>Highlight color and opacity</value>
+  </data>
+  <data name="Opacity" xml:space="preserve">
+    <value>Opacity</value>
+  </data>
+  <data name="HighlightSettings" xml:space="preserve">
+    <value>Highlight settings</value>
+  </data>
+  <data name="ColorPickerEyedropper" xml:space="preserve">
+    <value>Color picker (Eyedropper)</value>
+  </data>
+  <data name="Font" xml:space="preserve">
+    <value>Font</value>
+  </data>
+  <data name="Bold" xml:space="preserve">
+    <value>Bold</value>
+  </data>
+  <data name="Italic" xml:space="preserve">
+    <value>Italic</value>
+  </data>
+  <data name="TextColor" xml:space="preserve">
+    <value>Text color</value>
+  </data>
+  <data name="Find2" xml:space="preserve">
+    <value>Find</value>
+  </data>
+  <data name="TextToFind" xml:space="preserve">
+    <value>Text to find...</value>
+  </data>
+  <data name="Previous" xml:space="preserve">
+    <value>Previous</value>
+  </data>
+  <data name="Next" xml:space="preserve">
+    <value>Next</value>
+  </data>
+  <data name="MatchCase" xml:space="preserve">
+    <value>Match case</value>
+  </data>
+  <data name="Pages" xml:space="preserve">
+    <value>Pages</value>
+  </data>
+  <data name="ExtractSelectedPages" xml:space="preserve">
+    <value>Extract selected pages...</value>
+  </data>
+  <data name="DeleteSelectedPages" xml:space="preserve">
+    <value>Delete selected pages</value>
+  </data>
+  <data name="OpenAPDFFileOrCreateANewDocument" xml:space="preserve">
+    <value>Open a PDF file or create a new document</value>
+  </data>
+  <data name="OpenFile" xml:space="preserve">
+    <value>Open file</value>
+  </data>
+  <data name="Copy" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="Cut" xml:space="preserve">
+    <value>Cut</value>
+  </data>
+  <data name="Paste" xml:space="preserve">
+    <value>Paste</value>
+  </data>
+  <data name="AlignLeft" xml:space="preserve">
+    <value>Align left</value>
+  </data>
+  <data name="AlignRight" xml:space="preserve">
+    <value>Align right</value>
+  </data>
+  <data name="AlignTop" xml:space="preserve">
+    <value>Align top</value>
+  </data>
+  <data name="AlignBottom" xml:space="preserve">
+    <value>Align bottom</value>
+  </data>
+  <data name="SaveImage" xml:space="preserve">
+    <value>Save image...</value>
+  </data>
+  <data name="LanguageLabel" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="LanguageKorean" xml:space="preserve">
+    <value>한국어</value>
+  </data>
+  <data name="LanguageEnglish" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="FollowWindowsLanguage" xml:space="preserve">
+    <value>Follow Windows settings</value>
+  </data>
+  <data name="LanguageRestartNotice" xml:space="preserve">
+    <value>Language changes take effect after restarting the app.</value>
+  </data>
+  <data name="ThirdPartyLibraries" xml:space="preserve">
+    <value>Third-party libraries</value>
+  </data>
+</root>

@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using iText.Kernel.Exceptions;
 using iText.Kernel.Pdf;
 using System;
@@ -123,7 +124,7 @@ public sealed class PdfSecurityService
             : null;
         using var reader = new PdfReader(new MemoryStream(bytes, writable: false), CreateReaderProperties(password));
         using var document = new PdfDocument(reader);
-        if (document.GetNumberOfPages() == 0) throw new InvalidDataException("저장할 PDF에 페이지가 없습니다.");
+        if (document.GetNumberOfPages() == 0) throw new InvalidDataException(Loc.Get("ThePDFHasNoPagesToSave"));
         // Force lazy page-tree/content reads before replacing the destination.
         for (int i = 1; i <= document.GetNumberOfPages(); i++)
         {

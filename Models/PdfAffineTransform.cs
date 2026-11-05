@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using System;
 using System.Globalization;
 using System.Linq;
@@ -22,7 +23,7 @@ public readonly record struct PdfAffineTransform(double A, double B, double C, d
     public PdfAffineTransform Inverse()
     {
         double det = A * D - B * C;
-        if (Math.Abs(det) < 1e-12) throw new InvalidOperationException("변환할 수 없는 PDF 좌표입니다.");
+        if (Math.Abs(det) < 1e-12) throw new InvalidOperationException(Loc.Get("ThePDFCoordinatesCannotBeTransformed"));
         return new(D / det, -B / det, -C / det, A / det, (C * F - D * E) / det, (B * E - A * F) / det);
     }
     public static PdfAffineTransform Between(PdfTextBox source, PdfTextBox target, double degrees = 0)

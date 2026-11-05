@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -45,10 +46,10 @@ public sealed class AnnotationClipboardController(
             return false;
 
         statusText.Text = selectedObjects.Count > 1
-            ? $"{selectedObjects.Count}개 객체를 잘라냈습니다."
+            ? Loc.Format("CutObjects", selectedObjects.Count)
             : selectedObjects[0].Type == AnnotationType.Image
-                ? "이미지를 잘라냈습니다."
-                : selectedObjects[0].Type == AnnotationType.Drawing ? "그리기를 잘라냈습니다." : "텍스트를 잘라냈습니다.";
+                ? Loc.Get("CutImage")
+                : selectedObjects[0].Type == AnnotationType.Drawing ? Loc.Get("CutDrawing") : Loc.Get("CutText");
         return true;
     }
 
@@ -91,16 +92,16 @@ public sealed class AnnotationClipboardController(
             Clipboard.SetContent(dataPackage);
             Clipboard.Flush();
             statusText.Text = selectedObjects.Count > 1
-                ? $"{selectedObjects.Count}개 객체를 클립보드에 복사했습니다."
+                ? Loc.Format("CopiedObjectsToTheClipboard", selectedObjects.Count)
                 : selectedObjects[0].Type == AnnotationType.Image
-                    ? "이미지를 클립보드에 복사했습니다."
-                    : selectedObjects[0].Type == AnnotationType.Drawing ? "그리기를 클립보드에 복사했습니다." : "텍스트를 클립보드에 복사했습니다.";
+                    ? Loc.Get("CopiedImageToTheClipboard")
+                    : selectedObjects[0].Type == AnnotationType.Drawing ? Loc.Get("CopiedDrawingToTheClipboard") : Loc.Get("CopiedTextToTheClipboard");
             return true;
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Clipboard copy error: {ex}");
-            statusText.Text = "클립보드에 복사하지 못했습니다.";
+            statusText.Text = Loc.Get("CouldNotCopyToTheClipboard");
             return false;
         }
     }
@@ -131,7 +132,7 @@ public sealed class AnnotationClipboardController(
                     await clipboardContent.GetBitmapAsync();
                 ClipboardImageData image = await SaveClipboardImageAsync(bitmapReference);
                 AddPastedAnnotations(new[] { CreateImageAnnotation(image) });
-                statusText.Text = "이미지를 새 객체로 붙여넣었습니다.";
+                statusText.Text = Loc.Get("PastedImageAsANewObject");
                 return true;
             }
 
@@ -141,18 +142,18 @@ public sealed class AnnotationClipboardController(
                 if (!string.IsNullOrWhiteSpace(text))
                 {
                     AddPastedAnnotations(new[] { CreateTextAnnotation(text) });
-                    statusText.Text = "텍스트를 새 객체로 붙여넣었습니다.";
+                    statusText.Text = Loc.Get("PastedTextAsANewObject");
                     return true;
                 }
             }
 
-            statusText.Text = "붙여넣을 수 있는 텍스트나 이미지가 없습니다.";
+            statusText.Text = Loc.Get("NoTextOrImagesAvailableToPaste");
             return false;
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Clipboard paste error: {ex}");
-            statusText.Text = "클립보드 내용을 붙여넣지 못했습니다.";
+            statusText.Text = Loc.Get("CouldNotPasteTheClipboardContents");
             return false;
         }
     }
@@ -219,10 +220,10 @@ public sealed class AnnotationClipboardController(
 
         AddPastedAnnotations(pasted);
         statusText.Text = pasted.Count > 1
-            ? $"{pasted.Count}개 객체를 붙여넣었습니다."
+            ? Loc.Format("PastedObjects", pasted.Count)
             : pasted[0].Type == AnnotationType.Image
-                ? "이미지를 새 객체로 붙여넣었습니다."
-                : pasted[0].Type == AnnotationType.Drawing ? "그리기를 새 객체로 붙여넣었습니다." : "텍스트를 새 객체로 붙여넣었습니다.";
+                ? Loc.Get("PastedImageAsANewObject")
+                : pasted[0].Type == AnnotationType.Drawing ? Loc.Get("PastedDrawingAsANewObject") : Loc.Get("PastedTextAsANewObject");
         return true;
     }
 

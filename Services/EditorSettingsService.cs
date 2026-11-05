@@ -45,6 +45,38 @@ public sealed class EditorSettingsService
         }
     }
 
+    public string LoadLanguage()
+    {
+        try
+        {
+            if (File.Exists(_settingsPath) &&
+                ReadValues(File.ReadAllLines(_settingsPath)).TryGetValue("Language", out string? language))
+                return LocalizationService.NormalizePreference(language);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Language settings load error: {ex.Message}");
+        }
+        return LocalizationService.SystemLanguage;
+    }
+
+    public void SaveLanguage(string language)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_settingsPath)!);
+            var lines = File.Exists(_settingsPath) ? File.ReadAllLines(_settingsPath).ToList() : new List<string>();
+            MigrateLegacyPlacement(lines);
+            lines = lines.Where(line => line.IndexOf('=') > 0).ToList();
+            SetValue(lines, "Language", LocalizationService.NormalizePreference(language));
+            File.WriteAllLines(_settingsPath, lines);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Language settings save error: {ex.Message}");
+        }
+    }
+
     public void Save(WindowPlacement? placement, TextFontSettings fontSettings)
     {
         try

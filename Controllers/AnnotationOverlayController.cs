@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -365,7 +366,7 @@ public sealed class AnnotationOverlayController
             {
                 handle.RadiusX = size / 2; handle.RadiusY = size / 2;
                 handle.Fill = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue);
-                ToolTipService.SetToolTip(handle, "드래그하여 회전 · Shift: 15° 단위");
+                ToolTipService.SetToolTip(handle, Loc.Get("DragToRotateShift15Increments"));
             }
             handle.PointerPressed += (_, args) =>
             {

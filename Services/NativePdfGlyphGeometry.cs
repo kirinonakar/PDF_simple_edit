@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using PDF_simple_edit.Models;
 using System;
 using System.Collections.Generic;
@@ -23,11 +24,11 @@ internal static class NativePdfGlyphGeometry
             try
             {
                 doc = FPDF_LoadMemDocument64(memory.AddrOfPinnedObject(), (nuint)bytes.Length, IntPtr.Zero);
-                if (doc == IntPtr.Zero) throw new InvalidOperationException("PDF 글리프 데이터를 읽을 수 없습니다.");
+                if (doc == IntPtr.Zero) throw new InvalidOperationException(Loc.Get("CannotReadPDFGlyphData"));
                 page = FPDF_LoadPage(doc, pageIndex);
-                if (page == IntPtr.Zero) throw new InvalidOperationException("PDF 페이지를 읽을 수 없습니다.");
+                if (page == IntPtr.Zero) throw new InvalidOperationException(Loc.Get("CannotReadThePDFPage"));
                 text = FPDFText_LoadPage(page);
-                if (text == IntPtr.Zero) throw new InvalidOperationException("PDF 텍스트 데이터를 읽을 수 없습니다.");
+                if (text == IntPtr.Zero) throw new InvalidOperationException(Loc.Get("CannotReadPDFTextData"));
                 var result = new List<GlyphBox>();
                 for (int i = 0, count = FPDFText_CountChars(text); i < count; i++)
                 {

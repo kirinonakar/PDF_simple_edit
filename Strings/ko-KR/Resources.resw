@@ -1,0 +1,1324 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="SaveChanges" xml:space="preserve">
+    <value>변경 사항 저장</value>
+  </data>
+  <data name="HasChangedSaveYourChanges" xml:space="preserve">
+    <value>'{0}'의 내용이 변경되었습니다. 저장하시겠습니까?</value>
+  </data>
+  <data name="Save" xml:space="preserve">
+    <value>저장</value>
+  </data>
+  <data name="DonTSave" xml:space="preserve">
+    <value>저장하지 않음</value>
+  </data>
+  <data name="Cancel" xml:space="preserve">
+    <value>취소</value>
+  </data>
+  <data name="NewDocument" xml:space="preserve">
+    <value>새 문서</value>
+  </data>
+  <data name="Page" xml:space="preserve">
+    <value>페이지: {0} / {1}</value>
+  </data>
+  <data name="Ready" xml:space="preserve">
+    <value>준비</value>
+  </data>
+  <data name="Page00" xml:space="preserve">
+    <value>페이지: 0 / 0</value>
+  </data>
+  <data name="ConfirmExit" xml:space="preserve">
+    <value>종료 확인</value>
+  </data>
+  <data name="TabsHaveUnsavedChangesDoYouWantToExit" xml:space="preserve">
+    <value>저장되지 않은 변경 사항이 있는 {0}개의 탭이 있습니다. 그래도 종료하시겠습니까?</value>
+  </data>
+  <data name="SaveAllAndExit" xml:space="preserve">
+    <value>저장하고 종료 (순회)</value>
+  </data>
+  <data name="ExitWithoutSaving" xml:space="preserve">
+    <value>그냥 종료</value>
+  </data>
+  <data name="ReorderPages" xml:space="preserve">
+    <value>페이지 순서 변경</value>
+  </data>
+  <data name="OpenPDF" xml:space="preserve">
+    <value>PDF 열기</value>
+  </data>
+  <data name="Undone" xml:space="preserve">
+    <value>실행 취소됨</value>
+  </data>
+  <data name="Redone" xml:space="preserve">
+    <value>다시 실행됨</value>
+  </data>
+  <data name="Drawing" xml:space="preserve">
+    <value>그리기</value>
+  </data>
+  <data name="ToolAddText" xml:space="preserve">
+    <value>도구: 텍스트 추가</value>
+  </data>
+  <data name="ToolHighlightText" xml:space="preserve">
+    <value>도구: 텍스트 강조</value>
+  </data>
+  <data name="ToolRedactRegionDragToRemoveContentEscCancel" xml:space="preserve">
+    <value>도구: 영역 삭제 · 드래그하여 내용 삭제 · Esc: 취소</value>
+  </data>
+  <data name="ToolDrawSignature" xml:space="preserve">
+    <value>도구: 서명 그리기</value>
+  </data>
+  <data name="ToolFreehandDragToDrawEscCancel" xml:space="preserve">
+    <value>도구: 자유 그리기 · 드래그하여 그리기 · Esc: 취소</value>
+  </data>
+  <data name="ToolRectangleDragToDrawEscCancel" xml:space="preserve">
+    <value>도구: 사각형 · 드래그하여 그리기 · Esc: 취소</value>
+  </data>
+  <data name="ToolEllipseDragToDrawEscCancel" xml:space="preserve">
+    <value>도구: 타원 · 드래그하여 그리기 · Esc: 취소</value>
+  </data>
+  <data name="ToolArrowDragFromStartToEndEscCancel" xml:space="preserve">
+    <value>도구: 화살표 · 시작점에서 끝점까지 드래그 · Esc: 취소</value>
+  </data>
+  <data name="ToolTriangleArrowDragFromStartToEndEsc" xml:space="preserve">
+    <value>도구: 삼각형 머리 화살표 · 시작점에서 끝점까지 드래그 · Esc: 취소</value>
+  </data>
+  <data name="ToolOutlineArrowTriangleHeadDragFromStartTo" xml:space="preserve">
+    <value>도구: 테두리 화살표 (삼각형 머리) · 시작점에서 끝점까지 드래그 · Esc: 취소</value>
+  </data>
+  <data name="ToolPolygonClickVerticesDoubleClickEnterFinishEsc" xml:space="preserve">
+    <value>도구: 다각형 · 꼭짓점 클릭 · 더블클릭/Enter: 완성 · Esc: 취소</value>
+  </data>
+  <data name="ToolAddImage" xml:space="preserve">
+    <value>도구: 이미지 추가</value>
+  </data>
+  <data name="ToolSelectText" xml:space="preserve">
+    <value>도구: 텍스트 선택</value>
+  </data>
+  <data name="ToolSelectGraphicsClickOrSelectARegionThen" xml:space="preserve">
+    <value>도구: 그래픽 선택 · 클릭/범위 선택 후 Delete로 삭제</value>
+  </data>
+  <data name="ToolColorPicker" xml:space="preserve">
+    <value>도구: 색상 추출</value>
+  </data>
+  <data name="RemovingContentFromTheSelectedRegion" xml:space="preserve">
+    <value>선택 영역의 내용을 삭제하는 중...</value>
+  </data>
+  <data name="RegionContentRemovedCtrlZUndoCtrlSSave" xml:space="preserve">
+    <value>영역 내용이 삭제되었습니다 (Ctrl+Z: 실행 취소, Ctrl+S: 저장).</value>
+  </data>
+  <data name="FailedToRedactTheRegion" xml:space="preserve">
+    <value>영역 삭제에 실패했습니다.</value>
+  </data>
+  <data name="RegionRedactionError" xml:space="preserve">
+    <value>영역 삭제 오류</value>
+  </data>
+  <data name="Searching" xml:space="preserve">
+    <value>검색 중...</value>
+  </data>
+  <data name="DragARegionToRedactReleaseToRemoveContent" xml:space="preserve">
+    <value>삭제할 영역을 드래그하세요 (마우스를 놓으면 삭제, Esc: 취소).</value>
+  </data>
+  <data name="ObjectSelectedDragToMove" xml:space="preserve">
+    <value>객체 선택됨 (드래그하여 이동)</value>
+  </data>
+  <data name="DragARectangleAroundTheRegionToRedact" xml:space="preserve">
+    <value>삭제할 영역을 사각형으로 드래그해 주세요.</value>
+  </data>
+  <data name="TextRegionSelectedDoubleClickEditAltDragMove" xml:space="preserve">
+    <value>텍스트 편집 구역 선택됨 (더블클릭: 편집, Alt+드래그: 이동)</value>
+  </data>
+  <data name="NoTextInTheSelectedRegion" xml:space="preserve">
+    <value>범위 안에 텍스트가 없습니다.</value>
+  </data>
+  <data name="TextHighlightAddedAppliedWhenSaved" xml:space="preserve">
+    <value>텍스트 강조가 추가되었습니다 (저장 시 반영)</value>
+  </data>
+  <data name="Resizing" xml:space="preserve">
+    <value>크기 조정 중...</value>
+  </data>
+  <data name="AnalyzingPageContent" xml:space="preserve">
+    <value>페이지 콘텐츠 분석 중...</value>
+  </data>
+  <data name="ReplacementTextRegionSelectedDoubleClickEditDragMove" xml:space="preserve">
+    <value>대체 텍스트 편집 구역 선택됨 (더블클릭: 편집, 드래그: 이동)</value>
+  </data>
+  <data name="GraphicsSelectedAltDragMoveHandlesResizeRotateDelete" xml:space="preserve">
+    <value>그래픽 선택됨 (Alt+드래그: 이동, 핸들: 크기/회전, Delete: 삭제)</value>
+  </data>
+  <data name="ImageSelectedDragToMoveOrUseTheHandles" xml:space="preserve">
+    <value>이미지가 선택되었습니다. 드래그하여 이동하거나 핸들로 크기를 조정하세요.</value>
+  </data>
+  <data name="ObjectsSelected" xml:space="preserve">
+    <value>{0}개 객체 선택됨</value>
+  </data>
+  <data name="GraphicsSelectedDeleteRemove" xml:space="preserve">
+    <value>{0}개 그래픽 선택됨 (Delete: 삭제)</value>
+  </data>
+  <data name="NoGraphicsInTheRegionEncloseEntireObjectsTo" xml:space="preserve">
+    <value>범위 안에 그래픽이 없습니다. 객체 전체를 감싸서 선택하세요.</value>
+  </data>
+  <data name="DrawingSignature" xml:space="preserve">
+    <value>서명을 그리는 중...</value>
+  </data>
+  <data name="SignatureAddedAppliedWhenSaved" xml:space="preserve">
+    <value>서명이 추가되었습니다 (저장 시 반영)</value>
+  </data>
+  <data name="TheSignatureIsTooShort" xml:space="preserve">
+    <value>서명이 너무 짧습니다.</value>
+  </data>
+  <data name="PickingAColor" xml:space="preserve">
+    <value>색상 추출 중...</value>
+  </data>
+  <data name="ColorPicked" xml:space="preserve">
+    <value>색상이 추출되었습니다: {0}</value>
+  </data>
+  <data name="TheTextInThisPDFCannotBeTransformedWhile" xml:space="preserve">
+    <value>이 PDF의 텍스트는 배경을 보존한 상태로 변환할 수 없습니다.</value>
+  </data>
+  <data name="TheGraphicsInThisPDFCannotBeTransformedWhile" xml:space="preserve">
+    <value>이 PDF의 그래픽은 원본을 보존한 상태로 변환할 수 없습니다.</value>
+  </data>
+  <data name="SizeRotationChanged" xml:space="preserve">
+    <value>크기/회전 변경됨</value>
+  </data>
+  <data name="TheTextInThisPDFCannotBeMovedWhile" xml:space="preserve">
+    <value>이 PDF의 텍스트는 배경을 보존한 상태로 이동할 수 없습니다.</value>
+  </data>
+  <data name="TheImagesInThisPDFCannotBeMovedWhile" xml:space="preserve">
+    <value>이 PDF의 이미지는 원본을 보존한 상태로 이동할 수 없습니다.</value>
+  </data>
+  <data name="OriginalTextAndImagesCannotBeMovedTogether" xml:space="preserve">
+    <value>원본 텍스트와 이미지는 한 번에 함께 이동할 수 없습니다.</value>
+  </data>
+  <data name="PositionChangedAppliedWhenSaved" xml:space="preserve">
+    <value>위치 이동됨 (저장 시 반영)</value>
+  </data>
+  <data name="CutObjects" xml:space="preserve">
+    <value>{0}개 객체를 잘라냈습니다.</value>
+  </data>
+  <data name="CutImage" xml:space="preserve">
+    <value>이미지를 잘라냈습니다.</value>
+  </data>
+  <data name="CutDrawing" xml:space="preserve">
+    <value>그리기를 잘라냈습니다.</value>
+  </data>
+  <data name="CutText" xml:space="preserve">
+    <value>텍스트를 잘라냈습니다.</value>
+  </data>
+  <data name="CopiedObjectsToTheClipboard" xml:space="preserve">
+    <value>{0}개 객체를 클립보드에 복사했습니다.</value>
+  </data>
+  <data name="CopiedImageToTheClipboard" xml:space="preserve">
+    <value>이미지를 클립보드에 복사했습니다.</value>
+  </data>
+  <data name="CopiedDrawingToTheClipboard" xml:space="preserve">
+    <value>그리기를 클립보드에 복사했습니다.</value>
+  </data>
+  <data name="CopiedTextToTheClipboard" xml:space="preserve">
+    <value>텍스트를 클립보드에 복사했습니다.</value>
+  </data>
+  <data name="CouldNotCopyToTheClipboard" xml:space="preserve">
+    <value>클립보드에 복사하지 못했습니다.</value>
+  </data>
+  <data name="PastedImageAsANewObject" xml:space="preserve">
+    <value>이미지를 새 객체로 붙여넣었습니다.</value>
+  </data>
+  <data name="PastedTextAsANewObject" xml:space="preserve">
+    <value>텍스트를 새 객체로 붙여넣었습니다.</value>
+  </data>
+  <data name="NoTextOrImagesAvailableToPaste" xml:space="preserve">
+    <value>붙여넣을 수 있는 텍스트나 이미지가 없습니다.</value>
+  </data>
+  <data name="CouldNotPasteTheClipboardContents" xml:space="preserve">
+    <value>클립보드 내용을 붙여넣지 못했습니다.</value>
+  </data>
+  <data name="PastedObjects" xml:space="preserve">
+    <value>{0}개 객체를 붙여넣었습니다.</value>
+  </data>
+  <data name="PastedDrawingAsANewObject" xml:space="preserve">
+    <value>그리기를 새 객체로 붙여넣었습니다.</value>
+  </data>
+  <data name="OriginalTextAndImagesCannotBeDeletedTogether" xml:space="preserve">
+    <value>원본 텍스트와 이미지는 한 번에 함께 삭제할 수 없습니다.</value>
+  </data>
+  <data name="ThisPDFTextCannotBeDeletedWhilePreservingThe" xml:space="preserve">
+    <value>배경을 보존하면서 삭제할 수 없는 PDF 텍스트입니다.</value>
+  </data>
+  <data name="TheSavedTextCannotBeDeletedSafely" xml:space="preserve">
+    <value>저장된 텍스트를 안전하게 삭제할 수 없습니다.</value>
+  </data>
+  <data name="TheGraphicsInThisPDFCannotBeDeletedSafely" xml:space="preserve">
+    <value>이 PDF의 그래픽을 안전하게 삭제할 수 없습니다.</value>
+  </data>
+  <data name="DeletedObjects" xml:space="preserve">
+    <value>{0}개 객체 삭제됨</value>
+  </data>
+  <data name="GraphicsDeleted" xml:space="preserve">
+    <value>그래픽이 삭제되었습니다.</value>
+  </data>
+  <data name="ImageDeleted" xml:space="preserve">
+    <value>이미지가 삭제되었습니다.</value>
+  </data>
+  <data name="DrawingDeleted" xml:space="preserve">
+    <value>그리기가 삭제되었습니다.</value>
+  </data>
+  <data name="TextDeleted" xml:space="preserve">
+    <value>텍스트가 삭제되었습니다.</value>
+  </data>
+  <data name="SelectOnlyOriginalTextToAlignIt" xml:space="preserve">
+    <value>원본 텍스트끼리 선택하여 정렬해 주세요.</value>
+  </data>
+  <data name="OriginalTextAligned" xml:space="preserve">
+    <value>원본 텍스트가 정렬되었습니다.</value>
+  </data>
+  <data name="NoPDFDocumentIsOpen" xml:space="preserve">
+    <value>열린 PDF 문서가 없습니다.</value>
+  </data>
+  <data name="CouldNotFindTheModifiedTextRegionAgain" xml:space="preserve">
+    <value>수정한 텍스트 영역을 다시 찾을 수 없습니다.</value>
+  </data>
+  <data name="OriginalTextStyleChanged" xml:space="preserve">
+    <value>원본 텍스트 스타일이 변경되었습니다.</value>
+  </data>
+  <data name="TheSavedTextCannotBeEditedSafely" xml:space="preserve">
+    <value>저장된 텍스트를 안전하게 수정할 수 없습니다.</value>
+  </data>
+  <data name="ThisPDFTextCannotBeEditedWhilePreservingThe" xml:space="preserve">
+    <value>배경을 보존하면서 수정할 수 없는 PDF 텍스트입니다.</value>
+  </data>
+  <data name="ThisPDFTextCannotBeMovedWhilePreservingThe" xml:space="preserve">
+    <value>배경을 보존하면서 이동할 수 없는 PDF 텍스트입니다.</value>
+  </data>
+  <data name="DragToRotateShift15Increments" xml:space="preserve">
+    <value>드래그하여 회전 · Shift: 15° 단위</value>
+  </data>
+  <data name="ProtectionSettingsChangedSaveThePDFToApplyThem" xml:space="preserve">
+    <value>보호 설정이 변경되었습니다. PDF를 저장하면 반영됩니다.</value>
+  </data>
+  <data name="ProtectionSettingsError" xml:space="preserve">
+    <value>보호 설정 오류</value>
+  </data>
+  <data name="OpeningFile" xml:space="preserve">
+    <value>파일을 여는 중...</value>
+  </data>
+  <data name="WaitingForPassword" xml:space="preserve">
+    <value>암호 입력 대기 중...</value>
+  </data>
+  <data name="FileOpeningCanceled" xml:space="preserve">
+    <value>파일 열기가 취소되었습니다.</value>
+  </data>
+  <data name="DigitallySignedDocument" xml:space="preserve">
+    <value>전자서명 문서</value>
+  </data>
+  <data name="ThisDocumentIsDigitallySignedTheSignatureOnAn" xml:space="preserve">
+    <value>이 문서는 전자서명되어 있습니다. 편집한 사본의 전자서명은 유효하지 않으며, 원본을 보호하기 위해 다른 이름으로만 저장할 수 있습니다.</value>
+  </data>
+  <data name="Error" xml:space="preserve">
+    <value>오류</value>
+  </data>
+  <data name="CannotOpenThePDFFile" xml:space="preserve">
+    <value>PDF 파일을 열 수 없습니다.</value>
+  </data>
+  <data name="AnErrorOccurredWhileOpeningTheFile" xml:space="preserve">
+    <value>파일을 여는 중 오류가 발생했습니다: {0}</value>
+  </data>
+  <data name="PDFFile" xml:space="preserve">
+    <value>PDF 파일</value>
+  </data>
+  <data name="NewDocumentPdf" xml:space="preserve">
+    <value>새문서.pdf</value>
+  </data>
+  <data name="PrintingError" xml:space="preserve">
+    <value>인쇄 오류</value>
+  </data>
+  <data name="AnErrorOccurredWhilePrinting" xml:space="preserve">
+    <value>인쇄 중 오류가 발생했습니다: {0}</value>
+  </data>
+  <data name="Saving" xml:space="preserve">
+    <value>저장 중...</value>
+  </data>
+  <data name="PreparingToRender" xml:space="preserve">
+    <value>렌더링 준비 중...</value>
+  </data>
+  <data name="SaveAgain" xml:space="preserve">
+    <value>추가 저장 필요</value>
+  </data>
+  <data name="TheFileWasSavedButMoreEditsWereMade" xml:space="preserve">
+    <value>파일은 저장했지만 저장 중 추가된 편집이 있습니다. 다시 저장해 주세요.</value>
+  </data>
+  <data name="SaveError" xml:space="preserve">
+    <value>저장 오류</value>
+  </data>
+  <data name="AnErrorOccurredWhileSaving" xml:space="preserve">
+    <value>저장 중 오류가 발생했습니다: {0}</value>
+  </data>
+  <data name="TextNotFound" xml:space="preserve">
+    <value>텍스트를 찾을 수 없습니다.</value>
+  </data>
+  <data name="SearchResults" xml:space="preserve">
+    <value>검색 결과</value>
+  </data>
+  <data name="CouldNotFind" xml:space="preserve">
+    <value>'{0}'를 찾을 수 없습니다.</value>
+  </data>
+  <data name="PageMatch" xml:space="preserve">
+    <value>{0} 페이지: {1}/{2} 일치 항목</value>
+  </data>
+  <data name="SearchError" xml:space="preserve">
+    <value>검색 오류: </value>
+  </data>
+  <data name="PolygonClickToAddVerticesDoubleClickEnterTo" xml:space="preserve">
+    <value>다각형: 클릭으로 꼭짓점 추가 · 더블클릭/Enter로 완성 · Esc로 취소</value>
+  </data>
+  <data name="DrawingEscCancel" xml:space="preserve">
+    <value>그리는 중... (Esc: 취소)</value>
+  </data>
+  <data name="DrawingCanceled" xml:space="preserve">
+    <value>그리기가 취소되었습니다.</value>
+  </data>
+  <data name="AddAtLeastThreeNonCollinearVerticesToThe" xml:space="preserve">
+    <value>다각형에 서로 일직선이 아닌 꼭짓점 3개 이상을 추가하세요.</value>
+  </data>
+  <data name="DrawingAddedUseSelectGraphicsGToEditIt" xml:space="preserve">
+    <value>그리기가 추가되었습니다. 그래픽 선택(G)으로 편집할 수 있습니다.</value>
+  </data>
+  <data name="PreserveOriginalChangeFontSizeColorBoldItalicAlt" xml:space="preserve">
+    <value>원본 유지 · 글꼴·크기·색상·굵게·기울임 변경 · Alt+드래그 이동</value>
+  </data>
+  <data name="ChangeFontAndSizeEditByReplacingOriginalText" xml:space="preserve">
+    <value>글꼴·크기 변경 가능 · 원본 텍스트를 교체하여 편집</value>
+  </data>
+  <data name="SwitchedToOriginalPreservingModeSelectTheTextAgain" xml:space="preserve">
+    <value>원본 보존 방식으로 전환했습니다. 텍스트를 다시 선택해 주세요.</value>
+  </data>
+  <data name="SwitchedToReplacementModeSelectTheTextAgain" xml:space="preserve">
+    <value>대체 방식으로 전환했습니다. 텍스트를 다시 선택해 주세요.</value>
+  </data>
+  <data name="ImageAddedAppliedWhenSaved" xml:space="preserve">
+    <value>이미지가 추가되었습니다 (저장 시 반영)</value>
+  </data>
+  <data name="ExtractingImages" xml:space="preserve">
+    <value>이미지 추출 중...</value>
+  </data>
+  <data name="NoImagesToExtract" xml:space="preserve">
+    <value>추출할 이미지가 없습니다.</value>
+  </data>
+  <data name="ExtractedImages" xml:space="preserve">
+    <value>이미지 추출 완료: {0}개</value>
+  </data>
+  <data name="ExtractedImagesFailed" xml:space="preserve">
+    <value>이미지 {0}개 추출, {1}개 실패</value>
+  </data>
+  <data name="ImageExtractionError" xml:space="preserve">
+    <value>이미지 추출 오류</value>
+  </data>
+  <data name="AnErrorOccurredWhileExtractingImages" xml:space="preserve">
+    <value>이미지 추출 중 오류가 발생했습니다: {0}</value>
+  </data>
+  <data name="FailedToExtractImages" xml:space="preserve">
+    <value>이미지 추출에 실패했습니다.</value>
+  </data>
+  <data name="CannotFindTheImageFileToSave" xml:space="preserve">
+    <value>저장할 이미지 파일을 찾을 수 없습니다.</value>
+  </data>
+  <data name="ImageSaved" xml:space="preserve">
+    <value>이미지 저장 완료: {0}</value>
+  </data>
+  <data name="ImageSaveError" xml:space="preserve">
+    <value>이미지 저장 오류</value>
+  </data>
+  <data name="AnErrorOccurredWhileSavingTheImage" xml:space="preserve">
+    <value>이미지를 저장하는 중 오류가 발생했습니다: {0}</value>
+  </data>
+  <data name="FailedToSaveTheImage" xml:space="preserve">
+    <value>이미지 저장에 실패했습니다.</value>
+  </data>
+  <data name="JPEGImage" xml:space="preserve">
+    <value>JPEG 이미지</value>
+  </data>
+  <data name="TIFFImage" xml:space="preserve">
+    <value>TIFF 이미지</value>
+  </data>
+  <data name="JPEG2000Image" xml:space="preserve">
+    <value>JPEG 2000 이미지</value>
+  </data>
+  <data name="BMPImage" xml:space="preserve">
+    <value>BMP 이미지</value>
+  </data>
+  <data name="GIFImage" xml:space="preserve">
+    <value>GIF 이미지</value>
+  </data>
+  <data name="JBIG2Image" xml:space="preserve">
+    <value>JBIG2 이미지</value>
+  </data>
+  <data name="PNGImage" xml:space="preserve">
+    <value>PNG 이미지</value>
+  </data>
+  <data name="CannotRenderTheEditingBackground" xml:space="preserve">
+    <value>편집 배경을 렌더링할 수 없습니다.</value>
+  </data>
+  <data name="TextDeletedEditing" xml:space="preserve">
+    <value>텍스트가 삭제되었습니다 (편집 중)</value>
+  </data>
+  <data name="TextEditsAreBeingPreviewedInRealTime" xml:space="preserve">
+    <value>텍스트 편집 내용이 실시간 반영 중입니다.</value>
+  </data>
+  <data name="TextDeleted2" xml:space="preserve">
+    <value>텍스트가 삭제되었습니다</value>
+  </data>
+  <data name="TextModifiedAppliedWhenSaved" xml:space="preserve">
+    <value>텍스트가 수정되었습니다 (저장 시 반영)</value>
+  </data>
+  <data name="TextAddedAppliedWhenSaved" xml:space="preserve">
+    <value>텍스트가 추가되었습니다 (저장 시 반영)</value>
+  </data>
+  <data name="EditOriginalPDFText" xml:space="preserve">
+    <value>PDF 원본 텍스트 편집</value>
+  </data>
+  <data name="InlineEditingWithTheOriginalFontCtrlEnterFinish" xml:space="preserve">
+    <value>원본 글꼴로 인라인 편집 · Ctrl+Enter 완료 · Esc 취소</value>
+  </data>
+  <data name="CannotRenderTheModifiedPDFPreview" xml:space="preserve">
+    <value>수정한 PDF 미리보기를 렌더링할 수 없습니다.</value>
+  </data>
+  <data name="CtrlEnterFinishEscCancel" xml:space="preserve">
+    <value> · Ctrl+Enter 완료 · Esc 취소</value>
+  </data>
+  <data name="WrappingParagraphsWithTheOriginalFontCtrlEnterFinish" xml:space="preserve">
+    <value>원본 글꼴로 문단 자동 줄바꿈 중 · Ctrl+Enter 완료 · Esc 취소</value>
+  </data>
+  <data name="ExtendingASingleLineToTheRightWithThe" xml:space="preserve">
+    <value>원본 글꼴로 한 줄 오른쪽 확장 중 · Ctrl+Enter 완료 · Esc 취소</value>
+  </data>
+  <data name="TextEditingComplete" xml:space="preserve">
+    <value>텍스트 편집 완료 · </value>
+  </data>
+  <data name="RenderingPage" xml:space="preserve">
+    <value>페이지 렌더링 중...</value>
+  </data>
+  <data name="PageOrderChanged" xml:space="preserve">
+    <value>페이지 순서가 변경되었습니다</value>
+  </data>
+  <data name="FailedToReorderPages" xml:space="preserve">
+    <value>페이지 순서 변경에 실패했습니다: </value>
+  </data>
+  <data name="CannotReadFormFields" xml:space="preserve">
+    <value>양식 필드를 읽을 수 없습니다: {0}</value>
+  </data>
+  <data name="Form" xml:space="preserve">
+    <value>양식: {0}</value>
+  </data>
+  <data name="FormInputError" xml:space="preserve">
+    <value>양식 입력 오류: {0}</value>
+  </data>
+  <data name="FormCtrlSToSave" xml:space="preserve">
+    <value>양식: {0} · 저장하려면 Ctrl+S</value>
+  </data>
+  <data name="ConvertingImagesToPDF" xml:space="preserve">
+    <value>이미지 {0}개를 PDF로 변환 중...</value>
+  </data>
+  <data name="PDFCreatedPages" xml:space="preserve">
+    <value>PDF 생성 완료: {0}페이지</value>
+  </data>
+  <data name="ThePDFWasSavedButCannotBeOpened" xml:space="preserve">
+    <value>PDF는 저장되었지만 열 수 없습니다.</value>
+  </data>
+  <data name="PDFOpeningError" xml:space="preserve">
+    <value>PDF 열기 오류</value>
+  </data>
+  <data name="CannotOpenTheCreatedPDF" xml:space="preserve">
+    <value>생성한 PDF를 열 수 없습니다: {0}</value>
+  </data>
+  <data name="CouldNotConvertImagesToPDF" xml:space="preserve">
+    <value>이미지를 PDF로 변환하지 못했습니다.</value>
+  </data>
+  <data name="ImageToPDFConversionError" xml:space="preserve">
+    <value>이미지 PDF 변환 오류</value>
+  </data>
+  <data name="MergingPDFs" xml:space="preserve">
+    <value>PDF 합치기 중...</value>
+  </data>
+  <data name="TheMergedFileWasSavedButCannotBeReopened" xml:space="preserve">
+    <value>병합 파일은 저장되었지만 다시 열 수 없습니다.</value>
+  </data>
+  <data name="PDFMergeComplete" xml:space="preserve">
+    <value>PDF 합치기 완료</value>
+  </data>
+  <data name="FailedToMergePDFs" xml:space="preserve">
+    <value>PDF 합치기에 실패했습니다.</value>
+  </data>
+  <data name="MergeError" xml:space="preserve">
+    <value>합치기 오류</value>
+  </data>
+  <data name="ThePageRangesToSplitAreInvalid" xml:space="preserve">
+    <value>나눌 페이지 범위가 올바르지 않습니다.</value>
+  </data>
+  <data name="SplittingPDF" xml:space="preserve">
+    <value>PDF 나누기 중...</value>
+  </data>
+  <data name="PDFSplitCompleteFilesCreated" xml:space="preserve">
+    <value>PDF 나누기 완료: {0}개 파일 생성됨</value>
+  </data>
+  <data name="FailedToSplitThePDF" xml:space="preserve">
+    <value>PDF 나누기에 실패했습니다.</value>
+  </data>
+  <data name="SplitError" xml:space="preserve">
+    <value>나누기 오류</value>
+  </data>
+  <data name="AnErrorOccurredWhileSplitting" xml:space="preserve">
+    <value>나누기 중 에러 발생: {0}</value>
+  </data>
+  <data name="Page2" xml:space="preserve">
+    <value>페이지 {0}</value>
+  </data>
+  <data name="SelectedPages" xml:space="preserve">
+    <value>선택한 {0}개 페이지</value>
+  </data>
+  <data name="DeletePages" xml:space="preserve">
+    <value>페이지 삭제</value>
+  </data>
+  <data name="Delete" xml:space="preserve">
+    <value>{0}를 삭제하시겠습니까?</value>
+  </data>
+  <data name="Delete2" xml:space="preserve">
+    <value>삭제</value>
+  </data>
+  <data name="PageDeletionError" xml:space="preserve">
+    <value>페이지 삭제 오류</value>
+  </data>
+  <data name="PagesDeleted" xml:space="preserve">
+    <value>페이지가 삭제되었습니다</value>
+  </data>
+  <data name="FailedToDeletePages" xml:space="preserve">
+    <value>페이지 삭제에 실패했습니다</value>
+  </data>
+  <data name="ExtractingPages" xml:space="preserve">
+    <value>페이지 추출 중...</value>
+  </data>
+  <data name="ExtractedPages" xml:space="preserve">
+    <value>페이지 추출 완료: {0}개 페이지</value>
+  </data>
+  <data name="FailedToExtractPages" xml:space="preserve">
+    <value>페이지 추출에 실패했습니다</value>
+  </data>
+  <data name="FailedToExtractPages2" xml:space="preserve">
+    <value>페이지 추출에 실패했습니다.</value>
+  </data>
+  <data name="PageExtractionError" xml:space="preserve">
+    <value>페이지 추출 오류</value>
+  </data>
+  <data name="AnErrorOccurredWhileExtractingPages" xml:space="preserve">
+    <value>페이지 추출 중 오류가 발생했습니다: {0}</value>
+  </data>
+  <data name="Document" xml:space="preserve">
+    <value>문서</value>
+  </data>
+  <data name="ExtractedPdf" xml:space="preserve">
+    <value>{0}_추출.pdf</value>
+  </data>
+  <data name="NoRecentFiles" xml:space="preserve">
+    <value>최근 파일 없음</value>
+  </data>
+  <data name="ClearRecentFiles" xml:space="preserve">
+    <value>최근 파일 목록 지우기</value>
+  </data>
+  <data name="FileNotFound" xml:space="preserve">
+    <value>파일을 찾을 수 없습니다.</value>
+  </data>
+  <data name="TheDigitallySignedOriginalCannotBeOverwrittenSaveUnder" xml:space="preserve">
+    <value>전자서명된 원본은 덮어쓸 수 없습니다. 다른 이름으로 저장해 주세요. 편집한 사본의 전자서명은 유효하지 않습니다.</value>
+  </data>
+  <data name="TheDocumentChangedDuringEditingPleaseTryAgain" xml:space="preserve">
+    <value>편집 중 문서가 변경되었습니다. 다시 시도해 주세요.</value>
+  </data>
+  <data name="SelectTheGraphicsAgain" xml:space="preserve">
+    <value>그래픽을 다시 선택해 주세요.</value>
+  </data>
+  <data name="SelectTheTextAgain" xml:space="preserve">
+    <value>텍스트를 다시 선택해 주세요.</value>
+  </data>
+  <data name="TheDocumentChangedDuringMergingPleaseTryAgain" xml:space="preserve">
+    <value>합치는 동안 문서가 변경되었습니다. 다시 시도해 주세요.</value>
+  </data>
+  <data name="SaveTheDerivedPDFUnderADifferentNameFrom" xml:space="preserve">
+    <value>파생 PDF는 원본과 다른 이름으로 저장해 주세요.</value>
+  </data>
+  <data name="SaveTheMergedOutputUnderADifferentNameFrom" xml:space="preserve">
+    <value>병합 결과는 입력 파일과 다른 이름으로 저장해 주세요.</value>
+  </data>
+  <data name="ThePreviousPrintJobIsStillInProgress" xml:space="preserve">
+    <value>이전 인쇄 작업이 아직 진행 중입니다.</value>
+  </data>
+  <data name="PrintingIsNotSupportedOnThisDevice" xml:space="preserve">
+    <value>이 장치에서는 인쇄를 지원하지 않습니다.</value>
+  </data>
+  <data name="CannotFindPDFPagesToPrint" xml:space="preserve">
+    <value>인쇄할 PDF 페이지를 찾을 수 없습니다.</value>
+  </data>
+  <data name="ThePrinterCouldNotCompleteThePrintJob" xml:space="preserve">
+    <value>프린터가 인쇄 작업을 완료하지 못했습니다.</value>
+  </data>
+  <data name="CannotRenderPageForPrinting" xml:space="preserve">
+    <value>{0}페이지를 인쇄용으로 렌더링할 수 없습니다.</value>
+  </data>
+  <data name="FontSubstitutionForMissingGlyphs" xml:space="preserve">
+    <value>글리프 누락으로 글꼴 대체: </value>
+  </data>
+  <data name="ThePDFCoordinatesCannotBeTransformed" xml:space="preserve">
+    <value>변환할 수 없는 PDF 좌표입니다.</value>
+  </data>
+  <data name="UnsupportedEncryptionAlgorithm" xml:space="preserve">
+    <value>지원하지 않는 암호화 방식입니다.</value>
+  </data>
+  <data name="SetAtLeastOneOpenOrPermissionsPassword" xml:space="preserve">
+    <value>열기 또는 권한 비밀번호를 하나 이상 설정해 주세요.</value>
+  </data>
+  <data name="TheExistingPasswordsCouldNotBeRecoveredEnterChange" xml:space="preserve">
+    <value>기존 비밀번호를 복원할 수 없습니다. 보호 메뉴에서 비밀번호를 입력하거나 변경·삭제해 주세요.</value>
+  </data>
+  <data name="UseDifferentPasswordsForOpeningTheDocumentAndChanging" xml:space="preserve">
+    <value>열기 비밀번호와 권한 비밀번호는 서로 다르게 설정해 주세요.</value>
+  </data>
+  <data name="PasswordsForThisEncryptionAlgorithmMustBeAtMost" xml:space="preserve">
+    <value>이 암호화 방식의 비밀번호는 UTF-8 기준 {0}바이트 이하여야 합니다. 한글은 보통 글자당 3바이트입니다.</value>
+  </data>
+  <data name="SetAPermissionsPasswordToRestrictUsage" xml:space="preserve">
+    <value>사용 권한을 제한하려면 권한 비밀번호를 설정해 주세요.</value>
+  </data>
+  <data name="RenderingQuality" xml:space="preserve">
+    <value>렌더링 품질</value>
+  </data>
+  <data name="LowFast" xml:space="preserve">
+    <value>낮음 (빠름)</value>
+  </data>
+  <data name="Normal" xml:space="preserve">
+    <value>보통</value>
+  </data>
+  <data name="High" xml:space="preserve">
+    <value>높음</value>
+  </data>
+  <data name="HighestSlow" xml:space="preserve">
+    <value>최고 (느림)</value>
+  </data>
+  <data name="DefaultFont" xml:space="preserve">
+    <value>기본 폰트</value>
+  </data>
+  <data name="DefaultFontSize" xml:space="preserve">
+    <value>기본 글자 크기</value>
+  </data>
+  <data name="SettingsAreSavedAutomaticallyAndRestoredTheNextTime" xml:space="preserve">
+    <value>설정은 자동으로 저장되며 다음 실행에도 적용됩니다.</value>
+  </data>
+  <data name="Preferences" xml:space="preserve">
+    <value>환경 설정</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>닫기</value>
+  </data>
+  <data name="Version" xml:space="preserve">
+    <value>버전 {0}</value>
+  </data>
+  <data name="PDFEditorBuiltWithWinUI3IText9" xml:space="preserve">
+    <value>WinUI 3 + iText 9 기반 PDF 편집기</value>
+  </data>
+  <data name="AboutPDFSimpleEditor" xml:space="preserve">
+    <value>PDF Simple Editor 정보</value>
+  </data>
+  <data name="OK" xml:space="preserve">
+    <value>확인</value>
+  </data>
+  <data name="PDFPassword" xml:space="preserve">
+    <value>PDF 암호</value>
+  </data>
+  <data name="IncorrectPasswordPleaseTryAgain" xml:space="preserve">
+    <value>암호가 올바르지 않습니다. 다시 입력해 주세요.</value>
+  </data>
+  <data name="IsPasswordProtectedEnterThePasswordToOpenThe" xml:space="preserve">
+    <value>'{0}' 파일은 암호로 보호되어 있습니다.
+문서를 열려면 암호를 입력해 주세요.</value>
+  </data>
+  <data name="EnterPassword" xml:space="preserve">
+    <value>암호 입력</value>
+  </data>
+  <data name="Open" xml:space="preserve">
+    <value>열기</value>
+  </data>
+  <data name="CannotDetermineTheOriginalTextPositionSelectItAgain" xml:space="preserve">
+    <value>원본 텍스트 위치를 확인할 수 없습니다. 다시 선택해 주세요.</value>
+  </data>
+  <data name="ThisTextCannotBeEditedWhilePreservingTheBackground" xml:space="preserve">
+    <value>배경을 보존하면서 편집할 수 없는 텍스트입니다.</value>
+  </data>
+  <data name="CannotReadPDFGlyphData" xml:space="preserve">
+    <value>PDF 글리프 데이터를 읽을 수 없습니다.</value>
+  </data>
+  <data name="CannotReadThePDFPage" xml:space="preserve">
+    <value>PDF 페이지를 읽을 수 없습니다.</value>
+  </data>
+  <data name="CannotReadPDFTextData" xml:space="preserve">
+    <value>PDF 텍스트 데이터를 읽을 수 없습니다.</value>
+  </data>
+  <data name="ThePDFFormContainsACircularReference" xml:space="preserve">
+    <value>순환 참조된 PDF Form입니다.</value>
+  </data>
+  <data name="NoTextToEdit" xml:space="preserve">
+    <value>편집할 텍스트가 없습니다.</value>
+  </data>
+  <data name="ThePDFContentChangedSelectTheTextAgain" xml:space="preserve">
+    <value>PDF 내용이 변경되었습니다. 텍스트를 다시 선택해 주세요.</value>
+  </data>
+  <data name="OriginalPreservingEditingOfVerticalOrClippedTextIs" xml:space="preserve">
+    <value>세로쓰기 또는 클리핑 텍스트의 원본 보존 편집은 아직 지원하지 않습니다.</value>
+  </data>
+  <data name="TheSelectedTextRegionsOverlap" xml:space="preserve">
+    <value>겹치는 텍스트 선택입니다.</value>
+  </data>
+  <data name="TheModifiedStyleOverlapsNearbyTextReduceTheSize" xml:space="preserve">
+    <value>변경한 스타일이 주변 텍스트와 겹칩니다. 크기를 줄이거나 더 넓은 텍스트 영역을 선택해 주세요.</value>
+  </data>
+  <data name="TheAddedLinesOverlapOtherOriginalTextShortenThe" xml:space="preserve">
+    <value>추가한 줄이 다른 원본 텍스트와 겹칩니다. 내용을 줄이거나 텍스트 영역을 먼저 이동해 주세요.</value>
+  </data>
+  <data name="NoFallbackFontSupportingTheGlyphIsInstalled" xml:space="preserve">
+    <value>'{0}' 글리프를 지원하는 대체 글꼴이 설치되어 있지 않습니다.</value>
+  </data>
+  <data name="RotatedOrRightToLeftTextCurrentlySupportsOnly" xml:space="preserve">
+    <value>회전되거나 오른쪽에서 왼쪽으로 배치된 텍스트는 현재 이동과 전체 삭제만 지원합니다.</value>
+  </data>
+  <data name="ExpertCFFCharacterSetsCannotBeEditedYet" xml:space="preserve">
+    <value>Expert CFF 문자셋은 아직 편집할 수 없습니다.</value>
+  </data>
+  <data name="InvalidCFFCharacterSet" xml:space="preserve">
+    <value>잘못된 CFF 문자셋입니다.</value>
+  </data>
+  <data name="ThePDFTextMatrixCannotBeInverted" xml:space="preserve">
+    <value>역변환할 수 없는 PDF 텍스트 행렬입니다.</value>
+  </data>
+  <data name="FontSizeMustBeANumberGreaterThanZero" xml:space="preserve">
+    <value>글자 크기는 0보다 큰 숫자여야 합니다.</value>
+  </data>
+  <data name="SelectAValidRGBTextColor" xml:space="preserve">
+    <value>올바른 RGB 글자색을 선택해 주세요.</value>
+  </data>
+  <data name="NoFontSupportingTheRequestedWeightAndSlantFor" xml:space="preserve">
+    <value>'{0}'에 요청한 굵기·기울임을 지원하는 글꼴이 설치되어 있지 않습니다. 다른 글꼴을 선택해 주세요.</value>
+  </data>
+  <data name="OnlyTheTextColorCanCurrentlyBeChangedFor" xml:space="preserve">
+    <value>회전되거나 오른쪽에서 왼쪽으로 배치된 텍스트는 현재 글자색만 변경할 수 있습니다.</value>
+  </data>
+  <data name="CannotFindTheSaveFolder" xml:space="preserve">
+    <value>저장할 폴더를 찾을 수 없습니다: {0}</value>
+  </data>
+  <data name="AnotherProgramChangedTheDestinationFileSaveUnderA" xml:space="preserve">
+    <value>다른 프로그램이 저장 대상 파일을 변경했습니다. 다른 이름으로 저장하거나 파일을 다시 열어 주세요.</value>
+  </data>
+  <data name="SelectPDFFilesToMerge" xml:space="preserve">
+    <value>합칠 PDF 파일을 선택해 주세요.</value>
+  </data>
+  <data name="CannotMerge" xml:space="preserve">
+    <value>'{0}' 파일을 합칠 수 없습니다: {1}</value>
+  </data>
+  <data name="CannotFindTheOutputFolder" xml:space="preserve">
+    <value>출력 폴더를 찾을 수 없습니다.</value>
+  </data>
+  <data name="EnterThePageRangesToSplit" xml:space="preserve">
+    <value>나눌 페이지 범위를 입력해 주세요.</value>
+  </data>
+  <data name="TheFileAlreadyExistsSelectAnotherFolder" xml:space="preserve">
+    <value>파일이 이미 있습니다. 다른 폴더를 선택해 주세요: {0}</value>
+  </data>
+  <data name="FailedToSplitThePDF2" xml:space="preserve">
+    <value>PDF 나누기에 실패했습니다: {0}</value>
+  </data>
+  <data name="OutputsThatCouldNotBeDeleted" xml:space="preserve">
+    <value>
+삭제하지 못한 출력: {0}</value>
+  </data>
+  <data name="SelectPagesToExtract" xml:space="preserve">
+    <value>추출할 페이지를 선택해 주세요.</value>
+  </data>
+  <data name="InvalidPageRangeEnterAnAscendingRangeBetween1" xml:space="preserve">
+    <value>페이지 범위 {0}-{1}가 올바르지 않습니다. 1~{2} 사이의 오름차순 범위를 입력해 주세요.</value>
+  </data>
+  <data name="CannotFindTheFormField" xml:space="preserve">
+    <value>양식 필드를 찾을 수 없습니다: {0}</value>
+  </data>
+  <data name="ReadOnlyFormFieldsCannotBeEdited" xml:space="preserve">
+    <value>읽기 전용 양식 필드는 수정할 수 없습니다.</value>
+  </data>
+  <data name="CannotFindTheOriginalGraphic" xml:space="preserve">
+    <value>그래픽 원본을 찾을 수 없습니다.</value>
+  </data>
+  <data name="TheSelectedGraphicsOverlap" xml:space="preserve">
+    <value>겹치는 그래픽 선택입니다.</value>
+  </data>
+  <data name="GraphicsWithSharedClippingRegionsCannotBeTransformed" xml:space="preserve">
+    <value>공유 클리핑 영역이 있는 그래픽은 변환할 수 없습니다.</value>
+  </data>
+  <data name="CannotFindTheGraphicPath" xml:space="preserve">
+    <value>그래픽 경로를 찾을 수 없습니다.</value>
+  </data>
+  <data name="TheGraphicsChangedSelectThemAgain" xml:space="preserve">
+    <value>그래픽이 변경되었습니다. 다시 선택해 주세요.</value>
+  </data>
+  <data name="SelectImagesToConvert" xml:space="preserve">
+    <value>변환할 이미지를 선택해 주세요.</value>
+  </data>
+  <data name="CannotReadTheImage" xml:space="preserve">
+    <value>'{0}' 이미지를 읽을 수 없습니다.</value>
+  </data>
+  <data name="TheImageHasInvalidDimensions" xml:space="preserve">
+    <value>'{0}' 이미지의 크기가 올바르지 않습니다.</value>
+  </data>
+  <data name="MergePDFs" xml:space="preserve">
+    <value>PDF 합치기</value>
+  </data>
+  <data name="MergeTheSelectedFilesIntoTheCurrentDocument" xml:space="preserve">
+    <value>선택한 {0}개 파일을 현재 문서에 합치시겠습니까?</value>
+  </data>
+  <data name="MergeIntoCurrentDocument" xml:space="preserve">
+    <value>현재 문서에 합치기</value>
+  </data>
+  <data name="SaveAsANewFile" xml:space="preserve">
+    <value>새 파일로 저장</value>
+  </data>
+  <data name="ASavePathIsRequiredForTheNewMerged" xml:space="preserve">
+    <value>새 병합 파일의 저장 경로가 필요합니다.</value>
+  </data>
+  <data name="SplitIntoIndividualPages" xml:space="preserve">
+    <value>페이지별로 나누기</value>
+  </data>
+  <data name="SplitByPageCount" xml:space="preserve">
+    <value>지정 페이지 수로 나누기</value>
+  </data>
+  <data name="SplitByPageRanges" xml:space="preserve">
+    <value>페이지 범위로 나누기</value>
+  </data>
+  <data name="PagesPerFile" xml:space="preserve">
+    <value>파일당 페이지 수:</value>
+  </data>
+  <data name="Example1346710" xml:space="preserve">
+    <value>예: 1-3, 4-6, 7-10</value>
+  </data>
+  <data name="PageRangesCommaSeparated" xml:space="preserve">
+    <value>페이지 범위 (쉼표로 구분):</value>
+  </data>
+  <data name="PagesInTotal" xml:space="preserve">
+    <value>총 {0} 페이지</value>
+  </data>
+  <data name="SplitPDF" xml:space="preserve">
+    <value>PDF 나누기</value>
+  </data>
+  <data name="Split" xml:space="preserve">
+    <value>나누기</value>
+  </data>
+  <data name="PagesPerFileMustBeAnIntegerBetween1" xml:space="preserve">
+    <value>파일당 페이지 수는 1~{0} 사이의 정수여야 합니다.</value>
+  </data>
+  <data name="PagesPerFileMustBeAtLeast1" xml:space="preserve">
+    <value>파일당 페이지 수는 1 이상이어야 합니다.</value>
+  </data>
+  <data name="CheckThePageRange" xml:space="preserve">
+    <value>페이지 범위를 확인해 주세요: '{0}'</value>
+  </data>
+  <data name="EnterPageRanges" xml:space="preserve">
+    <value>페이지 범위를 입력해 주세요.</value>
+  </data>
+  <data name="ChangesTakeEffectWhenYouSaveThePDFClear" xml:space="preserve">
+    <value>변경 사항은 PDF를 저장할 때 반영됩니다. 비밀번호를 삭제하려면 해당 항목의 체크를 해제하세요.</value>
+  </data>
+  <data name="SomeExistingPasswordsForThisFileAreUnknownEnter" xml:space="preserve">
+    <value>이 파일의 기존 비밀번호 중 일부를 알 수 없습니다. 아래에 비밀번호를 직접 입력하면 저장에 사용됩니다. 기존 값을 유지하려면 동일한 비밀번호를 입력하세요.</value>
+  </data>
+  <data name="EncryptionAlgorithm" xml:space="preserve">
+    <value>암호화 방식</value>
+  </data>
+  <data name="AES256Default" xml:space="preserve">
+    <value>AES-256 (기본)</value>
+  </data>
+  <data name="AES128Compatibility" xml:space="preserve">
+    <value>AES-128 (호환성)</value>
+  </data>
+  <data name="EncryptDocumentMetadata" xml:space="preserve">
+    <value>문서 메타데이터도 암호화</value>
+  </data>
+  <data name="OpenPasswordOpen" xml:space="preserve">
+    <value>열기 비밀번호 (Open)</value>
+  </data>
+  <data name="OpenPassword" xml:space="preserve">
+    <value>열기 비밀번호</value>
+  </data>
+  <data name="ConfirmOpenPassword" xml:space="preserve">
+    <value>열기 비밀번호 확인</value>
+  </data>
+  <data name="PermissionsPasswordPermissionOwner" xml:space="preserve">
+    <value>권한 비밀번호 (Permission / Owner)</value>
+  </data>
+  <data name="PermissionsPassword" xml:space="preserve">
+    <value>권한 비밀번호</value>
+  </data>
+  <data name="ConfirmPermissionsPassword" xml:space="preserve">
+    <value>권한 비밀번호 확인</value>
+  </data>
+  <data name="UseThePermissionsPasswordToRestrictUsageRestrictionsMay" xml:space="preserve">
+    <value>권한 비밀번호로 사용 제한을 설정합니다. PDF 프로그램에 따라 제한 적용 방식이 다를 수 있습니다.</value>
+  </data>
+  <data name="AllowPrinting" xml:space="preserve">
+    <value>인쇄 허용</value>
+  </data>
+  <data name="NotAllowed" xml:space="preserve">
+    <value>허용하지 않음</value>
+  </data>
+  <data name="LowResolutionOnly" xml:space="preserve">
+    <value>저해상도만 허용</value>
+  </data>
+  <data name="HighResolutionAllowed" xml:space="preserve">
+    <value>고해상도 허용</value>
+  </data>
+  <data name="EditContent" xml:space="preserve">
+    <value>내용 편집</value>
+  </data>
+  <data name="CopyTextAndImages" xml:space="preserve">
+    <value>텍스트·이미지 복사</value>
+  </data>
+  <data name="AddAndEditAnnotations" xml:space="preserve">
+    <value>주석 추가·수정</value>
+  </data>
+  <data name="FillInForms" xml:space="preserve">
+    <value>양식 작성</value>
+  </data>
+  <data name="InsertDeleteAndRotatePages" xml:space="preserve">
+    <value>페이지 삽입·삭제·회전</value>
+  </data>
+  <data name="EncryptionAndPasswordSettings" xml:space="preserve">
+    <value>암호화 및 비밀번호 설정</value>
+  </data>
+  <data name="Apply" xml:space="preserve">
+    <value>적용</value>
+  </data>
+  <data name="TheOpenPasswordAndConfirmationDoNotMatch" xml:space="preserve">
+    <value>열기 비밀번호와 확인 입력이 일치하지 않습니다.</value>
+  </data>
+  <data name="ThePermissionsPasswordAndConfirmationDoNotMatch" xml:space="preserve">
+    <value>권한 비밀번호와 확인 입력이 일치하지 않습니다.</value>
+  </data>
+  <data name="RemoveAllPasswordsRemoveProtection" xml:space="preserve">
+    <value>모든 비밀번호 삭제 / 보호 해제</value>
+  </data>
+  <data name="RemoveAllOpenAndPermissionsPasswordsEncryptionAndUsage" xml:space="preserve">
+    <value>열기·권한 비밀번호, 암호화, 사용 권한 제한을 모두 제거합니다. PDF를 저장하면 비밀번호 없이 열 수 있습니다.
+
+비밀번호를 개별 삭제하려면 ‘암호화 및 비밀번호 설정·변경’을 사용하세요.</value>
+  </data>
+  <data name="RemoveProtection" xml:space="preserve">
+    <value>보호 해제</value>
+  </data>
+  <data name="EnterPassword2" xml:space="preserve">
+    <value>비밀번호 입력</value>
+  </data>
+  <data name="LeaveBlankToKeepTheExistingPassword" xml:space="preserve">
+    <value>비워 두면 기존 비밀번호 유지</value>
+  </data>
+  <data name="DragARegionToRedact" xml:space="preserve">
+    <value>삭제할 영역을 드래그해 주세요.</value>
+  </data>
+  <data name="CannotFindTheSavedImageIdentifierTheOriginalFile" xml:space="preserve">
+    <value>저장한 이미지의 식별자를 찾을 수 없습니다. 원본 파일은 변경되지 않았습니다.</value>
+  </data>
+  <data name="ThePDFHasNoPagesToSave" xml:space="preserve">
+    <value>저장할 PDF에 페이지가 없습니다.</value>
+  </data>
+  <data name="File" xml:space="preserve">
+    <value>파일</value>
+  </data>
+  <data name="New" xml:space="preserve">
+    <value>새로 만들기</value>
+  </data>
+  <data name="Open2" xml:space="preserve">
+    <value>열기...</value>
+  </data>
+  <data name="RecentFiles" xml:space="preserve">
+    <value>최근 파일</value>
+  </data>
+  <data name="SaveAs" xml:space="preserve">
+    <value>다른 이름으로 저장...</value>
+  </data>
+  <data name="Print" xml:space="preserve">
+    <value>인쇄...</value>
+  </data>
+  <data name="Edit" xml:space="preserve">
+    <value>편집</value>
+  </data>
+  <data name="Undo" xml:space="preserve">
+    <value>실행 취소</value>
+  </data>
+  <data name="Redo" xml:space="preserve">
+    <value>다시 실행</value>
+  </data>
+  <data name="Find" xml:space="preserve">
+    <value>찾기...</value>
+  </data>
+  <data name="View" xml:space="preserve">
+    <value>보기</value>
+  </data>
+  <data name="ZoomIn" xml:space="preserve">
+    <value>확대</value>
+  </data>
+  <data name="ZoomOut" xml:space="preserve">
+    <value>축소</value>
+  </data>
+  <data name="FitToPage" xml:space="preserve">
+    <value>페이지에 맞추기</value>
+  </data>
+  <data name="ShowPagePanel" xml:space="preserve">
+    <value>페이지 패널 표시</value>
+  </data>
+  <data name="Tools" xml:space="preserve">
+    <value>도구</value>
+  </data>
+  <data name="SelectText" xml:space="preserve">
+    <value>텍스트 선택</value>
+  </data>
+  <data name="SelectGraphics" xml:space="preserve">
+    <value>그래픽 선택</value>
+  </data>
+  <data name="AddText" xml:space="preserve">
+    <value>텍스트 추가</value>
+  </data>
+  <data name="RedactRegion" xml:space="preserve">
+    <value>영역 삭제</value>
+  </data>
+  <data name="HighlightText" xml:space="preserve">
+    <value>텍스트 강조</value>
+  </data>
+  <data name="Freehand" xml:space="preserve">
+    <value>자유 그리기</value>
+  </data>
+  <data name="Rectangle" xml:space="preserve">
+    <value>사각형</value>
+  </data>
+  <data name="Ellipse" xml:space="preserve">
+    <value>타원</value>
+  </data>
+  <data name="Arrow" xml:space="preserve">
+    <value>화살표</value>
+  </data>
+  <data name="TriangleArrow" xml:space="preserve">
+    <value>삼각형 머리 화살표</value>
+  </data>
+  <data name="OutlineArrow" xml:space="preserve">
+    <value>테두리 화살표</value>
+  </data>
+  <data name="Polygon" xml:space="preserve">
+    <value>다각형</value>
+  </data>
+  <data name="DrawSignature" xml:space="preserve">
+    <value>서명 그리기</value>
+  </data>
+  <data name="AddImage" xml:space="preserve">
+    <value>이미지 추가</value>
+  </data>
+  <data name="ExtractAllImages" xml:space="preserve">
+    <value>모든 이미지 추출...</value>
+  </data>
+  <data name="MergePDFs2" xml:space="preserve">
+    <value>PDF 합치기...</value>
+  </data>
+  <data name="ImagesToPDF" xml:space="preserve">
+    <value>이미지를 PDF로...</value>
+  </data>
+  <data name="SplitPDF2" xml:space="preserve">
+    <value>PDF 나누기...</value>
+  </data>
+  <data name="Protection" xml:space="preserve">
+    <value>보호</value>
+  </data>
+  <data name="SetOrChangeEncryptionAndPasswords" xml:space="preserve">
+    <value>암호화 및 비밀번호 설정·변경...</value>
+  </data>
+  <data name="RemoveAllPasswordsRemoveProtection2" xml:space="preserve">
+    <value>모든 비밀번호 삭제 / 보호 해제...</value>
+  </data>
+  <data name="Settings" xml:space="preserve">
+    <value>설정</value>
+  </data>
+  <data name="Preferences2" xml:space="preserve">
+    <value>환경 설정...</value>
+  </data>
+  <data name="About" xml:space="preserve">
+    <value>정보</value>
+  </data>
+  <data name="Go" xml:space="preserve">
+    <value>이동</value>
+  </data>
+  <data name="TextEditingMode" xml:space="preserve">
+    <value>텍스트 편집 방식</value>
+  </data>
+  <data name="Replacement" xml:space="preserve">
+    <value>대체 방식</value>
+  </data>
+  <data name="PreserveOriginal" xml:space="preserve">
+    <value>원본 보존 방식</value>
+  </data>
+  <data name="DrawingTools" xml:space="preserve">
+    <value>그리기 도구</value>
+  </data>
+  <data name="FreehandRectangleEllipseArrowPolygon" xml:space="preserve">
+    <value>자유 · 사각형 · 타원 · 화살표 · 다각형</value>
+  </data>
+  <data name="DrawingColorAndLineWidth" xml:space="preserve">
+    <value>그리기 색상 및 선 두께</value>
+  </data>
+  <data name="DrawingSettings" xml:space="preserve">
+    <value>그리기 설정</value>
+  </data>
+  <data name="DrawingLineSettings" xml:space="preserve">
+    <value>그리기 선 설정</value>
+  </data>
+  <data name="LineWidth" xml:space="preserve">
+    <value>선 두께</value>
+  </data>
+  <data name="SignatureLineSettings" xml:space="preserve">
+    <value>서명 선 설정</value>
+  </data>
+  <data name="SignatureSettings" xml:space="preserve">
+    <value>서명 설정</value>
+  </data>
+  <data name="OpenCtrlO" xml:space="preserve">
+    <value>열기 (Ctrl+O)</value>
+  </data>
+  <data name="SaveCtrlS" xml:space="preserve">
+    <value>저장 (Ctrl+S)</value>
+  </data>
+  <data name="SaveAsCtrlShiftS" xml:space="preserve">
+    <value>다른 이름으로 저장 (Ctrl+Shift+S)</value>
+  </data>
+  <data name="PrintCtrlP" xml:space="preserve">
+    <value>인쇄 (Ctrl+P)</value>
+  </data>
+  <data name="UndoCtrlZ" xml:space="preserve">
+    <value>실행 취소 (Ctrl+Z)</value>
+  </data>
+  <data name="RedoCtrlY" xml:space="preserve">
+    <value>다시 실행 (Ctrl+Y)</value>
+  </data>
+  <data name="SelectTextS" xml:space="preserve">
+    <value>텍스트 선택 (S)</value>
+  </data>
+  <data name="SelectGraphicsGTableBordersLinesShapesImages" xml:space="preserve">
+    <value>그래픽 선택 (G) · 표 테두리, 선, 도형, 이미지</value>
+  </data>
+  <data name="AddTextA" xml:space="preserve">
+    <value>텍스트 추가 (A)</value>
+  </data>
+  <data name="RedactRegionRRemoveContentInTheDraggedRegion" xml:space="preserve">
+    <value>영역 삭제 (R) · 드래그한 영역의 내용 삭제</value>
+  </data>
+  <data name="HighlightColorAndOpacity" xml:space="preserve">
+    <value>강조 색상 및 투명도</value>
+  </data>
+  <data name="Opacity" xml:space="preserve">
+    <value>투명도</value>
+  </data>
+  <data name="HighlightSettings" xml:space="preserve">
+    <value>강조 설정</value>
+  </data>
+  <data name="ColorPickerEyedropper" xml:space="preserve">
+    <value>색상 추출 (Eyedropper)</value>
+  </data>
+  <data name="Font" xml:space="preserve">
+    <value>폰트</value>
+  </data>
+  <data name="Bold" xml:space="preserve">
+    <value>굵게</value>
+  </data>
+  <data name="Italic" xml:space="preserve">
+    <value>기울임</value>
+  </data>
+  <data name="TextColor" xml:space="preserve">
+    <value>글자 색상</value>
+  </data>
+  <data name="Find2" xml:space="preserve">
+    <value>찾기</value>
+  </data>
+  <data name="TextToFind" xml:space="preserve">
+    <value>찾을 텍스트...</value>
+  </data>
+  <data name="Previous" xml:space="preserve">
+    <value>이전</value>
+  </data>
+  <data name="Next" xml:space="preserve">
+    <value>다음</value>
+  </data>
+  <data name="MatchCase" xml:space="preserve">
+    <value>대소문자 구분</value>
+  </data>
+  <data name="Pages" xml:space="preserve">
+    <value>페이지</value>
+  </data>
+  <data name="ExtractSelectedPages" xml:space="preserve">
+    <value>선택한 페이지 추출...</value>
+  </data>
+  <data name="DeleteSelectedPages" xml:space="preserve">
+    <value>선택한 페이지 삭제</value>
+  </data>
+  <data name="OpenAPDFFileOrCreateANewDocument" xml:space="preserve">
+    <value>PDF 파일을 열거나 새로 만드세요</value>
+  </data>
+  <data name="OpenFile" xml:space="preserve">
+    <value>파일 열기</value>
+  </data>
+  <data name="Copy" xml:space="preserve">
+    <value>복사</value>
+  </data>
+  <data name="Cut" xml:space="preserve">
+    <value>잘라내기</value>
+  </data>
+  <data name="Paste" xml:space="preserve">
+    <value>붙여넣기</value>
+  </data>
+  <data name="AlignLeft" xml:space="preserve">
+    <value>왼쪽 맞춤</value>
+  </data>
+  <data name="AlignRight" xml:space="preserve">
+    <value>오른쪽 맞춤</value>
+  </data>
+  <data name="AlignTop" xml:space="preserve">
+    <value>위쪽 맞춤</value>
+  </data>
+  <data name="AlignBottom" xml:space="preserve">
+    <value>아래쪽 맞춤</value>
+  </data>
+  <data name="SaveImage" xml:space="preserve">
+    <value>이미지 저장...</value>
+  </data>
+  <data name="LanguageLabel" xml:space="preserve">
+    <value>언어</value>
+  </data>
+  <data name="LanguageKorean" xml:space="preserve">
+    <value>한국어</value>
+  </data>
+  <data name="LanguageEnglish" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="FollowWindowsLanguage" xml:space="preserve">
+    <value>Windows 설정 따르기</value>
+  </data>
+  <data name="LanguageRestartNotice" xml:space="preserve">
+    <value>언어 변경은 앱을 다시 실행하면 적용됩니다.</value>
+  </data>
+  <data name="ThirdPartyLibraries" xml:space="preserve">
+    <value>타사 라이브러리</value>
+  </data>
+</root>

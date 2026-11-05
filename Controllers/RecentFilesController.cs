@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using PDF_simple_edit.Services;
@@ -46,7 +47,7 @@ public sealed class RecentFilesController
         {
             _menu.Items.Add(new MenuFlyoutItem
             {
-                Text = "최근 파일 없음",
+                Text = Loc.Get("NoRecentFiles"),
                 IsEnabled = false
             });
             return;
@@ -65,7 +66,7 @@ public sealed class RecentFilesController
         }
 
         _menu.Items.Add(new MenuFlyoutSeparator());
-        var clearItem = new MenuFlyoutItem { Text = "최근 파일 목록 지우기" };
+        var clearItem = new MenuFlyoutItem { Text = Loc.Get("ClearRecentFiles") };
         clearItem.Click += (_, _) =>
         {
             _recentFilesService.Clear();
@@ -81,7 +82,7 @@ public sealed class RecentFilesController
 
         if (!File.Exists(filePath))
         {
-            await _showErrorAsync("오류", "파일을 찾을 수 없습니다.");
+            await _showErrorAsync(Loc.Get("Error"), Loc.Get("FileNotFound"));
             Remove(filePath);
             return;
         }
@@ -93,7 +94,7 @@ public sealed class RecentFilesController
         }
         catch (Exception ex)
         {
-            await _showErrorAsync("오류", $"파일을 여는 중 오류가 발생했습니다: {ex.Message}");
+            await _showErrorAsync(Loc.Get("Error"), Loc.Format("AnErrorOccurredWhileOpeningTheFile", ex.Message));
             Remove(filePath);
         }
     }

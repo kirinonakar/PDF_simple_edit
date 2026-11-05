@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -97,8 +98,8 @@ public sealed class EditorFontController
         var mode = (TextEditingMode)_toolbar.TextEditingModeComboBox.SelectedIndex;
         if (!Enum.IsDefined(mode)) return;
         _toolbar.TextEditingModeDescription.Text = mode == TextEditingMode.PreserveOriginal
-            ? "원본 유지 · 글꼴·크기·색상·굵게·기울임 변경 · Alt+드래그 이동"
-            : "글꼴·크기 변경 가능 · 원본 텍스트를 교체하여 편집";
+            ? Loc.Get("PreserveOriginalChangeFontSizeColorBoldItalicAlt")
+            : Loc.Get("ChangeFontAndSizeEditByReplacingOriginalText");
         if (_fontSettings.TextEditingMode == mode) return;
         _changingTextMode = true;
         _toolbar.TextEditingModeComboBox.IsEnabled = false;
@@ -115,8 +116,8 @@ public sealed class EditorFontController
             _annotationCanvasController?.Render();
             _saveSettings();
             TxtStatus.Text = mode == TextEditingMode.PreserveOriginal
-                ? "원본 보존 방식으로 전환했습니다. 텍스트를 다시 선택해 주세요."
-                : "대체 방식으로 전환했습니다. 텍스트를 다시 선택해 주세요.";
+                ? Loc.Get("SwitchedToOriginalPreservingModeSelectTheTextAgain")
+                : Loc.Get("SwitchedToReplacementModeSelectTheTextAgain");
         }
         catch (Exception error) { TxtStatus.Text = error.Message; }
         finally

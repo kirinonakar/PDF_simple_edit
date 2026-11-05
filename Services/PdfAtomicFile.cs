@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -11,7 +12,7 @@ internal static class PdfAtomicFile
         string fullPath = Path.GetFullPath(filePath);
         string directory = Path.GetDirectoryName(fullPath)!;
         if (!Directory.Exists(directory))
-            throw new DirectoryNotFoundException($"저장할 폴더를 찾을 수 없습니다: {directory}");
+            throw new DirectoryNotFoundException(Loc.Format("CannotFindTheSaveFolder", directory));
         string temporaryPath = Path.Combine(directory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
         try
         {
@@ -26,7 +27,7 @@ internal static class PdfAtomicFile
                 // Check outside the retry block: a conflict must never turn
                 // into an unconditional overwrite on the next attempt.
                 if (expected != null && !expected.Matches(PdfFileVersion.Read(fullPath)))
-                    throw new IOException("다른 프로그램이 저장 대상 파일을 변경했습니다. 다른 이름으로 저장하거나 파일을 다시 열어 주세요.");
+                    throw new IOException(Loc.Get("AnotherProgramChangedTheDestinationFileSaveUnderA"));
                 try
                 {
                     if (File.Exists(fullPath)) File.Replace(temporaryPath, fullPath, null);

@@ -1,3 +1,4 @@
+using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
@@ -55,8 +56,8 @@ public sealed class DocumentSearchController
             if (result == null)
             {
                 ClearHighlights(overlayCanvas);
-                setStatus("텍스트를 찾을 수 없습니다.");
-                await showMessage("검색 결과", $"'{searchText}'를 찾을 수 없습니다.");
+                setStatus(Loc.Get("TextNotFound"));
+                await showMessage(Loc.Get("SearchResults"), Loc.Format("CouldNotFind", searchText));
                 return;
             }
 
@@ -72,11 +73,11 @@ public sealed class DocumentSearchController
             var selected = result.Matches[result.SelectedIndex][0];
             scrollViewer.ChangeView(selected.GetX() * PdfToPixels * zoomLevel,
                 selected.GetY() * PdfToPixels * zoomLevel, null);
-            setStatus($"{result.PageNumber} 페이지: {result.SelectedIndex + 1}/{result.Matches.Count} 일치 항목");
+            setStatus(Loc.Format("PageMatch", result.PageNumber, result.SelectedIndex + 1, result.Matches.Count));
         }
         catch (Exception ex)
         {
-            setStatus("검색 오류: " + ex.Message);
+            setStatus(Loc.Get("SearchError") + ex.Message);
         }
     }
 
