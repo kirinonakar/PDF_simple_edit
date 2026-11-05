@@ -1363,4 +1363,10 @@ To remove passwords individually, use Encryption and password settings.</value>
   <data name="ImageExportPageTooLarge" xml:space="preserve">
     <value>The image for page {0} is too large. Choose a lower resolution.</value>
   </data>
+  <data name="AdjustTextWidth" xml:space="preserve">
+    <value>Scale text</value>
+  </data>
+  <data name="AdjustTextWidthTooltip" xml:space="preserve">
+    <value>Checked: scale text when resizing its area. Unchecked: keep the font size and reflow text to the area width.</value>
+  </data>
 </root>

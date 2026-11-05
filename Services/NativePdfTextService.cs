@@ -313,7 +313,7 @@ public sealed partial class NativePdfTextService
     {
         ArgumentNullException.ThrowIfNull(bytes);
         if (edits.Count == 0) throw new ArgumentException(Loc.Get("NoTextToEdit"), nameof(edits));
-        if (edits.All(e => e.Transform == null && e.Style == null && e.Text == e.Block.Text && e.DeltaX == 0 && e.DeltaY == 0))
+        if (edits.All(e => e.ReflowBounds == null && e.Transform == null && e.Style == null && e.Text == e.Block.Text && e.DeltaX == 0 && e.DeltaY == 0))
             return new(bytes, edits[0].Block);
         using var input = new MemoryStream(bytes);
         using var output = new MemoryStream();
@@ -677,7 +677,7 @@ public sealed partial class NativePdfTextService
             }
             index += value.Length;
         }
-        if (text == block.Text)
+        if (text == block.Text && edit.ReflowBounds == null)
         {
             var translated = original.Select(g => Translate(g, edit.DeltaX, edit.DeltaY)).ToList();
             return block with { Glyphs = translated, Bounds = Shift(block.Bounds, edit.DeltaX, edit.DeltaY),
@@ -706,7 +706,8 @@ public sealed partial class NativePdfTextService
             var run = runs[token.RunId];
             return token.IsVirtual ? 0 : Math.Sign(run.CharacterSpacing) * DisplayAdvance(run, run.CharacterSpacing * run.HorizontalScale, data.Map);
         }
-        return NativePdfParagraphLayout.Place(block, text, tokens, Width, Kerning, TrailingSpacing, edit.DeltaX, edit.DeltaY);
+        return NativePdfParagraphLayout.Place(block, text, tokens, Width, Kerning, TrailingSpacing, edit.DeltaX, edit.DeltaY,
+            preservePlacement: edit.ReflowBounds == null, reflowBounds: edit.ReflowBounds);
     }
 
     private static PdfTextBox Shift(PdfTextBox box, double x, double y) => box with { X = box.X + x, Y = box.Y + y };

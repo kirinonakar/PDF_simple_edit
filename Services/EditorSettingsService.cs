@@ -99,6 +99,7 @@ public sealed class EditorSettingsService
 
             SetValue(lines, "FontFamily", fontSettings.FontFamily);
             SetValue(lines, "TextEditingMode", fontSettings.TextEditingMode.ToString());
+            SetValue(lines, "AdjustTextWidth", fontSettings.AdjustTextWidth.ToString(CultureInfo.InvariantCulture));
             SetValue(lines, "FontSize", fontSettings.FontSize.ToString("0.##", CultureInfo.InvariantCulture));
             SetValue(lines, "FontColor", fontSettings.Color);
             SetValue(lines, "IsBold", fontSettings.IsBold.ToString(CultureInfo.InvariantCulture));
@@ -125,6 +126,8 @@ public sealed class EditorSettingsService
 
     private static void ApplyFontSettings(IReadOnlyDictionary<string, string> values, TextFontSettings settings)
     {
+        if (values.TryGetValue("AdjustTextWidth", out string? adjustText) && bool.TryParse(adjustText, out bool adjust))
+            settings.AdjustTextWidth = adjust;
         if (values.TryGetValue("TextEditingMode", out string? mode) && Enum.TryParse<TextEditingMode>(mode, out var parsed) && Enum.IsDefined(parsed))
             settings.TextEditingMode = parsed;
         if (values.TryGetValue("FontFamily", out string? family) && !string.IsNullOrWhiteSpace(family))

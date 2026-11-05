@@ -190,6 +190,7 @@ public sealed partial class NativePdfTextService
     {
         var content = ToPageContent(block);
         annotation.NativeText = block; annotation.Content = block.Text;
+        annotation.ReflowText = null;
         annotation.X = content.X; annotation.Y = content.Y; annotation.Width = content.Width; annotation.Height = content.Height;
         annotation.FontFamily = content.FontFamily; annotation.FontSize = content.FontSize;
         annotation.IsBold = content.IsBold; annotation.IsItalic = content.IsItalic; annotation.FontWeight = content.FontWeight;

@@ -16,11 +16,11 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
     - If the original font is not available, a fallback font is used instead.
   - **Replace Mode**: After activating the Select tool, click to select and drag to move.
     - `Ctrl+Enter` or right-click confirms, `Esc` cancels.
-    - Drag a corner handle to scale the text box and its font together.
+  - **Scale text**: uncheck to keep the font size and reflow text when narrowing or widening its area. Check it to scale text with its area.
 - **Add Text**: Press `A` to switch to the Add Text tool, then add text with custom font family, size, color, bold, and italic. `Enter` inserts a line break, `Ctrl+Enter` confirms, and `Esc` cancels.
 - **Fillable PDF forms**: Click a text field or checkbox in an AcroForm PDF to enter a value. Press `Enter` or click away to finish a text field, then use `Ctrl+S` or Save As to keep the form values in the PDF. For plain PDFs without form fields, use Add Text.
 - **Selection & transforms**: The original selection icon selects text (`S`). The adjacent table icon selects graphics (`G`): table borders, lines, shapes, images, highlights, and signatures. Click or enclose objects with a drag, `Ctrl+Click` to select several, and `Delete` to remove them.
-  - Use `Alt+Drag` to move graphics. Drag box handles to resize text, images, and graphics; corner handles preserve proportions and text scales with its box.
+  - Use `Alt+Drag` to move graphics. Drag box handles to resize text, images, and graphics; corner handles preserve proportions when scaling.
   - Drag the round handle above a selection to rotate it; hold `Shift` for 15-degree increments. Changes to original text and graphics support undo/redo and preserve surrounding page content.
 - **Images**: Insert images, save a selected image as a file, or extract all embedded images to a folder.
 - **Region deletion (pdfSweep)**: Choose **Tools → Region deletion** or press `R`, then drag a rectangle to delete contents.

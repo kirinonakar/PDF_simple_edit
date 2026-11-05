@@ -49,6 +49,11 @@ public sealed class EditorFontController
         EditorColorService.PopulatePalette(ColorPalette);
         _annotationCanvasController.PrimarySelectionChanged += SyncFontControlsWithSelection;
         _toolbar.TextEditingModeComboBox.SelectionChanged += TextEditingMode_Changed;
+        _toolbar.AdjustTextWidthCheckBox.Click += (_, _) =>
+        {
+            _fontSettings.AdjustTextWidth = _toolbar.AdjustTextWidthCheckBox.IsChecked == true;
+            _saveSettings();
+        };
         CmbFontFamily.SelectionChanged += FontFamily_Changed;
         CmbFontSize.SelectionChanged += FontSize_Changed;
         BtnBold.Click += FontBold_Click;
@@ -80,6 +85,7 @@ public sealed class EditorFontController
 
     public void ApplySettings()
     {
+        _toolbar.AdjustTextWidthCheckBox.IsChecked = _fontSettings.AdjustTextWidth;
         if (!_changingTextMode)
             _toolbar.TextEditingModeComboBox.SelectedIndex = (int)_fontSettings.TextEditingMode;
         _getManager().TextEditingMode = _fontSettings.TextEditingMode;

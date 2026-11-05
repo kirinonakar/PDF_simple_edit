@@ -48,6 +48,7 @@ public sealed class AnnotationInteractionController
 
     public bool IsMoving { get; private set; }
     public bool IsResizing { get; private set; }
+    public bool IsReflowingTextResize { get; private set; }
     public IReadOnlyList<(PdfAnnotation Source, PdfAnnotation Target)> GetTransformPreview() =>
         IsResizing && _resizeSource != null && _resizeAnnotation != null
             ? new[] { (_resizeSource, _resizeAnnotation.Clone()) }
@@ -56,8 +57,10 @@ public sealed class AnnotationInteractionController
 
     public bool IsDrawingHighlight => _highlightRectangle != null;
 
-    public void BeginResize(PdfAnnotation annotation, string direction, Point position)
+    public void BeginResize(PdfAnnotation annotation, string direction, Point position, bool adjustTextWidth = false)
     {
+        IsReflowingTextResize = !adjustTextWidth && direction != "Rotate" &&
+            annotation.Type is AnnotationType.Text or AnnotationType.FreeText;
         IsResizing = true;
         _resizeSource = annotation.Clone();
         _resizePointer = position;
@@ -184,7 +187,7 @@ public sealed class AnnotationInteractionController
                 // Snapshot UI state at the beginning, not at the preview position.
                 var target = annotation.Clone();
                 RestoreBounds(annotation, source);
-                await manager.TransformAnnotationsAsync(pageIndex, new[] { (source, target) });
+                await manager.TransformAnnotationsAsync(pageIndex, new[] { (source, target) }, IsReflowingTextResize);
                 CopyTransformed(annotation, target);
                 _resizeSource = null; _resizeStartBounds = null; _resizeWasApplied = false;
                 return AnnotationResizeResult.Completed;
@@ -457,10 +460,15 @@ public sealed class AnnotationInteractionController
         }
         if (_resizeSource is { } source && annotation.Type is AnnotationType.Text or AnnotationType.FreeText)
         {
-            double scale = Math.Min(annotation.Width / Math.Max(source.Width, .001), annotation.Height / Math.Max(source.Height, .001));
+            double scale = IsReflowingTextResize ? 1 : Math.Min(annotation.Width / Math.Max(source.Width, .001), annotation.Height / Math.Max(source.Height, .001));
             annotation.FontSize = Math.Max(.1, source.FontSize * scale);
             annotation.LineHeight = source.LineHeight * scale;
             annotation.BaselineOffset = source.BaselineOffset * scale;
+            if (IsReflowingTextResize && source.NativeText == null && !source.IsOriginalTextReplacement && !source.IsApplied)
+            {
+                annotation.ReflowText = source.ReflowText ?? source.Content;
+                annotation.Content = AnnotationTextLayoutService.Reflow(annotation, annotation.ReflowText);
+            }
         }
         // The original applied state is kept separately until completion so the
         // pointer preview can render at its temporary bounds without losing the
@@ -549,7 +557,7 @@ public sealed class AnnotationInteractionController
         annotation.Height = newHeight;
     }
 
-    private static void ResizeCorner(
+    private void ResizeCorner(
         PdfAnnotation annotation,
         double dx,
         double dy,
@@ -557,7 +565,7 @@ public sealed class AnnotationInteractionController
         bool moveTop,
         double minimumSize)
     {
-        if (annotation.Type is not (AnnotationType.Image or AnnotationType.Text or AnnotationType.FreeText))
+        if (IsReflowingTextResize || annotation.Type is not (AnnotationType.Image or AnnotationType.Text or AnnotationType.FreeText))
         {
             double resizedWidth = annotation.Width + (moveLeft ? -dx : dx);
             if (resizedWidth > minimumSize)
@@ -638,6 +646,7 @@ public sealed class AnnotationInteractionController
         target.X = source.X; target.Y = source.Y; target.Width = source.Width; target.Height = source.Height;
         target.Rotation = source.Rotation; target.FontSize = source.FontSize; target.LineHeight = source.LineHeight;
         target.BaselineOffset = source.BaselineOffset; target.IsApplied = source.IsApplied;
+        target.Content = source.Content; target.ReflowText = source.ReflowText;
     }
 
     private static void CopyTransformed(PdfAnnotation target, PdfAnnotation source)

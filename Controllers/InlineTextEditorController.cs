@@ -21,6 +21,7 @@ public sealed class InlineTextEditSession
 {
     public required PdfAnnotation Annotation { get; init; }
     public required string OriginalContent { get; init; }
+    public string? OriginalReflowText { get; init; }
     public bool HasLiveChanges { get; set; }
     public bool SuppressTextChanged { get; set; }
     public bool IsFinishing { get; set; }
@@ -175,6 +176,7 @@ public sealed class InlineTextEditorController
                 {
                     Annotation = existingAnnotation,
                     OriginalContent = initialText,
+                    OriginalReflowText = existingAnnotation.ReflowText,
                     LastEditorText = initialText,
                     WasApplied = existingAnnotation.IsApplied,
                     WasOriginalTextReplacement = existingAnnotation.IsOriginalTextReplacement,
@@ -382,6 +384,7 @@ public sealed class InlineTextEditorController
             return;
 
         session.Annotation.Content = changedText;
+        session.Annotation.ReflowText = null;
         session.Annotation.IsApplied = false;
         _setStatus?.Invoke(string.IsNullOrEmpty(changedText)
             ? Loc.Get("TextDeletedEditing")
@@ -506,6 +509,8 @@ public sealed class InlineTextEditorController
             if (session.RemovalTask != null)
                 await session.RemovalTask;
 
+            session.Annotation.ReflowText = session.OriginalReflowText;
+
             if (session.OriginalRemovalCommitted && _manager?.CanUndo == true)
             {
                 _manager.Undo();
@@ -611,6 +616,7 @@ public sealed class InlineTextEditorController
                     }
 
                     existingAnnotation.Content = text;
+                    existingAnnotation.ReflowText = null;
                     if (double.IsFinite(editedWidth) && editedWidth > 0)
                         existingAnnotation.Width = editedWidth / PdfToPixels;
                     if (editSession != null)

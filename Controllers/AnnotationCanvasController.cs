@@ -329,7 +329,9 @@ public sealed class AnnotationCanvasController
         {
             Render();
             if ((_interactionController.IsMoving || _interactionController.IsResizing) &&
-                SelectedAnnotations.Any(a => a.NativeText != null || a.IsOriginalImageReplacement))
+                (SelectedAnnotations.Any(a => a.NativeText != null || a.IsOriginalImageReplacement) ||
+                    (_interactionController.IsResizing && _interactionController.IsReflowingTextResize &&
+                        _interactionController.GetTransformPreview().Any(e => TextResizeService.IsPdfText(e.Source)))))
                 _ = PreviewNativeMoveAsync(++_movePreviewVersion);
         }
     }
@@ -491,7 +493,7 @@ public sealed class AnnotationCanvasController
             {
                 if (PrimarySelection != null)
                     _interactionController.BeginResize(
-                        PrimarySelection, direction, position);
+                        PrimarySelection, direction, position, _fontSettings.AdjustTextWidth);
             },
             shape => SetElementCursor(
                 _canvas,
@@ -522,7 +524,7 @@ public sealed class AnnotationCanvasController
         if (e.OriginalSource is Rectangle handle && handle.Tag is string direction)
         {
             if (PrimarySelection != null)
-                _interactionController.BeginResize(PrimarySelection, direction, position);
+                _interactionController.BeginResize(PrimarySelection, direction, position, _fontSettings.AdjustTextWidth);
             _canvas.CapturePointer(e.Pointer);
             _statusText.Text = Loc.Get("Resizing");
             return;
@@ -788,16 +790,18 @@ public sealed class AnnotationCanvasController
             if (bytes == null) return;
             int pageIndex = _getPageIndex();
             var requests = _interactionController.GetTransformPreview();
-            var nativeEdits = requests.Where(e => e.Source.NativeText != null).Select(e =>
-                new NativePdfTextEdit(e.Source.NativeText!, e.Source.NativeText!.Text, Transform: PdfAffineTransform.Between(
-                    new(e.Source.X, e.Source.Y, e.Source.Width, e.Source.Height),
-                    new(e.Target.X, e.Target.Y, e.Target.Width, e.Target.Height), e.Target.Rotation - e.Source.Rotation))).ToList();
+            var textRequests = requests.Where(e => TextResizeService.IsPdfText(e.Source)).ToList();
+            bool reflow = _interactionController.IsResizing && _interactionController.IsReflowingTextResize;
             var graphicEdits = requests.Where(e => e.Source.IsOriginalImageReplacement).Select(e =>
                 (e.Source, PdfAffineTransform.Between(new(e.Source.X, e.Source.Y, e.Source.Width, e.Source.Height),
                     new(e.Target.X, e.Target.Y, e.Target.Width, e.Target.Height), e.Target.Rotation - e.Source.Rotation))).ToList();
             byte[] previewBytes = await Task.Run(() =>
             {
-                byte[] result = nativeEdits.Count > 0 ? new NativePdfTextService().EditMany(bytes, pageIndex, nativeEdits).Bytes : bytes;
+                var service = new NativePdfTextService();
+                var blocks = textRequests.Any(e => e.Source.NativeText == null) ? service.Extract(bytes, pageIndex) : new();
+                var nativeEdits = textRequests.Select(e => TextResizeService.CreateEdit(
+                    TextResizeService.ResolveBlock(e.Source, blocks), e.Source, e.Target, reflow)).ToList();
+                byte[] result = nativeEdits.Count > 0 ? service.EditMany(bytes, pageIndex, nativeEdits).Bytes : bytes;
                 return graphicEdits.Count > 0 ? PdfGraphicTransformService.Transform(result, pageIndex, graphicEdits) : result;
             });
             if (version != _movePreviewVersion) return;

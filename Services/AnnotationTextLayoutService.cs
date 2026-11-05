@@ -17,6 +17,16 @@ public static class AnnotationTextLayoutService
     public static bool ContainsLineBreak(string? text) =>
         !string.IsNullOrEmpty(text) && (text.Contains('\r') || text.Contains('\n'));
 
+    public static string Reflow(PdfAnnotation annotation, string text) => TextReflowService.Wrap(
+        text, annotation.Width * PdfToPixels, line =>
+        {
+            var sample = CreateTextBlock(line, annotation.FontFamily, annotation.FontSize,
+                annotation.IsBold, annotation.IsItalic, annotation.FontWeight);
+            sample.CharacterSpacing = GetDisplayCharacterSpacing(annotation, text);
+            sample.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+            return sample.DesiredSize.Width;
+        });
+
     public static double GetDisplayFontSize(PdfAnnotation annotation, string _)
     {
         // Original PDF text must keep its point size. Scaling it down to fit the

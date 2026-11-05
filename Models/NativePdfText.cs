@@ -83,7 +83,7 @@ public sealed record NativePdfTextStyle(string? Color = null, double? FontSize =
     bool? IsBold = null, bool? IsItalic = null, string? FontFamily = null);
 
 public sealed record NativePdfTextEdit(NativePdfTextBlock Block, string Text, double DeltaX = 0, double DeltaY = 0,
-    NativePdfTextStyle? Style = null, PdfAffineTransform? Transform = null);
+    NativePdfTextStyle? Style = null, PdfAffineTransform? Transform = null, PdfTextBox? ReflowBounds = null);
 public sealed record NativePdfTextResult(byte[] Bytes, NativePdfTextBlock Layout)
 {
     public IReadOnlyList<NativePdfTextBlock> Layouts { get; init; } = new[] { Layout };

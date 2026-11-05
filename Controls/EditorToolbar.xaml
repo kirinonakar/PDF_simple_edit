@@ -25,6 +25,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="{loc:LocalizedString Key=TextEditingMode}" VerticalAlignment="Center" Margin="0,0,10,0"/>
@@ -33,7 +34,11 @@
                     <ComboBoxItem Content="{loc:LocalizedString Key=Replacement}"/>
                     <ComboBoxItem Content="{loc:LocalizedString Key=PreserveOriginal}"/>
                 </ComboBox>
-                <TextBlock x:Name="TextEditingModeDescription" x:FieldModifier="public" Grid.Column="2" Margin="10,0,0,0"
+                <CheckBox x:Name="AdjustTextWidthCheckBox" x:FieldModifier="public" Grid.Column="2" Margin="12,0,0,0"
+                          IsChecked="False" VerticalAlignment="Center"
+                          Content="{loc:LocalizedString Key=AdjustTextWidth}"
+                          ToolTipService.ToolTip="{loc:LocalizedString Key=AdjustTextWidthTooltip}"/>
+                <TextBlock x:Name="TextEditingModeDescription" x:FieldModifier="public" Grid.Column="3" Margin="10,0,0,0"
                            VerticalAlignment="Center" FontSize="12" TextTrimming="CharacterEllipsis"
                            Text="{loc:LocalizedString Key=PreserveOriginalChangeFontSizeColorBoldItalicAlt}"/>
             </Grid>

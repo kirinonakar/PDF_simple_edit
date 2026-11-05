@@ -748,7 +748,7 @@ namespace PDF_simple_edit.Helpers
 
 
         public async Task TransformAnnotationsAsync(int pageIndex,
-            IReadOnlyList<(PdfAnnotation Source, PdfAnnotation Target)> edits)
+            IReadOnlyList<(PdfAnnotation Source, PdfAnnotation Target)> edits, bool reflowText = false)
         {
             byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
             byte[] transformed = snapshot;
@@ -763,8 +763,7 @@ namespace PDF_simple_edit.Helpers
                     new(e.Target.X, e.Target.Y, e.Target.Width, e.Target.Height), e.Target.Rotation - e.Source.Rotation))).ToList();
                 transformed = await Task.Run(() => PdfGraphicTransformService.Transform(snapshot, pageIndex, requests));
             }
-            var texts = edits.Where(e => e.Source.NativeText != null || e.Source.IsOriginalTextReplacement ||
-                (e.Source.IsApplied && e.Source.Type is AnnotationType.Text or AnnotationType.FreeText)).ToList();
+            var texts = edits.Where(e => TextResizeService.IsPdfText(e.Source)).ToList();
             var refreshedText = new List<NativePdfTextBlock>();
             if (texts.Count > 0)
             {
@@ -776,21 +775,9 @@ namespace PDF_simple_edit.Helpers
                     var requests = texts.Select(e =>
                     {
                         var source = e.Source;
-                        var box = new PdfTextBox(source.X, source.Y, source.Width, source.Height);
-                        var selected = source.NativeText == null ? NativePdfTextService.SelectRegion(allText,
-                            PdfAffineTransform.Between(box, box, source.Rotation).Map(box)) : new();
-                        var block = source.NativeText ?? (selected.Count == 1 ? selected[0] : new NativePdfTextBlock
-                        {
-                            Text = string.Join("\n", selected.Select(b => b.Text)),
-                            Runs = selected.SelectMany(b => b.Runs).DistinctBy(r => r.Id).ToList(),
-                            Glyphs = selected.SelectMany(b => b.Glyphs).ToList(),
-                            Lines = selected.SelectMany(b => b.Lines).ToList(),
-                            Bounds = PdfTextBox.Union(selected.Select(b => b.Bounds))
-                        });
+                        var block = TextResizeService.ResolveBlock(source, allText);
                         if (block.Glyphs.Count == 0) throw new InvalidOperationException(Loc.Get("SelectTheTextAgain"));
-                        return new NativePdfTextEdit(block, block.Text, Transform: PdfAffineTransform.Between(
-                            new(source.X, source.Y, source.Width, source.Height),
-                            new(e.Target.X, e.Target.Y, e.Target.Width, e.Target.Height), e.Target.Rotation - source.Rotation));
+                        return TextResizeService.CreateEdit(block, source, e.Target, reflowText);
                     }).ToList();
                     var result = service.EditMany(textSource, pageIndex, requests);
                     foreach (var layout in result.Layouts)

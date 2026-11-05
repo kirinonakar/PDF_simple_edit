@@ -269,10 +269,10 @@ public sealed class AnnotationOverlayController
         return new TextBlock
         {
             Text = annotation.Content,
-            TextWrapping = hasOriginalLineLayout
+            TextWrapping = hasOriginalLineLayout || annotation.ReflowText != null
                 ? TextWrapping.NoWrap
                 : containsLineBreak ? TextWrapping.Wrap : TextWrapping.NoWrap,
-            Width = hasOriginalLineLayout || containsLineBreak
+            Width = hasOriginalLineLayout || containsLineBreak || annotation.ReflowText != null
                 ? Math.Max(annotation.Width * PdfToPixels, 1)
                 : double.NaN,
             Height = hasOriginalLineLayout

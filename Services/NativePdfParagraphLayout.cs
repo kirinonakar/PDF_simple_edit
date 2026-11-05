@@ -125,7 +125,7 @@ internal static class NativePdfParagraphLayout
     public static NativePdfTextBlock Place(NativePdfTextBlock block, string text, List<NativePdfGlyph> tokens,
         Func<NativePdfGlyph, double> width, Func<NativePdfGlyph, NativePdfGlyph, double> kerning,
         Func<NativePdfGlyph, double> trailingSpacing, double deltaX, double deltaY, bool preservePlacement = true,
-        double minimumLeading = 0)
+        double minimumLeading = 0, PdfTextBox? reflowBounds = null)
     {
         var originalLines = block.Glyphs.Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text))
             .GroupBy(g => Math.Round(g.Origin.Y, 1)).Select(g => g.ToList()).OrderBy(g => g[0].Origin.Y).ToList();
@@ -134,7 +134,16 @@ internal static class NativePdfParagraphLayout
         double right = Math.Max(block.Bounds.Right, block.Glyphs.Max(g => g.End.X));
         // A selected single line grows horizontally. Only an original multiline
         // selection reflows at its right edge; explicit newlines still work below.
-        bool wrap = block.Lines.Count > 1;
+        bool wrap = reflowBounds != null || block.Lines.Count > 1;
+        if (reflowBounds is { } area)
+        {
+            // Move the text origin with the handle, keeping glyph sizes and the
+            // first baseline's offset from the top of the selection unchanged.
+            deltaX += area.X - block.Bounds.X;
+            deltaY += area.Y - block.Bounds.Y;
+            right = left + Math.Max(area.Width, .1);
+            firstLeft = Math.Min(firstLeft, right - .1);
+        }
         double leading = Math.Max(block.LineHeight, block.Runs.Max(r => r.DisplayFontSize) * .9);
         var flowBaselines = new List<double> { anchors[0].Y };
         double Baseline(int i)

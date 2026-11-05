@@ -36,6 +36,8 @@ namespace PDF_simple_edit.Models
         public double Width { get; set; }
         public double Height { get; set; }
         public string Content { get; set; } = string.Empty;
+        // Logical text before inserting soft line breaks during an overlay resize.
+        public string? ReflowText { get; set; }
         public string FontFamily { get; set; } = "맑은 고딕";
         public double FontSize { get; set; } = 12;
         public string Color { get; set; } = "#000000";
@@ -93,6 +95,7 @@ namespace PDF_simple_edit.Models
                 Width = this.Width,
                 Height = this.Height,
                 Content = this.Content,
+                ReflowText = this.ReflowText,
                 FontFamily = this.FontFamily,
                 FontSize = this.FontSize,
                 Color = this.Color,
@@ -406,6 +409,7 @@ namespace PDF_simple_edit.Models
     public class TextFontSettings
     {
         public TextEditingMode TextEditingMode { get; set; } = TextEditingMode.PreserveOriginal;
+        public bool AdjustTextWidth { get; set; } = false;
         public string FontFamily { get; set; } = "맑은 고딕";
         public double FontSize { get; set; } = 12;
         public string Color { get; set; } = "#000000";
@@ -421,6 +425,7 @@ namespace PDF_simple_edit.Models
             return new TextFontSettings
             {
                 TextEditingMode = TextEditingMode,
+                AdjustTextWidth = AdjustTextWidth,
                 FontFamily = FontFamily,
                 FontSize = FontSize,
                 Color = Color,
