@@ -89,6 +89,8 @@ The server exposes these tools through `tools/list`, including argument schemas:
 | `pdf_add_graphic` | Rectangle, ellipse, line, polygon, freehand, highlight or image; rotation and opacity |
 | `pdf_edit_graphic` | Move, resize, rotate, recolor paths, or replace a graphic/image/annotation |
 | `pdf_delete_object` | Remove original text, graphics, images or annotations |
+| `pdf_delete_objects` | Delete multiple inspected objects across pages using the same source revision |
+| `pdf_batch` | Apply multiple edits, additions, redactions, form and page operations to one PDF atomically |
 | `pdf_redact_region` | Remove intersecting content and form widgets using pdfSweep |
 | `pdf_manage_pages` | Insert, delete, reorder, rotate and crop pages |
 | `pdf_set_form_fields` | Fill named AcroForm fields, including Korean text and checkboxes |

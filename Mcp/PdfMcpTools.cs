@@ -19,7 +19,7 @@ using PDF_simple_edit.Helpers;
 
 namespace PDF_simple_edit.Mcp;
 
-internal static class PdfMcpTools
+internal static partial class PdfMcpTools
 {
     private sealed record Tool(string name, string description, object inputSchema, object annotations);
     private static object Field(string type, string description) => new { type, description };
@@ -80,7 +80,7 @@ internal static class PdfMcpTools
             Fields(("topic", new { type = "string", @enum = new[] { "overview", "flow", "positioned", "roundtrip", "schema" } })));
         Add("pdf_to_json", "Export a PDF to a lossless JSON archive containing its original PDF bytes, SHA-256 and readable page/object information. Pass the resulting JSON file as pdf_create jsonPath to restore a byte-for-byte identical PDF, preserving fonts, vectors, images, annotations and metadata. sourceInfo is a read-only inspection snapshot; use text/content/pages creation modes to author new content.", new[] { "inputPath", "outputPath" }, false,
             Input, new Dictionary<string, object>(Output) { ["outputPath"] = Field("string", "Absolute destination JSON archive path. Parent directory must exist.") });
-        Add("pdf_inspect", "Read document revision, page sizes, text, graphics, annotations and form fields. Returns editable object IDs for one page (default 1). Scanned text requires OCR outside this tool.", new[] { "inputPath" }, true,
+        Add("pdf_inspect", "Read document revision, page sizes, text, graphics, annotations and form fields. Returns editable object IDs for one page (default 1). Use pdf_delete_objects for multiple deletions or pdf_batch for multiple edits with IDs from this revision. Scanned text requires OCR outside this tool.", new[] { "inputPath" }, true,
             Input, Fields(("page", Page)));
         Add("pdf_read", "Read PDF body text page by page, including Unicode text. Returns total page count and separate text/size/rotation for each selected page. Use page for one 1-based page (default 1), or pages for a range such as 1,3,5-8 or all. Do not supply both. Extracts existing PDF text only; image-only/scanned pages require external OCR. Complex layouts may have imperfect reading order. Use pdf_inspect when object IDs are needed for editing.", new[] { "inputPath" }, true,
             Input, Fields(("page", Page), ("pages", Field("string", "1-based page range, e.g. 1,3,5-8, or all. Mutually exclusive with page."))));
@@ -92,7 +92,7 @@ internal static class PdfMcpTools
             Input, Output, Geometry, Graphic, Fields(("page", Page)));
         Add("pdf_edit_graphic", "Move, resize, rotate or recolor an original vector/image graphic; optional imagePath replaces it with an image, or kind replaces it with a new shape. Shared clipping/shading transformations may return an unsupported error. Annotation objects support moving/resizing; to change their artwork use kind or imagePath to replace them.", new[] { "inputPath", "outputPath", "objectId" }, false,
             Input, Output, Geometry, Graphic, objectId, Fields(("page", Page)));
-        Add("pdf_delete_object", "Permanently delete an inspected text, graphic, image or annotation. Surrounding content is retained. Use pdf_redact_region to erase all content intersecting an area.", new[] { "inputPath", "outputPath", "objectId" }, false,
+        Add("pdf_delete_object", "Permanently delete one inspected text, graphic, image or annotation. For multiple objects use pdf_delete_objects with all original IDs in one call; do not chain single deletions with stale IDs. Surrounding content is retained. Use pdf_redact_region to erase all content intersecting an area.", new[] { "inputPath", "outputPath", "objectId" }, false,
             Input, Output, objectId, Fields(("page", Page)));
         Add("pdf_redact_region", "Permanently remove text, graphics, images and form widgets intersecting a rectangle using pdfSweep. This removes content rather than covering it.", new[] { "inputPath", "outputPath", "x", "y", "width", "height" }, false,
             Input, Output, Geometry, Fields(("page", Page)));
@@ -111,6 +111,7 @@ internal static class PdfMcpTools
             Input, Fields(("outputFolder", Text)));
         Add("images_to_pdf", "Create a PDF from PNG, JPEG, BMP, GIF, TIFF or WebP files in the specified order. Each image is fitted without cropping onto one portrait/landscape A4 page.", new[] { "imagePaths", "outputPath" }, false,
             Output, Fields(("imagePaths", Paths)));
+        AddBatchTools(result);
         return result;
     }
 
@@ -200,6 +201,16 @@ internal static class PdfMcpTools
             catch (Exception error) { throw new IOException($"Export failed; any completed images are in {folder}. {error.Message}", error); }
         }
 
+        byte[] edited = name is "pdf_batch" or "pdf_delete_objects"
+            ? await ExecuteBatchAsync(name, a, bytes, revision, cancellation)
+            : await EditDocumentAsync(name, a, bytes, revision, cancellation);
+        return await Save(a, edited, cancellation, inputPath, revision, destinationVersion);
+    }
+
+    private static async Task<byte[]> EditDocumentAsync(string name, PdfMcpArguments a, byte[] bytes,
+        string revision, CancellationToken cancellation)
+    {
+        cancellation.ThrowIfCancellationRequested();
         int pageIndex;
         using (var pdf = Open(bytes)) pageIndex = a.Integer("page", 1, 1,
             pdf.GetNumberOfPages() + (name == "pdf_manage_pages" && a.Text("action") == "insert" ? 1 : 0)) - 1;
@@ -241,18 +252,7 @@ internal static class PdfMcpTools
                 if (content.NativeText is { } block)
                 {
                     if (name == "pdf_edit_graphic") throw new ArgumentException("Use pdf_edit_text for text objects.");
-                    NativePdfTextStyle? style = Style.Keys.Any(a.Has) ? new(
-                        a.Has("color") ? a.Color() : null, a.Has("fontSize") ? a.Number("fontSize", 12, .1, 10000) : null,
-                        a.Has("bold") ? a.Flag("bold") : null, a.Has("italic") ? a.Flag("italic") : null,
-                        a.Has("fontFamily") ? a.Text("fontFamily") : null) : null;
-                    var target = a.Bounds(block.Bounds);
-                    bool transform = a.Has("width") || a.Has("height") || a.Has("rotation");
-                    bool reflow = a.Flag("reflow");
-                    if (reflow && a.Number("rotation") != 0) throw new ArgumentException("Reflow and rotation require separate edits; reflow first, inspect again, then rotate.");
-                    var edit = new NativePdfTextEdit(block, name == "pdf_delete_object" ? "" : a.Text("text", block.Text),
-                        transform || reflow ? 0 : target.X - block.Bounds.X, transform || reflow ? 0 : target.Y - block.Bounds.Y,
-                        style, transform && !reflow ? PdfAffineTransform.Between(block.Bounds, target, a.Number("rotation")) : null,
-                        reflow ? target : null);
+                    var edit = BatchTextEdit(name, a, block);
                     edited = new NativePdfTextService().Edit(bytes, pageIndex, edit).Bytes;
                 }
                 else
@@ -296,7 +296,7 @@ internal static class PdfMcpTools
                 default: throw new ArgumentException("Unknown tool.");
             }
         }, name == "pdf_extract_pages" ? a : null);
-        return await Save(a, edited, cancellation, inputPath, revision, destinationVersion);
+        return edited;
     }
 
     private static async Task<object> Inspect(PdfMcpArguments a, byte[] bytes, string revision)
