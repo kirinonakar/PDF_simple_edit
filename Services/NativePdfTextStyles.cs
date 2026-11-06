@@ -130,7 +130,11 @@ public sealed partial class NativePdfTextService
             tokens.Add(token);
         }
         if (!metricsChanged) return block with { Glyphs = tokens };
-        if (block.Glyphs.Any(g => !g.IsVirtual && (Math.Abs(g.End.Y - g.Origin.Y) > .1 || g.End.X < g.Origin.X)))
+        // Layout uses a wrapping space's End as the caret position on the next
+        // line. That backward/downward vector is not the PDF's text direction.
+        // Runs retain the source glyph geometry even after text replacement.
+        if (block.Runs.SelectMany(r => r.Glyphs).Any(g => !g.IsVirtual &&
+            (Math.Abs(g.End.Y - g.Origin.Y) > .1 || g.End.X < g.Origin.X)))
             throw new InvalidOperationException(Loc.Get("OnlyTheTextColorCanCurrentlyBeChangedFor"));
         double Width(NativePdfGlyph g) => g.Text == "\n" ? 0 : g.IsVirtual
             ? Math.Max(g.End.X - g.Origin.X, 0) : DisplayAdvance(runs[g.RunId], g.Advance, data.Map);
