@@ -31,7 +31,7 @@ internal static partial class PdfMcpTools
     private static readonly Dictionary<string, object> Input = new()
     {
         ["inputPath"] = Field("string", "Absolute path to an existing local PDF."),
-        ["expectedRevision"] = Field("string", "Optional SHA-256 revision from pdf_inspect; reject if the source changed.")
+        ["expectedRevision"] = Field("string", "Optional SHA-256 revision from pdf_inspect or pdf_find_text; reject if the source changed.")
     };
     private static readonly Dictionary<string, object> Output = new()
     {
@@ -73,15 +73,22 @@ internal static partial class PdfMcpTools
                 new { readOnlyHint = readOnly, destructiveHint = !readOnly, openWorldHint = false }));
         }
         Dictionary<string, object> Fields(params (string key, object field)[] values) => values.ToDictionary(p => p.key, p => p.field);
-        var objectId = Fields(("objectId", Field("string", "Exact object ID returned by pdf_inspect for this file revision and page.")));
+        var objectId = Fields(("objectId", Field("string", "Exact object ID returned by pdf_inspect or pdf_find_text for this file revision and page.")));
         Add("pdf_create", "Create a complete PDF in one call. First call pdf_create_help for JSON authoring rules and working examples. Choose text (automatic wrapping/pagination), content (generic heading/paragraph/table/image/section/columns/rule/spacer/pageBreak blocks), pages (positioned text/images/shapes), or jsonPath (UTF-8 creation JSON or pdf_to_json lossless archive). Modes cannot be combined. Layout, colors and wording come from the supplied JSON, with no document-specific presets. title is metadata only. Paths must be absolute; units are PDF points; coordinates start at the displayed page's top-left. Atomic output; existing destinations require overwrite=true.", new[] { "outputPath" }, false,
             Output, Style, PdfMcpCreationService.Schema(Graphic));
         Add("pdf_create_help", "Read this before authoring creation JSON. Returns a mode-selection guide, exact field rules, executable generic examples and lossless roundtrip instructions. topic=schema returns the actual current pdf_create input schema including nested block definitions. Other topics: overview (default), flow, positioned, roundtrip. This tool does not read or write files.", Array.Empty<string>(), true,
             Fields(("topic", new { type = "string", @enum = new[] { "overview", "flow", "positioned", "roundtrip", "schema" } })));
         Add("pdf_to_json", "Export a PDF to a lossless JSON archive containing its original PDF bytes, SHA-256 and readable page/object information. Pass the resulting JSON file as pdf_create jsonPath to restore a byte-for-byte identical PDF, preserving fonts, vectors, images, annotations and metadata. sourceInfo is a read-only inspection snapshot; use text/content/pages creation modes to author new content.", new[] { "inputPath", "outputPath" }, false,
             Input, new Dictionary<string, object>(Output) { ["outputPath"] = Field("string", "Absolute destination JSON archive path. Parent directory must exist.") });
-        Add("pdf_inspect", "Read document revision, page sizes, text, graphics, annotations and form fields. Returns editable object IDs for one page (default 1). Use pdf_delete_objects for multiple deletions or pdf_batch for multiple edits with IDs from this revision. Scanned text requires OCR outside this tool.", new[] { "inputPath" }, true,
-            Input, Fields(("page", Page)));
+        Add("pdf_inspect", "Read document revision, page sizes and editable objects for one page (default 1). Optional kind, region and maxObjects filters reduce the object list without changing IDs. graphics includes vectors, images and annotations. Form fields are returned only for kind=all, filtered by region but independently of maxObjects. Omitted filters preserve the full inspection. Use pdf_find_text to locate text objects across the document, pdf_delete_objects for multiple deletions or pdf_batch for multiple edits. Scanned text requires external OCR.", new[] { "inputPath" }, true,
+            Input, Fields(("page", Page),
+                ("kind", new { type = "string", @enum = new[] { "all", "text", "graphics" }, description = "Object category; default all. text returns editable body text only." }),
+                ("region", InspectionRegionSchema()),
+                ("maxObjects", new { type = "integer", minimum = 1, maximum = 10000, description = "Maximum objects to return after filtering; omitted means no limit. Counts and truncated report omitted objects." })));
+        Add("pdf_find_text", "Find a literal string in editable body text throughout ALL pages and return object IDs usable directly with pdf_edit_text (supply the returned page too), pdf_delete_objects or pdf_batch. One match entry per matching text block, in page/extraction order, with the full block text, bounds and first match's UTF-16 offset. Default case-insensitive ordinal comparison; no regex, OCR, annotation/form-value search or matching across separate blocks. IDs and revision are identical to pdf_inspect. Searches all pages even when maxResults limits returned matches; counts and truncated report omitted blocks.", new[] { "inputPath", "query" }, true,
+            Input, Fields(("query", Field("string", "Nonempty literal substring to find within each editable text block.")),
+                ("caseSensitive", new { type = "boolean", description = "Default false; use ordinal case-sensitive comparison when true." }),
+                ("maxResults", new { type = "integer", minimum = 1, maximum = 10000, description = "Maximum matching text blocks to return, default 100." })));
         Add("pdf_read", "Read PDF body text page by page, including Unicode text. Returns total page count and separate text/size/rotation for each selected page. Use page for one 1-based page (default 1), or pages for a range such as 1,3,5-8 or all. Do not supply both. Extracts existing PDF text only; image-only/scanned pages require external OCR. Complex layouts may have imperfect reading order. Use pdf_inspect when object IDs are needed for editing.", new[] { "inputPath" }, true,
             Input, Fields(("page", Page), ("pages", Field("string", "1-based page range, e.g. 1,3,5-8, or all. Mutually exclusive with page."))));
         Add("pdf_add_text", "Add Unicode text, including Korean, at x/y. Font, size, color, bold and italic are configurable. Use pdf_edit_text for existing text.", new[] { "inputPath", "outputPath", "text" }, false,
@@ -167,7 +174,8 @@ internal static partial class PdfMcpTools
         string revision = Hash(bytes);
         if (a.Has("expectedRevision") && !a.Text("expectedRevision").Equals(revision, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Source file changed. Inspect it again before editing.");
-        if (name == "pdf_inspect") return await Inspect(a, bytes, revision);
+        if (name == "pdf_inspect") return await InspectAsync(a, bytes, revision, cancellation);
+        if (name == "pdf_find_text") return await FindTextAsync(a, bytes, revision, cancellation);
         if (name == "pdf_to_json")
         {
             var archive = await PdfMcpJsonArchive.ExportAsync(bytes, revision, a, Inspect, cancellation);
@@ -299,35 +307,9 @@ internal static partial class PdfMcpTools
         return edited;
     }
 
-    private static async Task<object> Inspect(PdfMcpArguments a, byte[] bytes, string revision)
-    {
-        using var pdf = Open(bytes);
-        int number = a.Integer("page", 1, 1, pdf.GetNumberOfPages());
-        var page = pdf.GetPage(number);
-        var contents = await new PdfPageContentExtractor().ExtractAsync(bytes, number - 1, strict: true, includePreviews: false);
-        var objects = contents.Select((content, index) => (object)new
-        {
-            objectId = $"{revision}:{number}:content:{index}", kind = content.NativeText != null ? "text" : content.GraphicOperations.Any(op => !op.IsImageOperation) ? "vector" : "image",
-            x = content.X, y = content.Y, width = content.Width, height = content.Height,
-            text = content.NativeText?.Text, fontFamily = content.FontFamily, fontSize = content.FontSize, color = content.Color
-        }).ToList();
-        objects.AddRange(page.GetAnnotations().Select((annotation, index) =>
-        {
-            var rect = annotation.GetRectangle()?.ToRectangle();
-            var box = rect == null ? default : PdfPageCoordinates.ToDisplay(page).Map(new PdfTextBox(rect.GetX(), rect.GetY(), rect.GetWidth(), rect.GetHeight()));
-            return (object)new { objectId = $"{revision}:{number}:annotation:{index}", kind = "annotation", subtype = annotation.GetSubtype()?.GetValue(),
-                x = box.X, y = box.Y, width = box.Width, height = box.Height, contents = annotation.GetContents()?.ToUnicodeString() };
-        }));
-        var pages = Enumerable.Range(1, pdf.GetNumberOfPages()).Select(i =>
-        {
-            var p = pdf.GetPage(i); var rect = p.GetCropBox();
-            var bounds = PdfPageCoordinates.ToDisplay(p).Map(new PdfTextBox(rect.GetX(), rect.GetY(), rect.GetWidth(), rect.GetHeight()));
-            return new { page = i, width = bounds.Width, height = bounds.Height, rotation = p.GetRotation() };
-        }).ToArray();
-        return new { inputPath = a.Path("inputPath"), revision, pageCount = pdf.GetNumberOfPages(), pages, page = number,
-            coordinates = "PDF points, displayed CropBox top-left; page numbers are 1-based", objects,
-            formFields = new PdfFormService().ReadPage(bytes, number - 1) };
-    }
+    // Lossless archives retain the complete, unfiltered inspection snapshot.
+    private static Task<object> Inspect(PdfMcpArguments a, byte[] bytes, string revision) =>
+        InspectAsync(a, bytes, revision, CancellationToken.None);
 
     internal static void AddGraphic(PdfDocument pdf, int pageIndex, PdfMcpArguments a, PdfTextBox? original = null)
     {

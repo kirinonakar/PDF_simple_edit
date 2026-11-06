@@ -82,7 +82,8 @@ The server exposes these tools through `tools/list`, including argument schemas:
 | `pdf_create` | Complete PDFs from plain text, structured flow blocks, positioned page elements or a JSON file |
 | `pdf_create_help` | Agent authoring guide, working examples and the live JSON schema |
 | `pdf_to_json` | Lossless PDF archive with readable page/object information; restore through `pdf_create` |
-| `pdf_inspect` | Document revision, page sizes, one page's text/graphics/annotations and form fields |
+| `pdf_inspect` | Document revision, page sizes and editable objects; optional kind, region and count filters |
+| `pdf_find_text` | Search editable text across all pages and return matching object IDs, page numbers and bounds |
 | `pdf_read` | Read body text for one page, a page range or all pages; results remain separated by page |
 | `pdf_add_text` | Unicode text with font, size, color, bold and italic |
 | `pdf_edit_text` | Replace, delete, move, scale, rotate, reflow and restyle original text |
@@ -99,11 +100,6 @@ The server exposes these tools through `tools/list`, including argument schemas:
 | `pdf_to_images` | Render whole pages as PNG; select ranges and 72–600 DPI |
 | `pdf_extract_images` | Extract embedded raster images, including nested images |
 | `images_to_pdf` | Fit each supplied image onto one A4 PDF page |
-
-For JSON authoring, agents should first call `pdf_create_help`. Topics are
-`overview`, `flow`, `positioned`, `roundtrip`, and `schema`; the schema topic
-returns the actual input schema used by the server. See the detailed
-[JSON authoring guide](docs/pdf-create-json.md) for the same workflow.
 
 ## 🛠️ Technology Stack
 - **Framework**: .NET 10.0

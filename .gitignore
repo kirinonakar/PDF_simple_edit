@@ -13,6 +13,7 @@
 tmp/
 output/
 tests/*
+!tests/McpInspection/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
