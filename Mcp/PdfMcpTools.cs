@@ -67,13 +67,19 @@ internal static class PdfMcpTools
         void Add(string name, string description, string[] required, bool readOnly, params Dictionary<string, object>[] groups)
         {
             var properties = groups.SelectMany(g => g).ToDictionary(p => p.Key, p => p.Value);
-            result.Add(name, new(name, description, new { type = "object", properties, required, additionalProperties = false },
+            var schema = new Dictionary<string, object> { ["type"] = "object", ["properties"] = properties, ["required"] = required, ["additionalProperties"] = false };
+            if (name == "pdf_create") schema["$defs"] = PdfMcpCreationService.BlockDefinitions();
+            result.Add(name, new(name, description, schema,
                 new { readOnlyHint = readOnly, destructiveHint = !readOnly, openWorldHint = false }));
         }
         Dictionary<string, object> Fields(params (string key, object field)[] values) => values.ToDictionary(p => p.key, p => p.field);
         var objectId = Fields(("objectId", Field("string", "Exact object ID returned by pdf_inspect for this file revision and page.")));
-        Add("pdf_create", "Create a blank PDF with custom page dimensions (A4 by default). Add content using the editing tools.", new[] { "outputPath" }, false,
-            Output, Fields(("pageCount", Page), ("width", Number), ("height", Number), ("title", Text)));
+        Add("pdf_create", "Create a complete PDF in one call. First call pdf_create_help for JSON authoring rules and working examples. Choose text (automatic wrapping/pagination), content (generic heading/paragraph/table/image/section/columns/rule/spacer/pageBreak blocks), pages (positioned text/images/shapes), or jsonPath (UTF-8 creation JSON or pdf_to_json lossless archive). Modes cannot be combined. Layout, colors and wording come from the supplied JSON, with no document-specific presets. title is metadata only. Paths must be absolute; units are PDF points; coordinates start at the displayed page's top-left. Atomic output; existing destinations require overwrite=true.", new[] { "outputPath" }, false,
+            Output, Style, PdfMcpCreationService.Schema(Graphic));
+        Add("pdf_create_help", "Read this before authoring creation JSON. Returns a mode-selection guide, exact field rules, executable generic examples and lossless roundtrip instructions. topic=schema returns the actual current pdf_create input schema including nested block definitions. Other topics: overview (default), flow, positioned, roundtrip. This tool does not read or write files.", Array.Empty<string>(), true,
+            Fields(("topic", new { type = "string", @enum = new[] { "overview", "flow", "positioned", "roundtrip", "schema" } })));
+        Add("pdf_to_json", "Export a PDF to a lossless JSON archive containing its original PDF bytes, SHA-256 and readable page/object information. Pass the resulting JSON file as pdf_create jsonPath to restore a byte-for-byte identical PDF, preserving fonts, vectors, images, annotations and metadata. sourceInfo is a read-only inspection snapshot; use text/content/pages creation modes to author new content.", new[] { "inputPath", "outputPath" }, false,
+            Input, new Dictionary<string, object>(Output) { ["outputPath"] = Field("string", "Absolute destination JSON archive path. Parent directory must exist.") });
         Add("pdf_inspect", "Read document revision, page sizes, text, graphics, annotations and form fields. Returns editable object IDs for one page (default 1). Scanned text requires OCR outside this tool.", new[] { "inputPath" }, true,
             Input, Fields(("page", Page)));
         Add("pdf_read", "Read PDF body text page by page, including Unicode text. Returns total page count and separate text/size/rotation for each selected page. Use page for one 1-based page (default 1), or pages for a range such as 1,3,5-8 or all. Do not supply both. Extracts existing PDF text only; image-only/scanned pages require external OCR. Complex layouts may have imperfect reading order. Use pdf_inspect when object IDs are needed for editing.", new[] { "inputPath" }, true,
@@ -110,27 +116,24 @@ internal static class PdfMcpTools
 
     public static async Task<object> ExecuteAsync(string name, JsonElement arguments, CancellationToken cancellation)
     {
+        if (name == "pdf_create") arguments = await PdfMcpJsonArchive.ExpandRequestAsync(arguments, cancellation);
         Validate(arguments, JsonSerializer.SerializeToElement(Catalog[name].inputSchema), "arguments");
         cancellation.ThrowIfCancellationRequested();
         var a = new PdfMcpArguments(arguments);
+        if (name == "pdf_create_help") return PdfMcpCreationGuide.Get(a.Text("topic", "overview"), Catalog["pdf_create"].inputSchema);
         PdfFileVersion? destinationVersion = null;
         if (a.Has("outputPath"))
         {
             string destination = a.Path("outputPath");
-            if (!System.IO.Path.GetExtension(destination).Equals(".pdf", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("outputPath must end in .pdf.");
+            string extension = name == "pdf_to_json" ? ".json" : ".pdf";
+            if (!System.IO.Path.GetExtension(destination).Equals(extension, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException($"outputPath must end in {extension}.");
             destinationVersion = PdfFileVersion.Read(destination);
             if (destinationVersion.Hash != null && !a.Flag("overwrite")) throw new IOException("Output already exists. Choose a new path or set overwrite=true explicitly.");
         }
         if (name == "pdf_create")
         {
-            using var buffer = new MemoryStream();
-            using (var pdf = new PdfDocument(new PdfWriter(buffer)))
-            {
-                var size = Size(a);
-                for (int i = 0, count = a.Integer("pageCount", 1, 1, 10000); i < count; i++) pdf.AddNewPage(size);
-                if (a.Has("title")) pdf.GetDocumentInfo().SetTitle(a.Text("title"));
-            }
-            return await Save(a, buffer.ToArray(), cancellation, expected: destinationVersion);
+            byte[] created = await Task.Run(() => PdfMcpCreationService.Create(a, cancellation), cancellation);
+            return await Save(a, created, cancellation, expected: destinationVersion);
         }
         if (name is "images_to_pdf" or "pdf_merge")
         {
@@ -164,6 +167,13 @@ internal static class PdfMcpTools
         if (a.Has("expectedRevision") && !a.Text("expectedRevision").Equals(revision, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Source file changed. Inspect it again before editing.");
         if (name == "pdf_inspect") return await Inspect(a, bytes, revision);
+        if (name == "pdf_to_json")
+        {
+            var archive = await PdfMcpJsonArchive.ExportAsync(bytes, revision, a, Inspect, cancellation);
+            cancellation.ThrowIfCancellationRequested();
+            await PdfAtomicFile.WriteAsync(a.Path("outputPath"), archive, destinationVersion);
+            return new { outputPath = a.Path("outputPath"), pdfRevision = revision, format = PdfMcpJsonArchive.Format };
+        }
         if (name == "pdf_read") return await Task.Run(() => PdfMcpReader.Read(a, bytes, revision, cancellation), cancellation);
         if (name is "pdf_to_images" or "pdf_extract_images")
         {
@@ -319,7 +329,7 @@ internal static class PdfMcpTools
             formFields = new PdfFormService().ReadPage(bytes, number - 1) };
     }
 
-    private static void AddGraphic(PdfDocument pdf, int pageIndex, PdfMcpArguments a, PdfTextBox? original = null)
+    internal static void AddGraphic(PdfDocument pdf, int pageIndex, PdfMcpArguments a, PdfTextBox? original = null)
     {
         var bounds = a.Bounds(original);
         string kind = a.Has("imagePath") && !a.Has("kind") ? "image" : a.Text("kind");
@@ -476,8 +486,11 @@ internal static class PdfMcpTools
     }
 
     // Enforce the advertised schema before touching files, including nested arrays.
-    private static void Validate(JsonElement value, JsonElement schema, string path)
+    private static void Validate(JsonElement value, JsonElement schema, string path, JsonElement? rootSchema = null)
     {
+        rootSchema ??= schema;
+        if (schema.TryGetProperty("$ref", out var reference))
+        { Validate(value, rootSchema.Value.GetProperty("$defs").GetProperty(reference.GetString()!.Split('/')[^1]), path, rootSchema); return; }
         string type = schema.GetProperty("type").GetString()!;
         bool valid = type switch
         {
@@ -498,7 +511,8 @@ internal static class PdfMcpTools
         if (type == "array")
         {
             if (schema.TryGetProperty("minItems", out var min) && value.GetArrayLength() < min.GetInt32()) throw new ArgumentException($"{path} cannot be empty.");
-            foreach (var item in value.EnumerateArray()) Validate(item, schema.GetProperty("items"), path + "[]");
+            if (schema.TryGetProperty("maxItems", out var max) && value.GetArrayLength() > max.GetInt32()) throw new ArgumentException($"{path} contains too many items.");
+            foreach (var item in value.EnumerateArray()) Validate(item, schema.GetProperty("items"), path + "[]", rootSchema);
         }
         if (type == "object")
         {
@@ -506,11 +520,11 @@ internal static class PdfMcpTools
                 foreach (var key in required.EnumerateArray()) if (!value.TryGetProperty(key.GetString()!, out _)) throw new ArgumentException($"Missing {path}.{key.GetString()}.");
             foreach (var item in value.EnumerateObject())
             {
-                if (schema.TryGetProperty("properties", out var properties) && properties.TryGetProperty(item.Name, out var child)) Validate(item.Value, child, path + "." + item.Name);
+                if (schema.TryGetProperty("properties", out var properties) && properties.TryGetProperty(item.Name, out var child)) Validate(item.Value, child, path + "." + item.Name, rootSchema);
                 else if (schema.TryGetProperty("additionalProperties", out var additional))
                 {
                     if (additional.ValueKind == JsonValueKind.False) throw new ArgumentException($"Unknown argument {path}.{item.Name}.");
-                    if (additional.ValueKind == JsonValueKind.Object) Validate(item.Value, additional, path + "." + item.Name);
+                    if (additional.ValueKind == JsonValueKind.Object) Validate(item.Value, additional, path + "." + item.Name, rootSchema);
                 }
             }
         }

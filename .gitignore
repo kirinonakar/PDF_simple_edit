@@ -14,6 +14,7 @@ tmp/
 output/
 tests/*
 !tests/mcp_smoke.py
+!tests/PdfCreation/
 !tests/RegressionTests/
 !tests/PdfOpenPerformance/
 !tests/NativeTextStyles/

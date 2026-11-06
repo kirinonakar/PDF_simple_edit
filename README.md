@@ -62,8 +62,7 @@ JSON-RPC on stdin/stdout. Normal execution still opens the editor. Closing stdin
 ends the server; diagnostics use stderr only.
 
 Open **MCP → MCP settings** to display and copy the standard configuration with
-the current executable's absolute path. The dialog is available without a document
-and follows the app's Korean/English language setting. For example:
+the current executable's absolute path. For example:
 
 ```json
 {
@@ -80,7 +79,9 @@ The server exposes these tools through `tools/list`, including argument schemas:
 
 | Tool | Function |
 | --- | --- |
-| `pdf_create` | Blank PDF with page count, dimensions and title |
+| `pdf_create` | Complete PDFs from plain text, structured flow blocks, positioned page elements or a JSON file |
+| `pdf_create_help` | Agent authoring guide, working examples and the live JSON schema |
+| `pdf_to_json` | Lossless PDF archive with readable page/object information; restore through `pdf_create` |
 | `pdf_inspect` | Document revision, page sizes, one page's text/graphics/annotations and form fields |
 | `pdf_read` | Read body text for one page, a page range or all pages; results remain separated by page |
 | `pdf_add_text` | Unicode text with font, size, color, bold and italic |
@@ -97,27 +98,10 @@ The server exposes these tools through `tools/list`, including argument schemas:
 | `pdf_extract_images` | Extract embedded raster images, including nested images |
 | `images_to_pdf` | Fit each supplied image onto one A4 PDF page |
 
-For page-by-page reading, call `pdf_read` with `inputPath` and `page` (default 1).
-Alternatively, use `pages: "1,3,5-8"` for selected pages or `pages: "all"` for the
-whole document; `page` and `pages` cannot be combined. The response includes the
-document's `pageCount` and `revision`, plus a `pages` array with `page`, `text`,
-`hasText`, dimensions and rotation for each selected page. For example:
-
-```json
-{"name":"pdf_read","arguments":{"inputPath":"C:\\Docs\\source.pdf","page":2}}
-```
-
-Image-only pages return empty text; OCR is not performed.
-
-All paths must be absolute. Page numbers start at 1. Text and graphic coordinates
-use PDF points (72 points/inch), measured from the displayed CropBox's top-left
-after page rotation. The `crop` page action explicitly uses unrotated PDF coordinates
-from the MediaBox's bottom-left instead.
-
-For existing objects, call `pdf_inspect` for the desired page, then pass its
-`objectId` and the same `page` to an edit/delete tool. IDs include the full document's
-SHA-256 revision; inspect again after each edit. Optional `expectedRevision` also
-guards edits that do not use an object ID. 
+For JSON authoring, agents should first call `pdf_create_help`. Topics are
+`overview`, `flow`, `positioned`, `roundtrip`, and `schema`; the schema topic
+returns the actual input schema used by the server. See the detailed
+[JSON authoring guide](docs/pdf-create-json.md) for the same workflow.
 
 ## 🛠️ Technology Stack
 - **Framework**: .NET 10.0

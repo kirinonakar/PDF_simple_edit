@@ -11,6 +11,7 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (PdfMcpCommandLine.IsRequested(args)) return PdfMcpCommandLine.Run(args);
         if (Array.Exists(args, arg => arg.Equals("--mcp", StringComparison.OrdinalIgnoreCase)))
         {
             // Branch before constructing any XAML application or window. Inherited

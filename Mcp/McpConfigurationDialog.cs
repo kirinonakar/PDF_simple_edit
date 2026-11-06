@@ -14,11 +14,19 @@ internal static class McpConfigurationDialog
         string configuration = McpConfiguration.Create();
         var panel = new StackPanel { Spacing = 12, MinWidth = 450, MaxWidth = 700 };
         panel.Children.Add(new TextBlock { Text = Loc.Get("McpDescription"), TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(new TextBox
+        panel.Children.Add(new TextBlock { Text = Loc.Get("McpStandardConfiguration") });
+        var configurationText = new TextBlock
         {
-            Text = configuration, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap,
-            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"), MaxHeight = 320,
-            Header = Loc.Get("McpStandardConfiguration")
+            Text = configuration, IsTextSelectionEnabled = true, TextWrapping = TextWrapping.Wrap,
+            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas")
+        };
+        panel.Children.Add(new ScrollViewer
+        {
+            Content = configurationText, MaxHeight = 320,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalScrollMode = ScrollMode.Disabled
         });
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
         panel.Children.Add(status);
