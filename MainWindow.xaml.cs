@@ -475,6 +475,7 @@ namespace PDF_simple_edit
                 case EditorMenuCommand.RemoveProtection: RemoveProtection_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.Settings: Settings_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.About: About_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.McpSettings: McpSettings_Click(); break;
             }
         }
 
@@ -1468,6 +1469,8 @@ namespace PDF_simple_edit
             if (_pdfManager.IsLoaded)
                 await RenderCurrentPageAsync();
         }
+
+        private async void McpSettings_Click() => await Mcp.McpConfigurationDialog.ShowAsync(Content.XamlRoot);
 
         private async void About_Click(object sender, RoutedEventArgs e) =>
             await _dialogService.ShowAboutAsync(Content.XamlRoot);

@@ -11,10 +11,13 @@ using System.Text;
 
 namespace PDF_simple_edit.Services;
 
+internal sealed record PdfGraphicStyle(string? StrokeColor = null, string? FillColor = null,
+    double? LineWidth = null, double? Opacity = null);
+
 internal static class PdfGraphicTransformService
 {
     public static byte[] Transform(byte[] bytes, int pageIndex,
-        IReadOnlyList<(PdfAnnotation Source, PdfAffineTransform Transform)> edits)
+        IReadOnlyList<(PdfAnnotation Source, PdfAffineTransform Transform)> edits, PdfGraphicStyle? style = null)
     {
         using var output = new MemoryStream();
         using (var doc = new PdfDocument(new PdfReader(new MemoryStream(bytes)), new PdfWriter(output)))
@@ -65,6 +68,9 @@ internal static class PdfGraphicTransformService
                     if (matches.Count == 1)
                     {
                         var target = matches[0];
+                        if (style != null && target.Operation.IsImageOperation &&
+                            (style.StrokeColor != null || style.FillColor != null || style.LineWidth != null))
+                            throw new ArgumentException("Raster images cannot be recolored as vector paths; supply imagePath to replace the image.");
                         if (target.Operation.IsClipping || target.Operation.IsShadingOperation)
                             throw new InvalidOperationException(Loc.Get("GraphicsWithSharedClippingRegionsCannotBeTransformed"));
                         if (paint)
@@ -82,6 +88,25 @@ internal static class PdfGraphicTransformService
                         {
                             before[i] = target.Transform.Command;
                             after[i] = target.Transform.Inverse().Command;
+                        }
+                        if (style != null)
+                        {
+                            string paintStyle = "q\n";
+                            if (style.StrokeColor is { } stroke) paintStyle += ColorCommand(stroke, "RG");
+                            if (style.FillColor is { } fill) paintStyle += ColorCommand(fill, "rg");
+                            if (style.LineWidth is { } width) paintStyle += Number(width) + " w\n";
+                            if (style.Opacity is { } opacity)
+                            {
+                                var state = new iText.Kernel.Pdf.Extgstate.PdfExtGState().SetStrokeOpacity((float)opacity).SetFillOpacity((float)opacity);
+                                var stateName = page.GetResources().AddExtGState(state);
+                                // A nested form uses its own resources, so an opacity
+                                // name installed on the page is not visible there.
+                                if (!Enumerable.Range(0, page.GetContentStreamCount()).Any(s => page.GetContentStream(s) == stream))
+                                    throw new ArgumentException("Opacity changes inside a nested form require replacing the graphic.");
+                                paintStyle += stateName + " gs\n";
+                            }
+                            before[i] = (before.TryGetValue(i, out var prefix) ? prefix : "") + paintStyle;
+                            after[i] = "Q\n" + (after.TryGetValue(i, out var suffix) ? suffix : "");
                         }
                         handled++;
                     }
@@ -104,6 +129,8 @@ internal static class PdfGraphicTransformService
     }
 
     private static string Number(double value) => value.ToString("0.##########", System.Globalization.CultureInfo.InvariantCulture);
+    private static string ColorCommand(string color, string operation) => string.Join(" ", new[] { 1, 3, 5 }
+        .Select(index => Number(Convert.ToInt32(color.Substring(index, 2), 16) / 255.0))) + " " + operation + "\n";
     private static List<PdfObject> TransformPath(List<PdfObject> source, PdfAffineTransform transform)
     {
         string name = source[^1].ToString()!;

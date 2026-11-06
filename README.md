@@ -53,6 +53,72 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
   - `Ctrl+S`: Save File
   - `Ctrl+F`: Find Text
 
+## MCP server
+
+Run `PDFSimpleEditor.exe --mcp` to start a headless server using the standard
+[MCP stdio transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
+The client launches the process and communicates using newline-delimited UTF-8
+JSON-RPC on stdin/stdout. Normal execution still opens the editor. Closing stdin
+ends the server; diagnostics use stderr only.
+
+Open **MCP → MCP settings** to display and copy the standard configuration with
+the current executable's absolute path. The dialog is available without a document
+and follows the app's Korean/English language setting. For example:
+
+```json
+{
+  "mcpServers": {
+    "pdf-simple-editor": {
+      "command": "C:\\Apps\\PDFSimpleEditor.exe",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
+The server exposes these tools through `tools/list`, including argument schemas:
+
+| Tool | Function |
+| --- | --- |
+| `pdf_create` | Blank PDF with page count, dimensions and title |
+| `pdf_inspect` | Document revision, page sizes, one page's text/graphics/annotations and form fields |
+| `pdf_read` | Read body text for one page, a page range or all pages; results remain separated by page |
+| `pdf_add_text` | Unicode text with font, size, color, bold and italic |
+| `pdf_edit_text` | Replace, delete, move, scale, rotate, reflow and restyle original text |
+| `pdf_add_graphic` | Rectangle, ellipse, line, polygon, freehand, highlight or image; rotation and opacity |
+| `pdf_edit_graphic` | Move, resize, rotate, recolor paths, or replace a graphic/image/annotation |
+| `pdf_delete_object` | Remove original text, graphics, images or annotations |
+| `pdf_redact_region` | Remove intersecting content and form widgets using pdfSweep |
+| `pdf_manage_pages` | Insert, delete, reorder, rotate and crop pages |
+| `pdf_set_form_fields` | Fill named AcroForm fields, including Korean text and checkboxes |
+| `pdf_merge` | Merge PDFs in the supplied order |
+| `pdf_extract_pages` | Extract/split pages in the supplied order |
+| `pdf_to_images` | Render whole pages as PNG; select ranges and 72–600 DPI |
+| `pdf_extract_images` | Extract embedded raster images, including nested images |
+| `images_to_pdf` | Fit each supplied image onto one A4 PDF page |
+
+For page-by-page reading, call `pdf_read` with `inputPath` and `page` (default 1).
+Alternatively, use `pages: "1,3,5-8"` for selected pages or `pages: "all"` for the
+whole document; `page` and `pages` cannot be combined. The response includes the
+document's `pageCount` and `revision`, plus a `pages` array with `page`, `text`,
+`hasText`, dimensions and rotation for each selected page. For example:
+
+```json
+{"name":"pdf_read","arguments":{"inputPath":"C:\\Docs\\source.pdf","page":2}}
+```
+
+Image-only pages return empty text; OCR is not performed.
+
+All paths must be absolute. Page numbers start at 1. Text and graphic coordinates
+use PDF points (72 points/inch), measured from the displayed CropBox's top-left
+after page rotation. The `crop` page action explicitly uses unrotated PDF coordinates
+from the MediaBox's bottom-left instead.
+
+For existing objects, call `pdf_inspect` for the desired page, then pass its
+`objectId` and the same `page` to an edit/delete tool. IDs include the full document's
+SHA-256 revision; inspect again after each edit. Optional `expectedRevision` also
+guards edits that do not use an object ID. 
+
 ## 🛠️ Technology Stack
 - **Framework**: .NET 10.0
 - **UI Framework**: WinUI 3 (Windows App SDK)

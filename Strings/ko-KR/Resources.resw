@@ -1381,4 +1381,10 @@
   <data name="FillShapeTooltip" xml:space="preserve">
     <value>선택한 색으로 사각형, 타원, 다각형의 내부를 채웁니다.</value>
   </data>
+  <data name="McpConfigurationCopied" xml:space="preserve"><value>설정을 클립보드에 복사했습니다.</value></data>
+  <data name="McpCopyConfiguration" xml:space="preserve"><value>설정 복사</value></data>
+  <data name="McpCopyFailed" xml:space="preserve"><value>설정을 복사하지 못했습니다: {0}</value></data>
+  <data name="McpDescription" xml:space="preserve"><value>아래 표준 JSON 설정을 MCP 클라이언트에 등록하세요. 클라이언트가 이 실행 파일을 --mcp 인수로 실행하면 편집기 창 없이 stdio 서버로 동작합니다. PDF 생성, 텍스트·그래픽 편집, 페이지 관리와 이미지 변환을 지원합니다. 저장된 파일을 처리하며 편집기 탭과는 별도로 동작합니다.</value></data>
+  <data name="McpSettings" xml:space="preserve"><value>MCP 설정</value></data>
+  <data name="McpStandardConfiguration" xml:space="preserve"><value>표준 MCP 설정 (JSON)</value></data>
 </root>

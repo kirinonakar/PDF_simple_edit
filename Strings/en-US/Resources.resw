@@ -1381,4 +1381,10 @@ To remove passwords individually, use Encryption and password settings.</value>
   <data name="FillShapeTooltip" xml:space="preserve">
     <value>Fill the interior of rectangles, ellipses, and polygons with the selected color.</value>
   </data>
+  <data name="McpConfigurationCopied" xml:space="preserve"><value>Configuration copied to clipboard.</value></data>
+  <data name="McpCopyConfiguration" xml:space="preserve"><value>Copy configuration</value></data>
+  <data name="McpCopyFailed" xml:space="preserve"><value>Could not copy configuration: {0}</value></data>
+  <data name="McpDescription" xml:space="preserve"><value>Connect an MCP client using the standard JSON configuration below. The client runs this executable with --mcp over stdio, without opening the editor. Tools support PDF creation, text/graphic editing, page management and image conversion. Saved files are processed independently of open editor tabs.</value></data>
+  <data name="McpSettings" xml:space="preserve"><value>MCP settings</value></data>
+  <data name="McpStandardConfiguration" xml:space="preserve"><value>Standard MCP configuration (JSON)</value></data>
 </root>

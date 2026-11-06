@@ -47,6 +47,7 @@ public enum EditorMenuCommand
     RemoveProtection,
     Settings,
     About,
+    McpSettings,
 }
 
 /// <summary>Owns menu presentation and emits commands for the editor shell.</summary>

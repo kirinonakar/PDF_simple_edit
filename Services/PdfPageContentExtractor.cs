@@ -23,7 +23,8 @@ namespace PDF_simple_edit.Services
     internal sealed class PdfPageContentExtractor
     {
         public async Task<List<PdfPageContent>> ExtractAsync(byte[] pdfBytes, int pageIndex,
-            TextEditingMode mode = TextEditingMode.PreserveOriginal, bool textOnly = false)
+            TextEditingMode mode = TextEditingMode.PreserveOriginal, bool textOnly = false,
+            bool strict = false, bool includePreviews = true)
         {
             ArgumentNullException.ThrowIfNull(pdfBytes);
             byte[] pdfSnapshot = pdfBytes;
@@ -111,7 +112,7 @@ namespace PDF_simple_edit.Services
                         }
                     }
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (!strict)
                 {
                     System.Diagnostics.Debug.WriteLine($"Error extracting page contents: {ex.Message}");
                 }
@@ -119,7 +120,7 @@ namespace PDF_simple_edit.Services
                 return extractedContents;
             });
 
-            await PopulateRenderedImagePreviewsAsync(pdfSnapshot, pageIndex, contents);
+            if (includePreviews) await PopulateRenderedImagePreviewsAsync(pdfSnapshot, pageIndex, contents);
             return contents;
         }
 
