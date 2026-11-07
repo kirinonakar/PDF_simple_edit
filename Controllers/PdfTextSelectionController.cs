@@ -18,7 +18,7 @@ public sealed class PdfTextSelectionController(
     Func<int> getPageIndex, Func<EditToolMode> getToolMode)
 {
     private const double PdfToPixels = 96.0 / 72.0;
-    private sealed class Selection(PdfDocumentManager manager, byte[] source, int page, long version, Point start, uint pointerId)
+    private sealed class Selection(PdfDocumentManager manager, byte[] source, int page, long version, Point start, uint? pointerId)
     {
         public PdfDocumentManager Manager { get; } = manager;
         public byte[] Source { get; } = source;
@@ -27,6 +27,7 @@ public sealed class PdfTextSelectionController(
         public Point Start { get; } = start;
         public Point End { get; set; } = start;
         public uint? PointerId { get; set; } = pointerId;
+        public bool AllText { get; init; }
         public List<NativePdfTextBlock>? Blocks { get; set; }
         public string Text { get; set; } = "";
     }
@@ -73,11 +74,28 @@ public sealed class PdfTextSelectionController(
             Clip(point.Position), e.Pointer.PointerId);
         canvas.CapturePointer(e.Pointer);
         e.Handled = true;
-        if (!ReferenceEquals(source, _cachedSource) || selection.Page != _cachedPage || _cachedExtraction == null)
+        await ExtractSelectionAsync(selection);
+    }
+
+    public async Task SelectAllAsync()
+    {
+        var manager = getManager();
+        if (getToolMode() != EditToolMode.None || !manager.IsLoaded || manager.GetPdfBytes() is not { } source) return;
+        Clear();
+        var selection = _selection = new Selection(manager, source, getPageIndex(), manager.EditVersion, default, null)
         {
-            _cachedSource = source;
+            AllText = true
+        };
+        await ExtractSelectionAsync(selection);
+    }
+
+    private async Task ExtractSelectionAsync(Selection selection)
+    {
+        if (!ReferenceEquals(selection.Source, _cachedSource) || selection.Page != _cachedPage || _cachedExtraction == null)
+        {
+            _cachedSource = selection.Source;
             _cachedPage = selection.Page;
-            _cachedExtraction = Task.Run(() => new NativePdfTextService().Extract(source, selection.Page));
+            _cachedExtraction = Task.Run(() => new NativePdfTextService().Extract(selection.Source, selection.Page));
         }
         var extraction = _cachedExtraction;
         try
@@ -131,8 +149,8 @@ public sealed class PdfTextSelectionController(
         if (_preview != null) canvas.Children.Remove(_preview);
         _preview = null;
         selection.Text = "";
-        if (Math.Abs(selection.End.X - selection.Start.X) + Math.Abs(selection.End.Y - selection.Start.Y) < 4) return;
-        var selected = PdfTextSelectionService.SelectRange(selection.Blocks,
+        if (!selection.AllText && Math.Abs(selection.End.X - selection.Start.X) + Math.Abs(selection.End.Y - selection.Start.Y) < 4) return;
+        var selected = selection.AllText ? selection.Blocks : PdfTextSelectionService.SelectRange(selection.Blocks,
             new(selection.Start.X / PdfToPixels, selection.Start.Y / PdfToPixels),
             new(selection.End.X / PdfToPixels, selection.End.Y / PdfToPixels));
         selection.Text = PdfTextSelectionService.GetSelectedText(selected);

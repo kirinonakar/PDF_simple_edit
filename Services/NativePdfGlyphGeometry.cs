@@ -48,14 +48,13 @@ internal static class NativePdfGlyphGeometry
             {
                 var decoded = font.DecodeIntoGlyphLine(character.GetPdfString());
                 if (decoded.Size() == 0) continue;
-                var box = bounds.Get(decoded.Get(0), character.GetPdfString().GetValueBytes());
-                if (box == null || box[2] <= box[0] || box[3] <= box[1]) continue;
+                var corners = bounds.GetCorners(decoded.Get(0), character.GetPdfString().GetValueBytes());
+                if (corners == null) continue;
                 var origin = character.GetBaseline().GetStartPoint();
                 var points = new List<(double X, double Y)>();
-                foreach (double x in new[] { box[0], box[2] })
-                foreach (double y in new[] { box[1], box[3] })
+                foreach (var (x, y) in corners)
                 {
-                    var offset = new Vector((float)(x * size * scale / 1000), (float)(y * size / 1000), 0).Cross(matrix);
+                    var offset = new Vector((float)(x * size * scale), (float)(y * size), 0).Cross(matrix);
                     points.Add((origin.Get(0) + offset.Get(0), origin.Get(1) + offset.Get(1)));
                 }
                 double left = points.Min(p => p.X), bottom = points.Min(p => p.Y);
@@ -72,10 +71,16 @@ internal static class NativePdfGlyphGeometry
         private readonly CffGlyphBounds? _cff;
         private readonly TrueTypeBounds? _trueType;
         private readonly byte[]? _cidToGid;
+        private readonly Type3GlyphBounds? _type3;
 
         public FontBounds(PdfFont font)
         {
             _font = font;
+            if (font is PdfType3Font type3)
+            {
+                _type3 = new Type3GlyphBounds(type3);
+                return;
+            }
             var dictionary = font.GetPdfObject();
             var descendant = dictionary.GetAsArray(PdfName.DescendantFonts)?.GetAsDictionary(0);
             var descriptor = (descendant ?? dictionary).GetAsDictionary(PdfName.FontDescriptor);
@@ -105,7 +110,18 @@ internal static class NativePdfGlyphGeometry
             { System.Diagnostics.Debug.WriteLine($"Embedded glyph bounds unavailable: {ex.Message}"); }
         }
 
-        public double[]? Get(Glyph glyph, byte[] code)
+        // Corners are in text space, before font size/horizontal scale. Keep all
+        // four through the page transform rather than boxing a skewed FontMatrix twice.
+        public (double X, double Y)[]? GetCorners(Glyph glyph, byte[] code)
+        {
+            if (_type3 != null) return _type3.GetCorners(code);
+            var box = Get(glyph, code);
+            if (box == null || box[2] <= box[0] || box[3] <= box[1]) return null;
+            return new[] { (box[0] / 1000, box[1] / 1000), (box[0] / 1000, box[3] / 1000),
+                (box[2] / 1000, box[1] / 1000), (box[2] / 1000, box[3] / 1000) };
+        }
+
+        private double[]? Get(Glyph glyph, byte[] code)
         {
             if (_cff != null)
             {

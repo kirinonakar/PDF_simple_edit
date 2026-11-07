@@ -1514,6 +1514,14 @@ namespace PDF_simple_edit
             if (controlDown && !textInputFocused &&
                 !_annotationCanvasController.IsInlineEditing)
             {
+                if (e.Key == Windows.System.VirtualKey.A &&
+                    _currentTool == EditToolMode.None && _pdfManager.IsLoaded)
+                {
+                    e.Handled = true;
+                    await _annotationCanvasController.TextSelection.SelectAllAsync();
+                    return;
+                }
+
                 if (e.Key == Windows.System.VirtualKey.C &&
                     (_annotationCanvasController.TextSelection.HasSelection || _clipboardController.GetCopyableSelection().Count > 0))
                 {
