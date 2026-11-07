@@ -80,16 +80,16 @@ internal static partial class PdfMcpTools
             Fields(("topic", new { type = "string", @enum = new[] { "overview", "flow", "positioned", "roundtrip", "schema" } })));
         Add("pdf_to_json", "Export a PDF to a lossless JSON archive containing its original PDF bytes, SHA-256 and readable page/object information. Pass the resulting JSON file as pdf_create jsonPath to restore a byte-for-byte identical PDF, preserving fonts, vectors, images, annotations and metadata. sourceInfo is a read-only inspection snapshot; use text/content/pages creation modes to author new content.", new[] { "inputPath", "outputPath" }, false,
             Input, new Dictionary<string, object>(Output) { ["outputPath"] = Field("string", "Absolute destination JSON archive path. Parent directory must exist.") });
-        Add("pdf_inspect", "Read document revision, page sizes and editable objects for one page (default 1). Optional kind, region and maxObjects filters reduce the object list without changing IDs. graphics includes vectors, images and annotations. Form fields are returned only for kind=all, filtered by region but independently of maxObjects. Omitted filters preserve the full inspection. Use pdf_find_text to locate text objects across the document, pdf_delete_objects for multiple deletions or pdf_batch for multiple edits. Scanned text requires external OCR.", new[] { "inputPath" }, true,
+        Add("pdf_inspect", "Read document revision, page sizes and editable objects for one page (default 1). Optional kind, region and maxObjects filters reduce the object list without changing IDs. graphics includes vectors, images and annotations. Form fields are returned only for kind=all, filtered by region but independently of maxObjects. Omitted filters preserve the full inspection. Use pdf_find_text to locate text objects across the document, pdf_delete_objects for multiple deletions or pdf_batch for multiple edits. For scanned text, use pdf_vlm_ocr and pdf_vlm_ocr_apply to add an OCR layer with your own vision model.", new[] { "inputPath" }, true,
             Input, Fields(("page", Page),
                 ("kind", new { type = "string", @enum = new[] { "all", "text", "graphics" }, description = "Object category; default all. text returns editable body text only." }),
                 ("region", InspectionRegionSchema()),
                 ("maxObjects", new { type = "integer", minimum = 1, maximum = 10000, description = "Maximum objects to return after filtering; omitted means no limit. Counts and truncated report omitted objects." })));
-        Add("pdf_find_text", "Find a literal string in editable body text throughout ALL pages and return object IDs usable directly with pdf_edit_text (supply the returned page too), pdf_delete_objects or pdf_batch. One match entry per matching text block, in page/extraction order, with the full block text, bounds and first match's UTF-16 offset. Default case-insensitive ordinal comparison; no regex, OCR, annotation/form-value search or matching across separate blocks. IDs and revision are identical to pdf_inspect. Searches all pages even when maxResults limits returned matches; counts and truncated report omitted blocks.", new[] { "inputPath", "query" }, true,
+        Add("pdf_find_text", "Find a literal string in editable body text throughout ALL pages and return object IDs usable directly with pdf_edit_text (supply the returned page too), pdf_delete_objects or pdf_batch. One match entry per matching text block, in page/extraction order, with the full block text, bounds and first match's UTF-16 offset. Default case-insensitive ordinal comparison; no regex, image recognition, annotation/form-value search or matching across separate blocks. Existing OCR text layers are included. IDs and revision are identical to pdf_inspect. Searches all pages even when maxResults limits returned matches; counts and truncated report omitted blocks.", new[] { "inputPath", "query" }, true,
             Input, Fields(("query", Field("string", "Nonempty literal substring to find within each editable text block.")),
                 ("caseSensitive", new { type = "boolean", description = "Default false; use ordinal case-sensitive comparison when true." }),
                 ("maxResults", new { type = "integer", minimum = 1, maximum = 10000, description = "Maximum matching text blocks to return, default 100." })));
-        Add("pdf_read", "Read PDF body text page by page, including Unicode text. Returns total page count and separate text/size/rotation for each selected page. Use page for one 1-based page (default 1), or pages for a range such as 1,3,5-8 or all. Do not supply both. Extracts existing PDF text only; image-only/scanned pages require external OCR. Complex layouts may have imperfect reading order. Use pdf_inspect when object IDs are needed for editing.", new[] { "inputPath" }, true,
+        Add("pdf_read", "Read PDF body text page by page, including Unicode and existing OCR text layers. Returns total page count and separate text/size/rotation for each selected page. Use page for one 1-based page (default 1), or pages for a range such as 1,3,5-8 or all. Do not supply both. This extracts existing PDF text; for image-only/scanned pages use pdf_vlm_ocr with your own vision model, then pdf_vlm_ocr_apply to save the recognized text. Complex layouts may have imperfect reading order. Use pdf_inspect when object IDs are needed for editing.", new[] { "inputPath" }, true,
             Input, Fields(("page", Page), ("pages", Field("string", "1-based page range, e.g. 1,3,5-8, or all. Mutually exclusive with page."))));
         Add("pdf_add_text", "Add Unicode text, including Korean, at x/y. Font, size, color, bold and italic are configurable. Use pdf_edit_text for existing text.", new[] { "inputPath", "outputPath", "text" }, false,
             Input, Output, Style, Fields(("page", Page), ("text", Text), ("x", Number), ("y", Number)));
@@ -119,6 +119,7 @@ internal static partial class PdfMcpTools
         Add("images_to_pdf", "Create a PDF from PNG, JPEG, BMP, GIF, TIFF or WebP files in the specified order. Each image is fitted without cropping onto one portrait/landscape A4 page.", new[] { "imagePaths", "outputPath" }, false,
             Output, Fields(("imagePaths", Paths)));
         AddBatchTools(result);
+        AddVlmOcrTools(result);
         return result;
     }
 
@@ -176,6 +177,8 @@ internal static partial class PdfMcpTools
             throw new InvalidOperationException("Source file changed. Inspect it again before editing.");
         if (name == "pdf_inspect") return await InspectAsync(a, bytes, revision, cancellation);
         if (name == "pdf_find_text") return await FindTextAsync(a, bytes, revision, cancellation);
+        if (name == "pdf_vlm_ocr") return await RenderVlmOcrAsync(a, bytes, revision, cancellation);
+        if (name == "pdf_vlm_ocr_apply") return await ApplyVlmOcrAsync(a, bytes, revision, inputPath, destinationVersion, cancellation);
         if (name == "pdf_to_json")
         {
             var archive = await PdfMcpJsonArchive.ExportAsync(bytes, revision, a, Inspect, cancellation);

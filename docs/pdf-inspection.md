@@ -18,7 +18,9 @@ Each entry in `matches` contains an `objectId`, 1-based `page`, full block `text
 bounding box (`x`, `y`, `width`, `height`) and the first occurrence's
 `matchIndex`/`matchLength` in UTF-16 code units. There is one entry per matching
 editable text block, in page/extraction order. Separate blocks are not joined;
-OCR, annotation contents and form values are not searched.
+Image recognition is not performed during search; existing OCR text layers are
+searched. Annotation contents and form values are not searched. For image-only
+pages use `pdf_vlm_ocr` and `pdf_vlm_ocr_apply` before searching.
 
 `matchedObjectCount`, `returnedCount` and `truncated` describe the result limit.
 All pages are searched even when returned results are capped. Pass the returned

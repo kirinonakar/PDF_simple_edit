@@ -47,7 +47,7 @@ internal static class PdfMcpReader
         return new
         {
             inputPath = arguments.Path("inputPath"), revision, pageCount, pages,
-            extraction = "Existing PDF text only; OCR is not performed. Pages without extractable text return empty text. Reading order is inferred from text positions and may differ in complex layouts."
+            extraction = "Existing PDF text, including saved OCR layers. No image recognition is performed here. For image-only pages use pdf_vlm_ocr with your own vision and pdf_vlm_ocr_apply to add recognized text. Pages without extractable text return empty text. Reading order is inferred from text positions and may differ in complex layouts."
         };
     }
 }

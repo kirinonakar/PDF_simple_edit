@@ -92,6 +92,8 @@ The server exposes these tools through `tools/list`, including argument schemas:
 | `pdf_inspect` | Document revision, page sizes and editable objects; optional kind, region and count filters |
 | `pdf_find_text` | Search editable text across all pages and return matching object IDs, page numbers and bounds |
 | `pdf_read` | Read body text for one page, a page range or all pages; results remain separated by page |
+| `pdf_vlm_ocr` | Return a page image for the calling agent's own VLM to recognize, with coordinate instructions and revision |
+| `pdf_vlm_ocr_apply` | Save agent-recognized text and bounding boxes as a selectable/searchable invisible OCR layer |
 | `pdf_add_text` | Unicode text with font, size, color, bold and italic |
 | `pdf_edit_text` | Replace, delete, move, scale, rotate, reflow and restyle original text |
 | `pdf_add_graphic` | Rectangle, ellipse, line, polygon, freehand, highlight or image; rotation and opacity |
