@@ -40,7 +40,7 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 - **Page Operations**: Select multiple pages with `Ctrl`/`Shift`, reorder them, delete unnecessary pages, or extract selected pages into a new PDF.
 - **Merge & Split**: Combine multiple PDF files into one or split specific page ranges into new documents.
 - **Images to PDF**: Select multiple PNG, JPEG, BMP, GIF, TIFF, or WebP images from **Tools → Images to PDF**. Each image becomes one A4 page, fitted without cropping, and the result opens in a new tab.
-- **PDF to Image (PNG)**: Right-click a page → **Save page as image**, or export **All / Specified** pages (e.g. `1,3,5-8`) at 96/150/300 DPI via **Tools → PDF to Image**.
+- **PDF to Image (PNG)**: Right-click a page → **Save page as image**, or export **All / Specified** pages (e.g. `1,3,5-8`) at 96/150/300/600 DPI via **Tools → PDF to Image**.
 - **Page Thumbnails**: Navigate and manage pages quickly using the interactive sidebar and its right-click menu.
 
 ### 🛠️ Modern UX/UI
