@@ -134,6 +134,7 @@ public sealed partial class MainWindow
     {
         _commentPanelVisible = !_commentPanelVisible;
         EditorToolbar.CommentSidebarButton.IsChecked = _commentPanelVisible;
+        EditorMenu.SetCommentSidebarVisible(_commentPanelVisible);
         CommentPanel.Visibility = _commentPanelVisible ? Visibility.Visible : Visibility.Collapsed;
         CommentPanelColumn.Width = new GridLength(_commentPanelVisible ? _commentSidebarWidth : 0);
         CommentGripColumn.Width = new GridLength(_commentPanelVisible ? 5 : 0);

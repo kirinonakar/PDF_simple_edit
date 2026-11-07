@@ -65,6 +65,29 @@ public sealed class PdfSaveService
             (IsPageContent(a) || PdfRegionRedactionService.Intersects(a, region)));
     }
 
+    public async Task ChangePageGeometryAsync(PdfDocumentManager manager, List<PdfAnnotation> annotations,
+        PdfPageGeometryOptions options)
+    {
+        byte[] source = manager.GetPdfBytes() ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
+        long version = manager.EditVersion;
+        object? state = manager.GetUIStateFunc?.Invoke();
+        var pages = options.PageIndices.ToHashSet();
+        // Bake pending text/images/highlights before changing coordinates. Selection
+        // operator references on these pages become stale; content can be selected again.
+        var captured = CaptureAnnotations(annotations.Where(a => pages.Contains(a.PageIndex) && !a.IsEditablePath).ToList());
+        Dictionary<int, PdfAffineTransform>? transforms = null;
+        byte[] edited = await Task.Run(() =>
+        {
+            byte[] annotated = CreateAnnotatedBytes(manager, source, captured);
+            return PdfDocumentManager.RewritePdfBytes(annotated,
+                document => transforms = PdfPageGeometryService.Apply(document, options));
+        });
+        manager.CommitPageGeometry(source, version, edited, state, options.PageIndices);
+        annotations.RemoveAll(a => pages.Contains(a.PageIndex) && !a.IsEditablePath);
+        foreach (var path in annotations.Where(a => a.IsEditablePath && pages.Contains(a.PageIndex)))
+            PdfPageGeometryService.TransformPath(path, transforms![path.PageIndex]);
+    }
+
     private byte[] CreateAnnotatedBytes(PdfDocumentManager manager, byte[] source, List<PdfAnnotation> annotations)
     {
         bool needsAnnotationWrite = annotations.Any(a => a.NativeText == null &&

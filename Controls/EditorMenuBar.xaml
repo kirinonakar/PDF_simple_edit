@@ -19,6 +19,9 @@
                     <KeyboardAccelerator Modifiers="Control" Key="O"/>
                 </MenuFlyoutItem.KeyboardAccelerators>
             </MenuFlyoutItem>
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=ReopenFile}" x:Name="MenuReopen" Tag="ReopenFile" Click="Command_Click" IsEnabled="False">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72C;"/></MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
             <MenuFlyoutSubItem x:Name="MenuRecentFiles" Text="{loc:LocalizedString Key=RecentFiles}">
                 <MenuFlyoutSubItem.Icon><FontIcon Glyph="&#xE81C;"/></MenuFlyoutSubItem.Icon>
                 <MenuFlyoutItem Text="{loc:LocalizedString Key=NoRecentFiles}" IsEnabled="False"/>
@@ -76,9 +79,12 @@
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE71F;"/></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
             <MenuFlyoutItem Text="{loc:LocalizedString Key=FitToPage}" Tag="FitToPage" Click="Command_Click"/>
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=FitToWidth}" x:Name="MenuFitToWidth" Tag="FitToWidth" Click="Command_Click" IsEnabled="False"/>
             <MenuFlyoutSeparator/>
             <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=ShowPagePanel}" x:Name="MenuShowPagePanel"
                                    IsChecked="True" Tag="TogglePagePanel" Click="Command_Click"/>
+            <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=ViewCommentsBookmarks}" x:Name="MenuShowCommentsBookmarks"
+                                   Tag="ToggleCommentSidebar" Click="Command_Click"/>
         </MenuBarItem>
 
         <MenuBarItem Title="{loc:LocalizedString Key=Tools}">
@@ -137,6 +143,15 @@
             </MenuFlyoutItem>
             <MenuFlyoutItem Text="{loc:LocalizedString Key=ExtractAllImages}" x:Name="MenuExtractImages" Tag="ExtractAllImages" Click="Command_Click" IsEnabled="False">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE91B;"/></MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+        </MenuBarItem>
+
+        <MenuBarItem Title="{loc:LocalizedString Key=Document}">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=PageRotation}" x:Name="MenuRotatePages" Tag="RotatePages" Click="Command_Click" IsEnabled="False">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE7AD;"/></MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=PageSizeSettings}" x:Name="MenuResizePages" Tag="ResizePages" Click="Command_Click" IsEnabled="False">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE9A6;"/></MenuFlyoutItem.Icon>
             </MenuFlyoutItem>
             <MenuFlyoutSeparator/>
             <MenuFlyoutItem Text="{loc:LocalizedString Key=MergePDFs2}" Tag="MergePdf" Click="Command_Click">

@@ -18,6 +18,8 @@
                 <MenuFlyout x:Name="PageContextMenu">
                     <MenuFlyoutItem x:Name="SavePageImageMenuItem" Text="{loc:LocalizedString Key=SavePageAsImage}"/>
                     <MenuFlyoutItem x:Name="ExtractPagesMenuItem" Text="{loc:LocalizedString Key=ExtractSelectedPages}"/>
+                    <MenuFlyoutItem x:Name="RotatePagesMenuItem" Text="{loc:LocalizedString Key=PageRotation}"/>
+                    <MenuFlyoutItem x:Name="ResizePagesMenuItem" Text="{loc:LocalizedString Key=PageSizeSettings}"/>
                     <MenuFlyoutItem x:Name="DeletePagesMenuItem" Text="{loc:LocalizedString Key=DeleteSelectedPages}"/>
                 </MenuFlyout>
             </ListView.ContextFlyout>

@@ -31,9 +31,11 @@ public sealed class DocumentFileController(
     Func<Task> finishInlineEditAsync,
     Func<Task> renderCurrentPageAsync,
     Action updateUIState,
+    Action<PdfDocumentTab, PdfDocumentManager, List<PdfAnnotation>> replaceTabDocument,
     Func<string, string, Task> showErrorAsync)
 {
     private bool _isSaveInProgress;
+    private bool _isReopenInProgress;
     private bool _isProtectionDialogOpen;
     private readonly PdfProtectionDialogService _protectionDialog = new();
 
@@ -152,6 +154,78 @@ public sealed class DocumentFileController(
         finally
         {
             loadingIndicator.IsActive = false;
+        }
+    }
+
+    public async Task ReopenAsync()
+    {
+        if (_isReopenInProgress || _isSaveInProgress || _isProtectionDialogOpen ||
+            !getManager().IsLoaded || string.IsNullOrEmpty(getManager().FilePath) || getActiveTab() is not { } tab) return;
+        var manager = getManager();
+        PdfDocumentManager? reopened = null;
+        _isReopenInProgress = true;
+        bool started = false;
+        try
+        {
+            await finishInlineEditAsync();
+            if (!ReferenceEquals(manager, getManager()) || !ReferenceEquals(tab, getActiveTab())) return;
+            long version = manager.EditVersion;
+            if (manager.IsModified)
+            {
+                var dialog = new ContentDialog
+                {
+                    Title = Loc.Get("SaveChanges"), Content = Loc.Format("HasChangedSaveYourChanges", tab.Header),
+                    PrimaryButtonText = Loc.Get("Save"), SecondaryButtonText = Loc.Get("DonTSave"),
+                    CloseButtonText = Loc.Get("Cancel"), XamlRoot = getXamlRoot()
+                };
+                var result = await dialog.ShowAsync();
+                if (!ReferenceEquals(manager, getManager()) || manager.EditVersion != version || result == ContentDialogResult.None) return;
+                if (result == ContentDialogResult.Primary && !await SaveAsync()) return;
+            }
+            if (!ReferenceEquals(manager, getManager()) || !ReferenceEquals(tab, getActiveTab())) return;
+            // Save As may have changed the file path (for example a signed document).
+            string path = manager.FilePath!;
+            version = manager.EditVersion;
+            started = true;
+            loadingIndicator.IsActive = true;
+            statusText.Text = Loc.Get("ReopeningFile");
+            // Prepare a separate document first. Failed reads and cancelled password
+            // prompts leave the current tab, its overlays and undo history intact.
+            reopened = new PdfDocumentManager { TextEditingMode = manager.TextEditingMode };
+            PdfOpenStatus status = await reopened.OpenWithPasswordAsync(path, manager.SavePassword);
+            while (status is PdfOpenStatus.PasswordRequired or PdfOpenStatus.WrongPassword)
+            {
+                if (!ReferenceEquals(manager, getManager()) || manager.EditVersion != version) return;
+                string? password = await dialogService.ShowPasswordPromptAsync(getXamlRoot(), Path.GetFileName(path),
+                    status == PdfOpenStatus.WrongPassword);
+                if (password == null) { statusText.Text = Loc.Get("FileOpeningCanceled"); return; }
+                status = await reopened.OpenWithPasswordAsync(path, password);
+            }
+            if (status != PdfOpenStatus.Success)
+            {
+                statusText.Text = Loc.Get("CannotOpenThePDFFile");
+                await showErrorAsync(Loc.Get("Error"), Loc.Get("CannotOpenThePDFFile"));
+                return;
+            }
+            var annotations = await Task.Run(reopened.LoadSavedSignatures);
+            if (!ReferenceEquals(manager, getManager()) || !ReferenceEquals(tab, getActiveTab()) || manager.EditVersion != version) return;
+            await finishInlineEditAsync();
+            if (!ReferenceEquals(manager, getManager()) || !ReferenceEquals(tab, getActiveTab()) || manager.EditVersion != version) return;
+            replaceTabDocument(tab, reopened, annotations);
+            reopened = null; // Ownership transferred to the existing tab.
+            addRecentFile(path);
+            statusText.Text = Loc.Get("FileReopened");
+        }
+        catch (Exception ex)
+        {
+            await showErrorAsync(Loc.Get("Error"), Loc.Format("AnErrorOccurredWhileOpeningTheFile", ex.Message));
+        }
+        finally
+        {
+            reopened?.Close();
+            _isReopenInProgress = false;
+            if (started) loadingIndicator.IsActive = false;
+            updateUIState();
         }
     }
 

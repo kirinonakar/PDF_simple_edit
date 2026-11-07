@@ -1079,7 +1079,7 @@ To remove passwords individually, use Encryption and password settings.</value>
     <value>Fit to width</value>
   </data>
   <data name="ShowPagePanel" xml:space="preserve">
-    <value>Show page panel</value>
+    <value>Page preview</value>
   </data>
   <data name="Tools" xml:space="preserve">
     <value>Tools</value>
@@ -1442,4 +1442,28 @@ To remove passwords individually, use Encryption and password settings.</value>
   <data name="OcrCancelled" xml:space="preserve"><value>OCR cancelled. No OCR changes were applied.</value></data>
   <data name="OcrFailed" xml:space="preserve"><value>OCR failed. No OCR changes were applied.</value></data>
   <data name="OcrCompleted" xml:space="preserve"><value>OCR complete: {0} pages updated, {1} words; {2} text pages skipped, {3} pages without recognized text. Ctrl+S: save · Ctrl+Z: undo.</value></data>
+  <data name="PageRotation" xml:space="preserve"><value>Rotate pages</value></data>
+  <data name="PageSizeSettings" xml:space="preserve"><value>Page size settings</value></data>
+  <data name="PageGeometryScope" xml:space="preserve"><value>Apply to</value></data>
+  <data name="PageGeometryCurrent" xml:space="preserve"><value>Current page ({0})</value></data>
+  <data name="RotateClockwise90" xml:space="preserve"><value>90° clockwise</value></data>
+  <data name="Rotate180" xml:space="preserve"><value>180°</value></data>
+  <data name="RotateCounterclockwise90" xml:space="preserve"><value>90° counterclockwise</value></data>
+  <data name="PageWidthMm" xml:space="preserve"><value>Width (mm)</value></data>
+  <data name="PageHeightMm" xml:space="preserve"><value>Height (mm)</value></data>
+  <data name="PageSizePreset" xml:space="preserve"><value>Paper size</value></data>
+  <data name="CustomPageSize" xml:space="preserve"><value>Custom</value></data>
+  <data name="LandscapePage" xml:space="preserve"><value>Landscape</value></data>
+  <data name="FitPageContent" xml:space="preserve"><value>Fit content proportionally to the new page size</value></data>
+  <data name="PageSizeDescription" xml:space="preserve"><value>Content is centered. With Fit content off, its size stays the same and content outside a smaller page is clipped.</value></data>
+  <data name="InvalidPageDimensions" xml:space="preserve"><value>Enter a width and height between 0.36 and 5080 mm.</value></data>
+  <data name="ApplyPageGeometry" xml:space="preserve"><value>Apply</value></data>
+  <data name="ChangingPageGeometry" xml:space="preserve"><value>Updating pages…</value></data>
+  <data name="PagesRotated" xml:space="preserve"><value>Rotated {0} page(s). Ctrl+S: save · Ctrl+Z: undo.</value></data>
+  <data name="PageSizesChanged" xml:space="preserve"><value>Resized {0} page(s). Ctrl+S: save · Ctrl+Z: undo.</value></data>
+  <data name="PageGeometryFailed" xml:space="preserve"><value>Could not update page geometry</value></data>
+  <data name="ViewCommentsBookmarks" xml:space="preserve"><value>Annotations/Bookmarks</value></data>
+  <data name="ReopenFile" xml:space="preserve"><value>Reopen</value></data>
+  <data name="ReopeningFile" xml:space="preserve"><value>Reopening file…</value></data>
+  <data name="FileReopened" xml:space="preserve"><value>Reopened the current tab from disk.</value></data>
 </root>

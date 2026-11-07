@@ -14,7 +14,7 @@ using WinRT.Interop;
 
 namespace PDF_simple_edit.Controllers;
 
-/// <summary>Coordinates merge, split, page deletion and page export workflows.</summary>
+/// <summary>Coordinates page geometry, merge, split, deletion and export workflows.</summary>
 public sealed class PdfPageOperationsController(
     PdfOperationService operationService,
     PdfSaveService saveService,
@@ -31,9 +31,47 @@ public sealed class PdfPageOperationsController(
     Func<IntPtr> getWindowHandle,
     Func<XamlRoot> getXamlRoot,
     Action updateUIState,
+    Action clearObjectSelection,
     Func<string, string, Task> showErrorAsync)
 {
     private bool _exportingPageImages;
+    private bool _changingGeometry;
+
+    public async Task ChangePageGeometryAsync(bool resize)
+    {
+        if (_changingGeometry || !getManager().IsLoaded || getActiveTab() is not { } tab) return;
+        var manager = getManager();
+        _changingGeometry = true;
+        bool started = false;
+        try
+        {
+            await finishInlineEditAsync();
+            if (!ReferenceEquals(manager, getManager())) return;
+            long version = manager.EditVersion;
+            var size = manager.GetPhysicalPageSize(getCurrentPageIndex());
+            var options = await new PdfPageGeometryDialogService().ShowAsync(getXamlRoot(), resize,
+                manager.PageCount, getCurrentPageIndex(), getSelectedPageIndices(), size.width, size.height);
+            if (options == null || !ReferenceEquals(manager, getManager()) || manager.EditVersion != version) return;
+            started = true;
+            loadingIndicator.IsActive = true;
+            statusText.Text = Loc.Get("ChangingPageGeometry");
+            await saveService.ChangePageGeometryAsync(manager, tab.Annotations, options);
+            if (!ReferenceEquals(manager, getManager())) return;
+            clearObjectSelection();
+            updateUIState();
+            statusText.Text = Loc.Format(resize ? "PageSizesChanged" : "PagesRotated", options.PageIndices.Count);
+        }
+        catch (Exception ex)
+        {
+            statusText.Text = Loc.Get("PageGeometryFailed");
+            await showErrorAsync(Loc.Get("PageGeometryFailed"), ex.Message);
+        }
+        finally
+        {
+            _changingGeometry = false;
+            if (started) loadingIndicator.IsActive = false;
+        }
+    }
 
     public async Task ExportPageImagesAsync(int? singlePageIndex = null)
     {

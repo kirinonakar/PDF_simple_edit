@@ -38,9 +38,10 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 ### 📂 Document Management
 - **Multi-Tab Interface**: Work on multiple PDF files simultaneously using a modern tabbed layout.
 - **Page Operations**: Select multiple pages with `Ctrl`/`Shift`, reorder them, delete unnecessary pages, or extract selected pages into a new PDF.
+- **Rotate & Resize Pages**: Use **Document → Rotate pages / Page size settings** or the page sidebar's right-click menu. Apply 90° clockwise/counterclockwise or 180° rotation, or set A3/A4/A5/Letter/Legal/custom dimensions in mm, to the current, selected, all, or specified pages. Resizing centers content and optionally fits it proportionally. Changes support undo/redo and are written when you save.
 - **Merge & Split**: Combine multiple PDF files into one or split specific page ranges into new documents.
-- **Images to PDF**: Select multiple PNG, JPEG, BMP, GIF, TIFF, or WebP images from **Tools → Images to PDF**. Each image becomes one A4 page, fitted without cropping, and the result opens in a new tab.
-- **PDF to Image (PNG)**: Right-click a page → **Save page as image**, or export **All / Specified** pages (e.g. `1,3,5-8`) at 96/150/300/600 DPI via **Tools → PDF to Image**.
+- **Images to PDF**: Select multiple PNG, JPEG, BMP, GIF, TIFF, or WebP images from **Document → Images to PDF**. Each image becomes one A4 page, fitted without cropping, and the result opens in a new tab.
+- **PDF to Image (PNG)**: Right-click a page → **Save page as image**, or export **All / Specified** pages (e.g. `1,3,5-8`) at 96/150/300/600 DPI via **Document → PDF to Image**.
 - **Page Thumbnails**: Navigate and manage pages quickly using the interactive sidebar and its right-click menu.
 
 ### 🛠️ Modern UX/UI

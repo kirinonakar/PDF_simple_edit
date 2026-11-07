@@ -148,6 +148,10 @@ namespace PDF_simple_edit.Helpers
             byte[] editedBytes, object? uiState, int pageIndex) =>
             CommitPdfBytes(expectedBytes, editedBytes, uiState, PdfDocumentChange.Page(pageIndex), expectedVersion);
 
+        internal void CommitPageGeometry(byte[] expectedBytes, long expectedVersion,
+            byte[] editedBytes, object? uiState, IEnumerable<int> pages) =>
+            CommitPdfBytes(expectedBytes, editedBytes, uiState, new(pages, geometryChanged: true), expectedVersion);
+
         private void CommitPdfBytes(byte[] expectedBytes, byte[] editedBytes, object? uiState,
             PdfDocumentChange? change = null, long? expectedVersion = null, int? pageCount = null, bool force = false)
         {
@@ -167,7 +171,7 @@ namespace PDF_simple_edit.Helpers
                     _pageCountSource = editedBytes;
                 }
                 else _pageCountSource = null;
-                if (!change.StructureChanged && change.Pages != null && ReferenceEquals(_geometrySource, expectedBytes))
+                if (!change.StructureChanged && !change.GeometryChanged && change.Pages != null && ReferenceEquals(_geometrySource, expectedBytes))
                     _geometrySource = editedBytes;
                 else { _geometrySource = null; _pageSizes.Clear(); }
                 EditVersion++; _pdfBytes = editedBytes; _isModified = true; _contentCache.Clear();
@@ -769,6 +773,19 @@ namespace PDF_simple_edit.Helpers
                 UndoRedoPerformed?.Invoke(this, next.UIState);
                 DocumentChanged?.Invoke(this, next.Change);
                 if (next.Change.StructureChanged) PageStructureChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        public (double width, double height) GetPhysicalPageSize(int pageIndex)
+        {
+            lock (_docLock)
+            {
+                var size = GetPageSize(pageIndex);
+                if (_pdfBytes == null) return size;
+                using var document = new PdfDocument(new PdfReader(new MemoryStream(_pdfBytes, writable: false)));
+                double unit = document.GetPage(pageIndex + 1).GetPdfObject().GetAsNumber(PdfName.UserUnit)?.DoubleValue() ?? 1;
+                if (!double.IsFinite(unit) || unit <= 0) unit = 1;
+                return (size.width * unit, size.height * unit);
             }
         }
 

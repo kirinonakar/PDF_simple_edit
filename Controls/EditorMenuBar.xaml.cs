@@ -11,6 +11,7 @@ public enum EditorMenuCommand
 {
     NewDocument,
     OpenFile,
+    ReopenFile,
     SaveFile,
     SaveAsFile,
     Print,
@@ -21,6 +22,7 @@ public enum EditorMenuCommand
     ZoomIn,
     ZoomOut,
     FitToPage,
+    FitToWidth,
     TogglePagePanel,
     SelectTool,
     SelectGraphicsTool,
@@ -51,6 +53,8 @@ public enum EditorMenuCommand
     Ocr,
     SplitPdf,
     DeletePage,
+    RotatePages,
+    ResizePages,
     ProtectionSettings,
     RemoveProtection,
     Settings,
@@ -66,6 +70,7 @@ public sealed partial class EditorMenuBar : UserControl
 
     public MenuFlyoutSubItem RecentFilesMenu => MenuRecentFiles;
     public bool ShowPagePanel => MenuShowPagePanel.IsChecked;
+    public void SetCommentSidebarVisible(bool visible) => MenuShowCommentsBookmarks.IsChecked = visible;
 
     public EditorMenuBar()
     {
@@ -83,8 +88,10 @@ public sealed partial class EditorMenuBar : UserControl
     private void ToolAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args) =>
         ToolAcceleratorInvoked?.Invoke(sender, args);
 
-    public void UpdateDocumentState(bool hasDoc, bool canUndo, bool canRedo, bool isProtected = false)
+    public void UpdateDocumentState(bool hasDoc, bool canUndo, bool canRedo, bool isProtected = false, bool canReopen = false)
     {
+        MenuReopen.IsEnabled = hasDoc && canReopen;
+        MenuFitToWidth.IsEnabled = hasDoc;
         MenuSave.IsEnabled = hasDoc;
         MenuSaveAs.IsEnabled = hasDoc;
         MenuPrint.IsEnabled = hasDoc;
@@ -104,6 +111,8 @@ public sealed partial class EditorMenuBar : UserControl
         MenuPdfToImage.IsEnabled = hasDoc;
         MenuOcr.IsEnabled = hasDoc;
         MenuDeletePage.IsEnabled = hasDoc;
+        MenuRotatePages.IsEnabled = hasDoc;
+        MenuResizePages.IsEnabled = hasDoc;
         MenuProtectionSettings.IsEnabled = hasDoc;
         MenuRemoveProtection.IsEnabled = hasDoc && isProtected;
 

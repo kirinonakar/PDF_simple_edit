@@ -9,11 +9,13 @@ public sealed class PdfDocumentChange : EventArgs
 {
     public IReadOnlyList<int>? Pages { get; }
     public bool StructureChanged { get; }
+    public bool GeometryChanged { get; }
 
-    public PdfDocumentChange(IEnumerable<int>? pages = null, bool structureChanged = false)
+    public PdfDocumentChange(IEnumerable<int>? pages = null, bool structureChanged = false, bool geometryChanged = false)
     {
         Pages = pages?.Distinct().Where(p => p >= 0).ToArray();
         StructureChanged = structureChanged;
+        GeometryChanged = geometryChanged;
     }
 
     public static PdfDocumentChange Page(int page) => new(new[] { page });

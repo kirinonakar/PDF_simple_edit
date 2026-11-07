@@ -238,7 +238,7 @@ namespace PDF_simple_edit
                     () => PageListView.SelectedItems.Clear(),
                     AddDocumentTab,
                     () => WindowNative.GetWindowHandle(this), () => Content.XamlRoot,
-                    UpdateUIState, ShowErrorDialogAsync);
+                    UpdateUIState, () => _annotationCanvasController.ClearSelection(), ShowErrorDialogAsync);
                 _ocrController = new PdfOcrController(() => _pdfManager, () => _currentPageIndex, () => Content.XamlRoot,
                     async () =>
                     {
@@ -261,7 +261,7 @@ namespace PDF_simple_edit
                         await _annotationCanvasController.FinishActiveInlineEditAsync();
                         await _formOverlayController.FinishActiveEditAsync();
                     },
-                    RenderCurrentPageAsync, UpdateUIState, ShowErrorDialogAsync);
+                    RenderCurrentPageAsync, UpdateUIState, ReplaceTabDocument, ShowErrorDialogAsync);
                 _recentFilesController = new RecentFilesController(
                     new RecentFilesService(),
                     EditorMenu.RecentFilesMenu,
@@ -397,7 +397,34 @@ namespace PDF_simple_edit
             tab.PageThumbnails.Clear();
         }
 
-        private async void DocTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void DocTabView_SelectionChanged(object sender, SelectionChangedEventArgs e) => RefreshSelectedDocument();
+
+        private void UnhookDocumentEvents(PdfDocumentManager manager)
+        {
+            manager.DocumentChanged -= PdfManager_DocumentChanged;
+            manager.PageStructureChanged -= PdfManager_PageStructureChanged;
+            manager.ModifiedStateChanged -= PdfManager_ModifiedStateChanged;
+            manager.UndoRedoPerformed -= PdfManager_UndoRedoPerformed;
+            manager.GetUIStateFunc = null;
+        }
+
+        private void ReplaceTabDocument(PdfDocumentTab tab, PdfDocumentManager manager, List<PdfAnnotation> annotations)
+        {
+            var previous = tab.PdfManager;
+            UnhookDocumentEvents(previous);
+            _annotationCanvasController.ClearSelection();
+            tab.PdfManager = manager;
+            tab.FilePath = manager.FilePath;
+            tab.Annotations.Clear();
+            tab.Annotations.AddRange(annotations);
+            tab.PageThumbnails.Clear();
+            tab.CurrentPageIndex = Math.Clamp(tab.CurrentPageIndex, 0, Math.Max(0, manager.PageCount - 1));
+            RefreshSelectedDocument();
+            UpdateTabHeader();
+            previous.Close();
+        }
+
+        private void RefreshSelectedDocument()
         {
             _annotationCanvasController?.TextSelection.Clear();
             _annotationCanvasController?.CancelDrawing();
@@ -407,11 +434,7 @@ namespace PDF_simple_edit
             // Unhook old events
             if (_activeTab != null)
             {
-                _activeTab.PdfManager.DocumentChanged -= PdfManager_DocumentChanged;
-                _activeTab.PdfManager.PageStructureChanged -= PdfManager_PageStructureChanged;
-                _activeTab.PdfManager.ModifiedStateChanged -= PdfManager_ModifiedStateChanged;
-                _activeTab.PdfManager.UndoRedoPerformed -= PdfManager_UndoRedoPerformed;
-                _activeTab.PdfManager.GetUIStateFunc = null;
+                UnhookDocumentEvents(_activeTab.PdfManager);
             }
 
             _activeTab = DocTabView.SelectedItem as PdfDocumentTab;
@@ -457,6 +480,7 @@ namespace PDF_simple_edit
             {
                 case EditorMenuCommand.NewDocument: NewDocument_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.OpenFile: OpenFile_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.ReopenFile: await _fileController.ReopenAsync(); break;
                 case EditorMenuCommand.SaveFile: SaveFile_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.SaveAsFile: SaveAsFile_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.Print: Print_Click(EditorMenu, new RoutedEventArgs()); break;
@@ -467,6 +491,7 @@ namespace PDF_simple_edit
                 case EditorMenuCommand.ZoomIn: ZoomIn_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.ZoomOut: ZoomOut_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.FitToPage: FitToPage_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.FitToWidth: FitToWidth_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.TogglePagePanel: TogglePagePanel_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.SelectTool: SelectTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.SelectGraphicsTool: SelectGraphicsTool_Click(EditorMenu, new RoutedEventArgs()); break;
@@ -497,6 +522,8 @@ namespace PDF_simple_edit
                 case EditorMenuCommand.Ocr: await _ocrController.RunAsync(); break;
                 case EditorMenuCommand.SplitPdf: SplitPdf_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.DeletePage: DeletePage_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.RotatePages: await _pageOperationsController.ChangePageGeometryAsync(false); break;
+                case EditorMenuCommand.ResizePages: await _pageOperationsController.ChangePageGeometryAsync(true); break;
                 case EditorMenuCommand.ProtectionSettings: ProtectionSettings_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.RemoveProtection: RemoveProtection_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.Settings: Settings_Click(EditorMenu, new RoutedEventArgs()); break;
@@ -562,6 +589,8 @@ namespace PDF_simple_edit
             PagePanel.ExtractMenuItem.Click += ExtractSelectedPages_Click;
             PagePanel.SaveImageMenuItem.Click += SavePageImage_Click;
             PagePanel.DeleteMenuItem.Click += DeletePage_Click;
+            PagePanel.RotateMenuItem.Click += async (_, _) => await _pageOperationsController.ChangePageGeometryAsync(false);
+            PagePanel.ResizeMenuItem.Click += async (_, _) => await _pageOperationsController.ChangePageGeometryAsync(true);
             PageListView.AddHandler(
                 UIElement.PointerPressedEvent,
                 new PointerEventHandler(PageListView_PointerPressed),
@@ -714,7 +743,8 @@ namespace PDF_simple_edit
         private void UpdateUIState()
         {
             bool hasDoc = _pdfManager.IsLoaded;
-            EditorMenu.UpdateDocumentState(hasDoc, _pdfManager.CanUndo, _pdfManager.CanRedo, _pdfManager.IsPasswordProtected);
+            EditorMenu.UpdateDocumentState(hasDoc, _pdfManager.CanUndo, _pdfManager.CanRedo,
+                _pdfManager.IsPasswordProtected, !string.IsNullOrEmpty(_pdfManager.FilePath));
 
             WelcomePanel.Visibility = hasDoc ? Visibility.Collapsed : Visibility.Visible;
             PdfScrollViewer.Visibility = hasDoc ? Visibility.Visible : Visibility.Collapsed;
@@ -722,6 +752,8 @@ namespace PDF_simple_edit
             int selectedPageCount = GetSelectedPageIndices().Count;
             PagePanel.ExtractMenuItem.IsEnabled = hasDoc && selectedPageCount > 0;
             PagePanel.SaveImageMenuItem.IsEnabled = hasDoc;
+            PagePanel.RotateMenuItem.IsEnabled = hasDoc;
+            PagePanel.ResizeMenuItem.IsEnabled = hasDoc;
             PagePanel.DeleteMenuItem.IsEnabled = hasDoc &&
                 selectedPageCount > 0 && selectedPageCount < _pdfManager.PageCount;
 

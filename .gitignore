@@ -13,6 +13,7 @@
 tmp/
 output/
 tests/*
+!tests/PageGeometry/
 !tests/McpInspection/
 !tests/PdfComments/
 !tests/TextSelection/
