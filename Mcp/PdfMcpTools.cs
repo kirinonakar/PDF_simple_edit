@@ -23,29 +23,33 @@ internal static partial class PdfMcpTools
 {
     private sealed record Tool(string name, string description, object inputSchema, object annotations);
     private static object Field(string type, string description) => new { type, description };
-    private static readonly object Text = Field("string", "UTF-8 text; newlines are supported.");
-    private static readonly object Number = Field("number", "PDF points; origin is the displayed CropBox's top-left.");
-    private static readonly object Page = new { type = "integer", minimum = 1, description = "1-based page number (default 1)." };
+    private static readonly object Text = Field("string", "Unicode; supports newlines.");
+    private static readonly object Number = new { type = "number" };
+    private static readonly object Page = new { type = "integer", minimum = 1, description = "Default 1." };
     private static readonly object PageArray = new { type = "array", minItems = 1, items = new { type = "integer", minimum = 1 } };
     private static readonly object Paths = new { type = "array", minItems = 1, items = new { type = "string" } };
     private static readonly Dictionary<string, object> Input = new()
     {
-        ["inputPath"] = Field("string", "Absolute path to an existing local PDF."),
-        ["expectedRevision"] = Field("string", "Optional SHA-256 revision from pdf_inspect or pdf_find_text; reject if the source changed.")
+        ["inputPath"] = Field("string", "Source PDF."),
+        ["expectedRevision"] = Field("string", "Reject if source SHA-256 differs.")
     };
     private static readonly Dictionary<string, object> Output = new()
     {
-        ["outputPath"] = Field("string", "Absolute destination PDF path; its parent directory must exist."),
-        ["overwrite"] = new { type = "boolean", description = "Default false. Set true explicitly to replace an existing output, including in-place edits." }
+        ["outputPath"] = Field("string", "Destination PDF; parent must exist."),
+        ["overwrite"] = new { type = "boolean", description = "Allow replacing destination; default false." }
     };
     private static readonly Dictionary<string, object> Geometry = new()
     { ["x"] = Number, ["y"] = Number, ["width"] = Number, ["height"] = Number };
     private static readonly Dictionary<string, object> Style = new()
     {
-        ["color"] = Field("string", "#RRGGBB stroke/text color; default #000000."),
-        ["fontSize"] = Field("number", "Font size in points (default 12)."),
-        ["fontFamily"] = Field("string", "Installed font family or font file path; default Malgun Gothic."),
+        ["color"] = Field("string", "#RRGGBB; default #000000."),
+        ["fontSize"] = Field("number", "Points; default 12."),
+        ["fontFamily"] = Field("string", "Installed family or font path; default Malgun Gothic."),
         ["bold"] = Field("boolean", "Bold text."), ["italic"] = Field("boolean", "Italic text.")
+    };
+    private static readonly Dictionary<string, object> TextStyle = new(Style)
+    {
+        ["underline"] = Field("boolean", "Add: default false. Edit: omitted preserves; false removes.")
     };
     private static readonly Dictionary<string, object> Graphic = new()
     {
@@ -58,8 +62,24 @@ internal static partial class PdfMcpTools
         ["points"] = new { type = "array", minItems = 2, items = new { type = "object", properties = new { x = Number, y = Number }, required = new[] { "x", "y" }, additionalProperties = false }, description = "Absolute top-left page coordinates for line, polygon, or freehand. Line defaults to the bounds diagonal." }
     };
     private static readonly Dictionary<string, Tool> Catalog = BuildCatalog();
-    public static IEnumerable<object> Definitions => Catalog.Values;
+    public static IEnumerable<object> Definitions => Catalog.Values.Select(DiscoveryDefinition);
     public static bool Exists(string name) => Catalog.ContainsKey(name);
+
+    // Advertise the creation entry points without loading the recursive authoring
+    // grammar into every agent turn. Help and execution retain the full schema.
+    private static Tool DiscoveryDefinition(Tool tool)
+    {
+        if (tool.name != "pdf_create") return tool;
+        var schema = new Dictionary<string, object>((Dictionary<string, object>)tool.inputSchema);
+        var properties = new Dictionary<string, object>((Dictionary<string, object>)schema["properties"]);
+        schema.Remove("$defs");
+        foreach (string key in new[] { "content", "pages" })
+            properties[key] = new { type = "array", minItems = 1, maxItems = 10000,
+                items = new { type = "object", additionalProperties = true },
+                description = $"Call pdf_create_help topic={(key == "content" ? "flow" : "positioned")} before authoring; schema for full fields." };
+        schema["properties"] = properties;
+        return tool with { inputSchema = schema };
+    }
 
     private static Dictionary<string, Tool> BuildCatalog()
     {
@@ -74,49 +94,49 @@ internal static partial class PdfMcpTools
         }
         Dictionary<string, object> Fields(params (string key, object field)[] values) => values.ToDictionary(p => p.key, p => p.field);
         var objectId = Fields(("objectId", Field("string", "Exact object ID returned by pdf_inspect or pdf_find_text for this file revision and page.")));
-        Add("pdf_create", "Create a complete PDF in one call. First call pdf_create_help for JSON authoring rules and working examples. Choose text (automatic wrapping/pagination), content (generic heading/paragraph/table/image/section/columns/rule/spacer/pageBreak blocks), pages (positioned text/images/shapes), or jsonPath (UTF-8 creation JSON or pdf_to_json lossless archive). Modes cannot be combined. Layout, colors and wording come from the supplied JSON, with no document-specific presets. title is metadata only. Paths must be absolute; units are PDF points; coordinates start at the displayed page's top-left. Atomic output; existing destinations require overwrite=true.", new[] { "outputPath" }, false,
+        Add("pdf_create", "Create PDF from one mode: text, content, pages or jsonPath. Before complex JSON, call pdf_create_help (flow/positioned; schema for exact fields). title is metadata. pdf_to_json archives restore byte-for-byte via jsonPath.", new[] { "outputPath" }, false,
             Output, Style, PdfMcpCreationService.Schema(Graphic));
-        Add("pdf_create_help", "Read this before authoring creation JSON. Returns a mode-selection guide, exact field rules, executable generic examples and lossless roundtrip instructions. topic=schema returns the actual current pdf_create input schema including nested block definitions. Other topics: overview (default), flow, positioned, roundtrip. This tool does not read or write files.", Array.Empty<string>(), true,
+        Add("pdf_create_help", "On-demand creation guide/examples. topic=schema returns the full validated pdf_create schema, including nested fields.", Array.Empty<string>(), true,
             Fields(("topic", new { type = "string", @enum = new[] { "overview", "flow", "positioned", "roundtrip", "schema" } })));
-        Add("pdf_to_json", "Export a PDF to a lossless JSON archive containing its original PDF bytes, SHA-256 and readable page/object information. Pass the resulting JSON file as pdf_create jsonPath to restore a byte-for-byte identical PDF, preserving fonts, vectors, images, annotations and metadata. sourceInfo is a read-only inspection snapshot; use text/content/pages creation modes to author new content.", new[] { "inputPath", "outputPath" }, false,
+        Add("pdf_to_json", "Export lossless JSON archive plus read-only inspection. Restore identical PDF bytes with pdf_create jsonPath.", new[] { "inputPath", "outputPath" }, false,
             Input, new Dictionary<string, object>(Output) { ["outputPath"] = Field("string", "Absolute destination JSON archive path. Parent directory must exist.") });
-        Add("pdf_inspect", "Read document revision, page sizes and editable objects for one page (default 1). Optional kind, region and maxObjects filters reduce the object list without changing IDs. graphics includes vectors, images and annotations. Form fields are returned only for kind=all, filtered by region but independently of maxObjects. Omitted filters preserve the full inspection. Use pdf_find_text to locate text objects across the document, pdf_delete_objects for multiple deletions or pdf_batch for multiple edits. For scanned text, use pdf_vlm_ocr and pdf_vlm_ocr_apply to add an OCR layer with your own vision model.", new[] { "inputPath" }, true,
+        Add("pdf_inspect", "Get revision, page sizes and editable IDs on one page. Filter with kind/region/maxObjects. Form fields: kind=all only, independent of maxObjects. Use pdf_find_text for document-wide text search.", new[] { "inputPath" }, true,
             Input, Fields(("page", Page),
                 ("kind", new { type = "string", @enum = new[] { "all", "text", "graphics" }, description = "Object category; default all. text returns editable body text only." }),
                 ("region", InspectionRegionSchema()),
                 ("maxObjects", new { type = "integer", minimum = 1, maximum = 10000, description = "Maximum objects to return after filtering; omitted means no limit. Counts and truncated report omitted objects." })));
-        Add("pdf_find_text", "Find a literal string in editable body text throughout ALL pages and return object IDs usable directly with pdf_edit_text (supply the returned page too), pdf_delete_objects or pdf_batch. One match entry per matching text block, in page/extraction order, with the full block text, bounds and first match's UTF-16 offset. Default case-insensitive ordinal comparison; no regex, image recognition, annotation/form-value search or matching across separate blocks. Existing OCR text layers are included. IDs and revision are identical to pdf_inspect. Searches all pages even when maxResults limits returned matches; counts and truncated report omitted blocks.", new[] { "inputPath", "query" }, true,
+        Add("pdf_find_text", "Search literal body text on all pages; return editable IDs, pages, bounds, full blocks and first UTF-16 match offsets. No regex, cross-block, annotation/form or image search; existing OCR included. Counts cover all matches even when truncated.", new[] { "inputPath", "query" }, true,
             Input, Fields(("query", Field("string", "Nonempty literal substring to find within each editable text block.")),
                 ("caseSensitive", new { type = "boolean", description = "Default false; use ordinal case-sensitive comparison when true." }),
                 ("maxResults", new { type = "integer", minimum = 1, maximum = 10000, description = "Maximum matching text blocks to return, default 100." })));
-        Add("pdf_read", "Read PDF body text page by page, including Unicode and existing OCR text layers. Returns total page count and separate text/size/rotation for each selected page. Use page for one 1-based page (default 1), or pages for a range such as 1,3,5-8 or all. Do not supply both. This extracts existing PDF text; for image-only/scanned pages use pdf_vlm_ocr with your own vision model, then pdf_vlm_ocr_apply to save the recognized text. Complex layouts may have imperfect reading order. Use pdf_inspect when object IDs are needed for editing.", new[] { "inputPath" }, true,
+        Add("pdf_read", "Extract body text per selected page, including existing OCR. page defaults to 1; pages accepts ranges/all (mutually exclusive). Image-only pages need pdf_vlm_ocr. Use pdf_inspect for editable IDs.", new[] { "inputPath" }, true,
             Input, Fields(("page", Page), ("pages", Field("string", "1-based page range, e.g. 1,3,5-8, or all. Mutually exclusive with page."))));
-        Add("pdf_add_text", "Add Unicode text, including Korean, at x/y. Font, size, color, bold and italic are configurable. Use pdf_edit_text for existing text.", new[] { "inputPath", "outputPath", "text" }, false,
-            Input, Output, Style, Fields(("page", Page), ("text", Text), ("x", Number), ("y", Number)));
-        Add("pdf_edit_text", "Replace/delete, move, resize, rotate, reflow or restyle an existing text block without covering it with a white rectangle. Supply only the properties to change; text is optional. Vertical or clipping text can be unsupported and returns an error.", new[] { "inputPath", "outputPath", "objectId" }, false,
-            Input, Output, Geometry, Style, objectId, Fields(("page", Page), ("text", Text), ("rotation", Number), ("reflow", Field("boolean", "Reflow text into supplied width/height instead of scaling."))));
-        Add("pdf_add_graphic", "Add a rectangle, ellipse, line, polygon, freehand path, image or highlight. All content is saved into real PDF content streams and can be inspected/edited again.", new[] { "inputPath", "outputPath", "kind" }, false,
+        Add("pdf_add_text", "Add Unicode text at x/y (default 0/0), with font/color/bold/italic/underline. Use pdf_edit_text for existing text.", new[] { "inputPath", "outputPath", "text" }, false,
+            Input, Output, TextStyle, Fields(("page", Page), ("text", Text), ("x", Number), ("y", Number)));
+        Add("pdf_edit_text", "Replace/delete, move, scale, rotate, reflow or restyle a text block, including underline. Omitted properties retain existing values. Vertical/clipped text may be unsupported.", new[] { "inputPath", "outputPath", "objectId" }, false,
+            Input, Output, Geometry, TextStyle, objectId, Fields(("page", Page), ("text", Text), ("rotation", Field("number", "Clockwise degrees around block center.")), ("reflow", Field("boolean", "Reflow text into supplied width/height instead of scaling."))));
+        Add("pdf_add_graphic", "Add shape, path, image or highlight as editable PDF content.", new[] { "inputPath", "outputPath", "kind" }, false,
             Input, Output, Geometry, Graphic, Fields(("page", Page)));
-        Add("pdf_edit_graphic", "Move, resize, rotate or recolor an original vector/image graphic; optional imagePath replaces it with an image, or kind replaces it with a new shape. Shared clipping/shading transformations may return an unsupported error. Annotation objects support moving/resizing; to change their artwork use kind or imagePath to replace them.", new[] { "inputPath", "outputPath", "objectId" }, false,
+        Add("pdf_edit_graphic", "Transform/recolor a vector or image; kind/imagePath replaces artwork. Annotations support move/resize or replacement. Shared clipping/shading may be unsupported.", new[] { "inputPath", "outputPath", "objectId" }, false,
             Input, Output, Geometry, Graphic, objectId, Fields(("page", Page)));
-        Add("pdf_delete_object", "Permanently delete one inspected text, graphic, image or annotation. For multiple objects use pdf_delete_objects with all original IDs in one call; do not chain single deletions with stale IDs. Surrounding content is retained. Use pdf_redact_region to erase all content intersecting an area.", new[] { "inputPath", "outputPath", "objectId" }, false,
+        Add("pdf_delete_object", "Delete one inspected object. Use pdf_delete_objects for multiple original IDs; sequential edits invalidate IDs. Use pdf_redact_region to erase a region.", new[] { "inputPath", "outputPath", "objectId" }, false,
             Input, Output, objectId, Fields(("page", Page)));
-        Add("pdf_redact_region", "Permanently remove text, graphics, images and form widgets intersecting a rectangle using pdfSweep. This removes content rather than covering it.", new[] { "inputPath", "outputPath", "x", "y", "width", "height" }, false,
+        Add("pdf_redact_region", "Permanently remove text, graphics, images and form widgets intersecting the rectangle (pdfSweep).", new[] { "inputPath", "outputPath", "x", "y", "width", "height" }, false,
             Input, Output, Geometry, Fields(("page", Page)));
-        Add("pdf_manage_pages", "Insert blank pages, delete pages, reorder all pages, rotate pages, or set an unrotated PDF-space crop rectangle. Delete cannot remove every page. Reorder requires a complete permutation of all 1-based pages.", new[] { "inputPath", "outputPath", "action" }, false,
+        Add("pdf_manage_pages", "Insert/delete/reorder/rotate/crop pages. Reorder needs a full permutation; cannot delete all pages. Crop uses unrotated PDF-space coordinates.", new[] { "inputPath", "outputPath", "action" }, false,
             Input, Output, Fields(("action", new { type = "string", @enum = new[] { "insert", "delete", "reorder", "rotate", "crop" } }),
-                ("pages", PageArray), ("page", Page), ("count", Page), ("width", Number), ("height", Number), ("rotation", Number), ("x", Number), ("y", Number)));
-        Add("pdf_set_form_fields", "Set named AcroForm field values. Checkboxes use their onValue from pdf_inspect or Off. Supports Unicode text and keeps fields interactive.", new[] { "inputPath", "outputPath", "values" }, false,
+                ("pages", PageArray), ("page", Page), ("count", Page), ("width", Number), ("height", Number), ("rotation", Field("number", "Added degrees; multiple of 90, default 90.")), ("x", Number), ("y", Number)));
+        Add("pdf_set_form_fields", "Set interactive AcroForm values by name. Checkboxes: inspected onValue or Off. Supports Unicode.", new[] { "inputPath", "outputPath", "values" }, false,
             Input, Output, Fields(("values", new { type = "object", additionalProperties = new { type = "string" } })));
-        Add("pdf_merge", "Merge PDFs in inputPaths order into one PDF.", new[] { "inputPaths", "outputPath" }, false,
+        Add("pdf_merge", "Merge inputPaths in order.", new[] { "inputPaths", "outputPath" }, false,
             Output, Fields(("inputPaths", Paths)));
-        Add("pdf_extract_pages", "Extract selected pages to a new PDF in the given order (duplicates allowed). Can also split a PDF by calling with different selections.", new[] { "inputPath", "outputPath", "pages" }, false,
+        Add("pdf_extract_pages", "Extract pages in supplied order; duplicates allowed.", new[] { "inputPath", "outputPath", "pages" }, false,
             Input, Output, Fields(("pages", PageArray)));
-        Add("pdf_to_images", "Render all or selected PDF pages to PNG at 72-600 DPI (default 150). pages is a range string such as 1,3,5-8. Returns exact output paths. Existing image files are never overwritten.", new[] { "inputPath", "outputFolder" }, false,
+        Add("pdf_to_images", "Render selected pages to PNG; omit pages for all. DPI default 150. Returns paths; never overwrites images.", new[] { "inputPath", "outputFolder" }, false,
             Input, Fields(("outputFolder", Text), ("pages", Field("string", "Optional 1-based page range; omit to render all.")), ("dpi", new { type = "integer", minimum = 72, maximum = 600 })));
-        Add("pdf_extract_images", "Extract original embedded raster images, including images inside forms, to files. This is different from rendering whole pages. Reports partial failures and exact saved paths.", new[] { "inputPath", "outputFolder" }, false,
+        Add("pdf_extract_images", "Extract embedded raster images (including forms), not page renders. Returns paths and partial failures.", new[] { "inputPath", "outputFolder" }, false,
             Input, Fields(("outputFolder", Text)));
-        Add("images_to_pdf", "Create a PDF from PNG, JPEG, BMP, GIF, TIFF or WebP files in the specified order. Each image is fitted without cropping onto one portrait/landscape A4 page.", new[] { "imagePaths", "outputPath" }, false,
+        Add("images_to_pdf", "Create PDF from ordered PNG/JPEG/BMP/GIF/TIFF/WebP images; one fitted portrait/landscape A4 page per image.", new[] { "imagePaths", "outputPath" }, false,
             Output, Fields(("imagePaths", Paths)));
         AddBatchTools(result);
         AddVlmOcrTools(result);
@@ -297,7 +317,8 @@ internal static partial class PdfMcpTools
             {
                 case "pdf_add_text":
                     new PdfContentWriter().AddText(pdf, pageIndex, a.Number("x"), a.Number("y"), a.Text("text"),
-                        a.Text("fontFamily", "Malgun Gothic"), a.Number("fontSize", 12, .1, 10000), PdfMcpArguments.PdfColor(a.Color()), a.Flag("bold"), a.Flag("italic"));
+                        a.Text("fontFamily", "Malgun Gothic"), a.Number("fontSize", 12, .1, 10000), PdfMcpArguments.PdfColor(a.Color()), a.Flag("bold"), a.Flag("italic"),
+                        isUnderline: a.Flag("underline"));
                     break;
                 case "pdf_add_graphic": AddGraphic(pdf, pageIndex, a); break;
                 case "pdf_redact_region": PdfRegionRedactionService.Apply(pdf, pageIndex, a.Bounds()); break;
@@ -442,7 +463,7 @@ internal static partial class PdfMcpTools
             using (var output = new PdfDocument(new PdfWriter(buffer))) source.CopyPagesTo(ReadPages(a, source.GetNumberOfPages()), output);
         }
         else using (var pdf = new PdfDocument(new PdfEditingReader(new MemoryStream(bytes)), new PdfWriter(buffer))) edit(pdf);
-        return buffer.ToArray();
+        return PdfTextUnderlineService.RefreshBytes(buffer.ToArray());
     }
     private static PdfDocument Open(byte[] bytes) => new(new PdfReader(new MemoryStream(bytes)));
     private static PageSize Size(PdfMcpArguments a) => new((float)a.Number("width", 595.276, 1, 14400), (float)a.Number("height", 841.89, 1, 14400));

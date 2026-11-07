@@ -29,9 +29,9 @@ internal static partial class PdfMcpTools
                 new { type = "object", properties, required = new[] { "inputPath", "outputPath", key }, additionalProperties = false },
                 new { readOnlyHint = false, destructiveHint = true, openWorldHint = false }));
         }
-        Add("pdf_delete_objects", "Permanently delete multiple inspected text blocks, graphics, images or annotations in one atomic call. Pass objectIds from the SAME source revision, including IDs from different pages. Page numbers come from the IDs. Duplicate IDs are deleted once. Surrounding content, including table lines when only text is selected, is retained. No intermediate inspect or Python fallback is needed. Stale, missing, changed or ambiguous targets reject the entire call without writing the destination.",
+        Add("pdf_delete_objects", "Atomically delete original IDs across pages (page inferred; duplicates ignored). Retains surrounding content. Stale/changed/ambiguous targets fail without saving.",
             "objectIds", new { type = "array", minItems = 1, maxItems = 10000, items = new { type = "string" } });
-        Add("pdf_batch", "Apply multiple PDF edits to ONE document and save only after every operation succeeds. operations are ordered {tool, arguments} objects. Supported tools: pdf_add_text, pdf_edit_text, pdf_add_graphic, pdf_edit_graphic, pdf_delete_object, pdf_redact_region, pdf_manage_pages, pdf_set_form_fields, pdf_extract_pages. arguments use that tool's normal schema EXCEPT inputPath/outputPath/overwrite/expectedRevision, which belong only at batch level. Existing-object IDs must all come from the input revision and each ID may be targeted once; combine properties into one edit. IDs are rebound internally after earlier edits, never accepted blindly with a changed index. Put object edits before additions/redactions that change their contents or paragraph grouping, and before page management/extraction. Consecutive text edits/deletions on the same page are applied together without moving surrounding text. Pages for other operations refer to the intermediate document. Nested batches and exports to non-PDF files are not supported. Any failure leaves the destination untouched.",
+        Add("pdf_batch", "Atomically apply ordered {tool,arguments} operations. Per-tool arguments exclude inputPath/outputPath/overwrite/expectedRevision (batch-level only). IDs must be from original input; target each once, before additions/redactions affecting targets and before page changes. Other page numbers refer to intermediate document. Failure saves nothing.",
             "operations", new
             {
                 type = "array", minItems = 1, maxItems = 10000,
@@ -262,9 +262,9 @@ internal static partial class PdfMcpTools
     private static string ContentSignature(PdfPageContent content) => JsonSerializer.Serialize(new
     {
         content.Type, content.X, content.Y, content.Width, content.Height, content.Color, content.FontFamily,
-        content.FontSize, content.IsBold, content.IsItalic,
+        content.FontSize, content.IsBold, content.IsItalic, content.IsUnderline,
         text = content.NativeText?.Text,
-        glyphs = content.NativeText?.Glyphs.Where(g => !g.IsVirtual).Select(g => new { g.Text, g.Origin, g.End, code = Convert.ToHexString(g.Code) }),
+        glyphs = content.NativeText?.Glyphs.Where(g => !g.IsVirtual).Select(g => new { g.Text, g.Origin, g.End, g.IsUnderline, code = Convert.ToHexString(g.Code) }),
         graphics = content.GraphicOperations.Select(g => new { g.IsImageOperation, g.IsTextOperation, g.IsShadingOperation, g.Bounds, g.Ctm, g.HitGeometry })
     });
 
@@ -273,10 +273,11 @@ internal static partial class PdfMcpTools
 
     private static NativePdfTextEdit BatchTextEdit(string tool, PdfMcpArguments a, NativePdfTextBlock block)
     {
-        NativePdfTextStyle? style = Style.Keys.Any(a.Has) ? new(
+        NativePdfTextStyle? style = TextStyle.Keys.Any(a.Has) ? new(
             a.Has("color") ? a.Color() : null, a.Has("fontSize") ? a.Number("fontSize", 12, .1, 10000) : null,
             a.Has("bold") ? a.Flag("bold") : null, a.Has("italic") ? a.Flag("italic") : null,
-            a.Has("fontFamily") ? a.Text("fontFamily") : null) : null;
+            a.Has("fontFamily") ? a.Text("fontFamily") : null,
+            a.Has("underline") ? a.Flag("underline") : null) : null;
         var target = a.Bounds(block.Bounds);
         bool transform = a.Has("width") || a.Has("height") || a.Has("rotation"), reflow = a.Flag("reflow");
         if (reflow && a.Number("rotation") != 0) throw new ArgumentException("Reflow and rotation require separate edits.");

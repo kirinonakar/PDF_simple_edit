@@ -31,7 +31,7 @@ internal static partial class PdfMcpTools
                 new { type = "object", properties = fields, required, additionalProperties = false },
                 new { readOnlyHint = readOnly, destructiveHint = !readOnly, openWorldHint = false }));
         }
-        Add("pdf_vlm_ocr", "Start agent-powered VLM OCR: returns ONE rendered PDF page as native MCP image content, plus revision and coordinate instructions. Use YOUR OWN model's vision to read the image verbatim and locate words or short text lines; then call pdf_vlm_ocr_apply with those transcriptions and bounding boxes to save a selectable/searchable invisible text layer. This server does not call a model, require API keys, or run Windows OCR. Read each desired page (1-based; default 1) before applying multiple pages together. Requires an image-capable MCP client/model. maxDimension controls the preview's longest pixel edge (default 2048).",
+        Add("pdf_vlm_ocr", "Return one page image + revision for your own vision model. Transcribe words/short lines, then pdf_vlm_ocr_apply. Read every target page first. Requires image-capable client; no external model API.",
             new[] { "inputPath" }, true, new(Input)
             {
                 ["page"] = Page,
@@ -68,7 +68,7 @@ internal static partial class PdfMcpTools
         foreach (var pair in Output) fields.Add(pair.Key, pair.Value);
         fields["expectedRevision"] = Field("string", "REQUIRED SHA-256 revision returned by pdf_vlm_ocr; stale results are rejected.");
         fields["ocrPages"] = new { type = "array", minItems = 1, maxItems = 1000, items = page };
-        Add("pdf_vlm_ocr_apply", "Save the calling agent's VLM transcriptions as an invisible Unicode OCR layer. First call pdf_vlm_ocr for each page and read the image with your own vision. Supply exact text and tight top-left bounding boxes in ocrPages; default coordinates are normalized 0..1000 on BOTH axes. For pixel boxes supply imageWidth AND imageHeight on each page. One array per visual line, words in reading order; short whole-line boxes are also accepted. Existing page artwork/native text is preserved, and this app's previous Windows/VLM OCR layer is replaced only on supplied pages. For mixed pages transcribe only scanned text to avoid duplicating native text. An empty lines array clears the old OCR layer. All pages validate before one atomic PDF save; no partial output. Existing destinations, including inputPath, require overwrite=true. No external model/OCR service is called.",
+        Add("pdf_vlm_ocr_apply", "Save your transcriptions as invisible searchable Unicode text. First view each page with pdf_vlm_ocr. Boxes: normalized 0..1000 on both axes, or pixels with both image dimensions. Preserve artwork/native text; transcribe only scanned text on mixed pages. Replaces this app's OCR on supplied pages; empty lines clears it. Atomic save.",
             new[] { "inputPath", "outputPath", "expectedRevision", "ocrPages" }, false, fields);
     }
 

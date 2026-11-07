@@ -94,10 +94,11 @@ The server exposes these tools through `tools/list`, including argument schemas:
 | `pdf_read` | Read body text for one page, a page range or all pages; results remain separated by page |
 | `pdf_vlm_ocr` | Return a page image for the calling agent's own VLM to recognize, with coordinate instructions and revision |
 | `pdf_vlm_ocr_apply` | Save agent-recognized text and bounding boxes as a selectable/searchable invisible OCR layer |
-| `pdf_add_text` | Unicode text with font, size, color, bold and italic |
+| `pdf_add_text` | Unicode text with font, size, color, bold, italic and underline |
 | `pdf_edit_text` | Replace, delete, move, scale, rotate, reflow and restyle original text |
 | `pdf_add_graphic` | Rectangle, ellipse, line, polygon, freehand, highlight or image; rotation and opacity |
 | `pdf_edit_graphic` | Move, resize, rotate, recolor paths, or replace a graphic/image/annotation |
+
 | `pdf_delete_object` | Remove original text, graphics, images or annotations |
 | `pdf_delete_objects` | Delete multiple inspected objects across pages using the same source revision |
 | `pdf_batch` | Apply multiple edits, additions, redactions, form and page operations to one PDF atomically |

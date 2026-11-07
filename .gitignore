@@ -18,6 +18,7 @@ tests/*
 !tests/TextSelection/
 !tests/Ocr/
 !tests/McpVlmOcr/
+!tests/McpTextStyle/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
