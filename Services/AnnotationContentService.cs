@@ -24,6 +24,11 @@ public sealed class AnnotationContentService
             var box = new PdfTextBox(annotation.X, annotation.Y, annotation.Width, annotation.Height);
             var local = PdfAffineTransform.Between(box, box, -annotation.Rotation).Map(x, y);
             double hitX = local.X, hitY = local.Y;
+            if (annotation.Type == AnnotationType.PdfComment)
+            {
+                if (annotation.PdfCommentHitBounds.Any(bounds => bounds.Contains(hitX, hitY, 2))) return annotation;
+                continue;
+            }
             if (annotation.IsOriginalVectorGraphic)
             {
                 if (HitsGraphic(annotation.GraphicOperations, annotation.GraphicHitBounds, hitX, hitY))
@@ -97,8 +102,9 @@ public sealed class AnnotationContentService
             : bounds.Count == 0 || bounds.Any(box => box.Contains(x, y, 3));
 
     public static bool MatchesSelectionMode(PdfAnnotation annotation, EditToolMode mode) =>
+        mode == EditToolMode.SelectAnnotations ? annotation.Type == AnnotationType.PdfComment :
         mode == EditToolMode.SelectGraphics
-            ? annotation.Type is not (AnnotationType.Text or AnnotationType.FreeText)
+            ? annotation.Type is not (AnnotationType.Text or AnnotationType.FreeText or AnnotationType.PdfComment)
             : annotation.Type is AnnotationType.Text or AnnotationType.FreeText;
 
     public PdfPageContent? FindEditableContent(List<PdfPageContent> contents, double x, double y,
@@ -224,6 +230,7 @@ public sealed class AnnotationContentService
             FontWeight = isText ? content.FontWeight : 400,
             IsBold = isText && content.IsBold,
             IsItalic = isText && content.IsItalic,
+            IsUnderline = isText && content.IsUnderline,
             IsApplied = false
         };
     }
@@ -256,6 +263,7 @@ public sealed class AnnotationContentService
         FontWeight = source.FontWeight,
         IsBold = source.IsBold,
         IsItalic = source.IsItalic,
+        IsUnderline = source.IsUnderline,
         ContentStreamIndex = source.ContentStreamIndex,
         ContentStreamObjectNumber = source.ContentStreamObjectNumber,
         OperationIndex = source.OperationIndex,
@@ -283,7 +291,7 @@ public sealed class AnnotationContentService
             Math.Abs(first.FontSize - second.FontSize) > Math.Max(0.75, referenceSize * 0.2) ||
             !string.Equals(first.Color, second.Color, StringComparison.OrdinalIgnoreCase) ||
             first.FontWeight != second.FontWeight ||
-            first.IsBold != second.IsBold || first.IsItalic != second.IsItalic)
+            first.IsBold != second.IsBold || first.IsItalic != second.IsItalic || first.IsUnderline != second.IsUnderline)
             return false;
 
         PdfTextFragment previous = first.TextFragments[^1];

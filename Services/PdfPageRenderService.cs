@@ -16,6 +16,10 @@ public sealed record RenderedPdfPage(
 
 public sealed class PdfPageRenderService
 {
+    public double ThumbnailDisplayWidth { get; set; } = 120;
+
+    private double ThumbnailScale(PdfRenderDocument document, int pageIndex) =>
+        Math.Clamp(ThumbnailDisplayWidth * 1.75 / Math.Max(1, document.GetPageSize(pageIndex).Width), .2, 2);
     private readonly ConditionalWeakTable<PdfDocumentManager, PdfSnapshotCache<PdfRenderDocument>> _documents = new();
 
     private Task<PdfSnapshotCache<PdfRenderDocument>.Lease> GetDocumentAsync(PdfDocumentManager manager, byte[] snapshot)
@@ -91,7 +95,7 @@ public sealed class PdfPageRenderService
             BitmapImage? bitmap = null;
             try
             {
-                using MemoryStream? stream = await document.RenderAsync(pageIndex, 0.4, cancellationToken);
+                using MemoryStream? stream = await document.RenderAsync(pageIndex, ThumbnailScale(document, pageIndex), cancellationToken);
                 if (stream != null)
                 {
                     bitmap = new BitmapImage();
@@ -120,7 +124,7 @@ public sealed class PdfPageRenderService
         byte[] snapshot = annotatedSnapshot ?? sourceVersion;
         using var lease = await GetDocumentAsync(manager, snapshot);
         var document = lease.Value;
-        using var stream = await document.RenderAsync(pageIndex, 0.4, cancellationToken);
+        using var stream = await document.RenderAsync(pageIndex, ThumbnailScale(document, pageIndex), cancellationToken);
         if (stream == null || !ReferenceEquals(sourceVersion, manager.GetPdfBytes())) return null;
         var bitmap = new BitmapImage();
         await bitmap.SetSourceAsync(stream.AsRandomAccessStream());

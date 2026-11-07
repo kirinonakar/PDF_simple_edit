@@ -65,6 +65,21 @@ public sealed class AnnotationCanvasController
     private Point? _regionStart;
     private Rectangle? _regionPreview;
     private (PdfDocumentManager Manager, int Page, long Version, uint PointerId)? _redactionGesture;
+    private (PdfDocumentManager Manager, int Page, long Version, uint PointerId, EditToolMode Mode, Point Start,
+        string Color, double Opacity, double FontSize)? _commentGesture;
+    private Rectangle? _commentPreview;
+    private Task<List<NativePdfTextBlock>>? _commentTextSource;
+    private Canvas? _commentTextPreview;
+    private sealed record CommentTransform(PdfDocumentManager Manager, int Page, long Version, PdfAnnotation Target,
+        PdfAnnotation Original, Point Start, string Direction);
+    private CommentTransform? _commentTransform;
+
+    public string CommentColor { get; set; } = "#FFFF00";
+    public double CommentOpacity { get; set; } = 1;
+    public double CommentFontSize { get; set; } = 12;
+    public Func<bool, Task<string?>>? RequestCommentText { get; set; }
+    public Action<PdfAnnotation>? ToggleNoteRequested { get; set; }
+    public Action<PdfAnnotation>? EditCommentRequested { get; set; }
 
     public Func<PdfTextBox, Task>? RegionRedactionRequested { get; set; }
 
@@ -147,6 +162,15 @@ public sealed class AnnotationCanvasController
 
     public void CancelSelectionGesture()
     {
+        if (_commentTransform is { } transform)
+            SetCommentBounds(transform.Target, new(transform.Original.X, transform.Original.Y, transform.Original.Width, transform.Original.Height));
+        _commentTransform = null;
+        _commentTextSource = null;
+        if (_commentTextPreview != null) _canvas.Children.Remove(_commentTextPreview);
+        _commentTextPreview = null;
+        _commentGesture = null;
+        if (_commentPreview != null) _canvas.Children.Remove(_commentPreview);
+        _commentPreview = null;
         _drawingController.Cancel();
         if (_signaturePreview != null) _canvas.Children.Remove(_signaturePreview);
         _signaturePreview = null;
@@ -165,7 +189,7 @@ public sealed class AnnotationCanvasController
 
     public void CancelRegionGesture()
     {
-        if (_regionStart != null) CancelSelectionGesture();
+        if (_regionStart != null || _commentGesture != null || _commentTransform != null) CancelSelectionGesture();
     }
 
     private Point ClipRegionPoint(Point point) => new(
@@ -194,6 +218,32 @@ public sealed class AnnotationCanvasController
         double pdfX = position.X / PdfToPixels;
         double pdfY = position.Y / PdfToPixels;
         EditToolMode toolMode = _getToolMode();
+        if (toolMode == EditToolMode.SelectAnnotations) selectPressSequence = ++_selectPointerPressSequence;
+
+        if (toolMode is EditToolMode.TextHighlight or EditToolMode.TextUnderline or EditToolMode.StickyNote or EditToolMode.CommentTextBox)
+        {
+            if (!isLeftButton) return;
+            CancelSelectionGesture(); ClearSelection(); Render();
+            _focusAfterInlineEdit(false);
+            _commentGesture = (manager, _getPageIndex(), manager.EditVersion, e.Pointer.PointerId, toolMode,
+                ClipRegionPoint(position), CommentColor, CommentOpacity, CommentFontSize);
+            _canvas.CapturePointer(e.Pointer);
+            e.Handled = true;
+            if (toolMode is EditToolMode.TextHighlight or EditToolMode.TextUnderline)
+            {
+                byte[] source = manager.GetPdfBytes()!;
+                int page = _getPageIndex();
+                var task = _commentTextSource = Task.Run(() => new NativePdfTextService().Extract(source, page));
+                try
+                {
+                    var blocks = await task;
+                    if (task == _commentTextSource && _commentGesture is { } gesture && manager == _getManager() && page == _getPageIndex())
+                        DrawCommentTextSelection(blocks, gesture.Start, e.GetCurrentPoint(_canvas).Position);
+                }
+                catch (Exception error) { if (task == _commentTextSource) { CancelRegionGesture(); _statusText.Text = error.Message; } }
+            }
+            return;
+        }
 
         if (PdfDrawingGeometry.IsDrawingTool(toolMode))
         {
@@ -201,7 +251,7 @@ public sealed class AnnotationCanvasController
             return;
         }
 
-        if (!isLeftButton && toolMode is EditToolMode.Select or EditToolMode.SelectGraphics or EditToolMode.Signature or EditToolMode.RedactRegion)
+        if (!isLeftButton && toolMode is EditToolMode.Select or EditToolMode.SelectGraphics or EditToolMode.SelectAnnotations or EditToolMode.Signature or EditToolMode.RedactRegion)
             return;
 
         if (isLeftButton && toolMode is EditToolMode.Select or EditToolMode.SelectGraphics)
@@ -214,6 +264,12 @@ public sealed class AnnotationCanvasController
 
         switch (toolMode)
         {
+            case EditToolMode.SelectAnnotations:
+                await BeginSelectionAsync(e, position, pdfX, pdfY, selectPressSequence);
+                _focusAfterInlineEdit(false);
+                if (PrimarySelection != null) _statusText.Text = Loc.Get("AnnotationSelectedDeleteToRemove");
+                e.Handled = true;
+                break;
             case EditToolMode.RedactRegion:
                 CancelSelectionGesture();
                 ClearSelection();
@@ -276,6 +332,54 @@ public sealed class AnnotationCanvasController
 
     public void PointerMoved(PointerRoutedEventArgs e)
     {
+        if (_commentTransform is { } transform)
+        {
+            var point = e.GetCurrentPoint(_canvas);
+            if (transform.Manager != _getManager() || transform.Page != _getPageIndex() || !point.Properties.IsLeftButtonPressed)
+            { CancelSelectionGesture(); Render(); return; }
+            double dx = (point.Position.X - transform.Start.X) / PdfToPixels, dy = (point.Position.Y - transform.Start.Y) / PdfToPixels;
+            var original = transform.Original;
+            double left = original.X, top = original.Y, right = left + original.Width, bottom = top + original.Height;
+            double pageWidth = _canvas.Width / PdfToPixels, pageHeight = _canvas.Height / PdfToPixels;
+            if (transform.Direction == "Move")
+            {
+                left = Math.Clamp(left + dx, 0, Math.Max(0, pageWidth - original.Width));
+                top = Math.Clamp(top + dy, 0, Math.Max(0, pageHeight - original.Height));
+                right = left + original.Width; bottom = top + original.Height;
+            }
+            else
+            {
+                if (transform.Direction.Contains('W')) left = Math.Clamp(left + dx, 0, Math.Max(0, right - 30));
+                if (transform.Direction.Contains('E')) right = Math.Clamp(right + dx, Math.Min(pageWidth, left + 30), pageWidth);
+                if (transform.Direction.Contains('N')) top = Math.Clamp(top + dy, 0, Math.Max(0, bottom - 20));
+                if (transform.Direction.Contains('S')) bottom = Math.Clamp(bottom + dy, Math.Min(pageHeight, top + 20), pageHeight);
+            }
+            SetCommentBounds(transform.Target, new(left, top, right - left, bottom - top)); Render(); e.Handled = true; return;
+        }
+        if (_commentGesture is { } comment)
+        {
+            if (comment.PointerId != e.Pointer.PointerId) return;
+            var point = e.GetCurrentPoint(_canvas);
+            if (!point.Properties.IsLeftButtonPressed) { CancelRegionGesture(); return; }
+            var end = ClipRegionPoint(point.Position);
+            if (comment.Mode is EditToolMode.TextHighlight or EditToolMode.TextUnderline)
+            {
+                if (_commentTextSource?.IsCompletedSuccessfully == true)
+                    DrawCommentTextSelection(_commentTextSource.Result, comment.Start, end);
+                return;
+            }
+            if (_commentPreview == null)
+            {
+                _commentPreview = new Rectangle { Stroke = new SolidColorBrush(EditorColorService.Parse(comment.Color)),
+                    StrokeThickness = 1, Fill = new SolidColorBrush(Windows.UI.Color.FromArgb(45, 80, 150, 240)), IsHitTestVisible = false };
+                _canvas.Children.Add(_commentPreview);
+            }
+            Canvas.SetLeft(_commentPreview, Math.Min(comment.Start.X, end.X));
+            Canvas.SetTop(_commentPreview, Math.Min(comment.Start.Y, end.Y));
+            _commentPreview.Width = Math.Abs(end.X - comment.Start.X);
+            _commentPreview.Height = Math.Abs(end.Y - comment.Start.Y);
+            return;
+        }
         if (PdfDrawingGeometry.IsDrawingTool(_getToolMode()))
         {
             _drawingController.Moved(e);
@@ -339,6 +443,70 @@ public sealed class AnnotationCanvasController
 
     public async Task PointerReleasedAsync(PointerRoutedEventArgs e)
     {
+        if (_commentTransform is { } transform)
+        {
+            _commentTransform = null; _canvas.ReleasePointerCapture(e.Pointer); e.Handled = true;
+            var target = transform.Target;
+            var bounds = new PdfTextBox(target.X, target.Y, target.Width, target.Height);
+            if (transform.Manager != _getManager() || transform.Page != _getPageIndex() || transform.Version != transform.Manager.EditVersion)
+            { SetCommentBounds(target, new(transform.Original.X, transform.Original.Y, transform.Original.Width, transform.Original.Height)); Render(); return; }
+            if (Math.Abs(target.X - transform.Original.X) + Math.Abs(target.Y - transform.Original.Y) +
+                Math.Abs(target.Width - transform.Original.Width) + Math.Abs(target.Height - transform.Original.Height) < .2) return;
+            try
+            {
+                await transform.Manager.UpdatePdfCommentAsync(transform.Original, bounds);
+                if (transform.Manager == _getManager() && transform.Page == _getPageIndex()) await _renderCurrentPageAsync();
+            }
+            catch (Exception error)
+            {
+                SetCommentBounds(target, new(transform.Original.X, transform.Original.Y, transform.Original.Width, transform.Original.Height));
+                if (transform.Manager == _getManager()) { _statusText.Text = error.Message; Render(); }
+            }
+            return;
+        }
+        if (_commentGesture is { } comment)
+        {
+            if (comment.PointerId != e.Pointer.PointerId) return;
+            var end = ClipRegionPoint(e.GetCurrentPoint(_canvas).Position);
+            var textSource = _commentTextSource;
+            CancelRegionGesture();
+            e.Handled = true;
+            bool IsCurrent() => comment.Manager == _getManager() && comment.Page == _getPageIndex() &&
+                comment.Version == comment.Manager.EditVersion && comment.Mode == _getToolMode();
+            if (!IsCurrent()) return;
+            var box = new PdfTextBox(Math.Min(comment.Start.X, end.X) / PdfToPixels, Math.Min(comment.Start.Y, end.Y) / PdfToPixels,
+                Math.Abs(end.X - comment.Start.X) / PdfToPixels, Math.Abs(end.Y - comment.Start.Y) / PdfToPixels);
+            try
+            {
+                if (comment.Mode is EditToolMode.TextHighlight or EditToolMode.TextUnderline)
+                {
+                    if (Math.Abs(end.X - comment.Start.X) + Math.Abs(end.Y - comment.Start.Y) < 2) return;
+                    if (textSource != null) await textSource;
+                    if (!IsCurrent()) return;
+                    bool added = await comment.Manager.AddTextMarkupRangeAsync(comment.Page,
+                        new(comment.Start.X / PdfToPixels, comment.Start.Y / PdfToPixels), new(end.X / PdfToPixels, end.Y / PdfToPixels),
+                        comment.Mode == EditToolMode.TextUnderline, comment.Color, comment.Opacity);
+                    if (comment.Manager != _getManager() || comment.Page != _getPageIndex()) return;
+                    _statusText.Text = Loc.Get(added ? "AnnotationAdded" : "NoTextInTheSelectedRegion");
+                }
+                else
+                {
+                    string? text = RequestCommentText == null ? null : await RequestCommentText(comment.Mode == EditToolMode.StickyNote);
+                    if (string.IsNullOrWhiteSpace(text) || !IsCurrent()) return;
+                    bool sticky = comment.Mode == EditToolMode.StickyNote;
+                    var size = comment.Manager.GetPageSize(comment.Page);
+                    double width = sticky ? 20 : Math.Max(80, box.Width), height = sticky ? 20 : Math.Max(40, box.Height);
+                    width = Math.Min(width, size.width); height = Math.Min(height, size.height);
+                    box = new(Math.Clamp(box.X, 0, size.width - width), Math.Clamp(box.Y, 0, size.height - height), width, height);
+                    await comment.Manager.AddNoteOrTextBoxAsync(comment.Page, box, sticky, text, comment.Color, comment.Opacity, comment.FontSize);
+                    if (comment.Manager != _getManager() || comment.Page != _getPageIndex()) return;
+                    _statusText.Text = Loc.Get("AnnotationAdded");
+                }
+                await _renderCurrentPageAsync();
+            }
+            catch (Exception error) { if (comment.Manager == _getManager()) _statusText.Text = error.Message; }
+            return;
+        }
         if (PdfDrawingGeometry.IsDrawingTool(_getToolMode()))
         {
             _drawingController.Released(e);
@@ -448,14 +616,40 @@ public sealed class AnnotationCanvasController
         }
     }
 
+    private void DrawCommentTextSelection(List<NativePdfTextBlock> blocks, Point start, Point end)
+    {
+        if (_commentTextPreview != null) _canvas.Children.Remove(_commentTextPreview);
+        var selected = PdfTextSelectionService.SelectRange(blocks, new(start.X / PdfToPixels, start.Y / PdfToPixels), new(end.X / PdfToPixels, end.Y / PdfToPixels));
+        PdfCommentService.SelectText(selected, new(-1e8, -1e8, 2e8, 2e8), out _, out var quads);
+        _commentTextPreview = new Canvas { IsHitTestVisible = false };
+        foreach (var quad in quads)
+        {
+            var polygon = new Polygon { Fill = new SolidColorBrush(Windows.UI.Color.FromArgb(90, 0, 120, 215)), IsHitTestVisible = false };
+            foreach (int index in new[] { 0, 1, 3, 2 }) polygon.Points.Add(new(quad[index].X * PdfToPixels, quad[index].Y * PdfToPixels));
+            _commentTextPreview.Children.Add(polygon);
+        }
+        _canvas.Children.Add(_commentTextPreview);
+    }
+
+    public void UpdateToolCursor(EditToolMode mode) => SetElementCursor(_canvas, InputSystemCursor.Create(
+        mode is EditToolMode.TextHighlight or EditToolMode.TextUnderline ? InputSystemCursorShape.IBeam : InputSystemCursorShape.Arrow));
+
     public void DoubleTapped(DoubleTappedRoutedEventArgs e)
     {
+        if (_getToolMode() == EditToolMode.SelectAnnotations)
+        {
+            if (PrimarySelection is { PdfCommentSubtype: "Text" } note) ToggleNoteRequested?.Invoke(note);
+            else if (PrimarySelection is { PdfCommentSubtype: "FreeText" } textBox) EditCommentRequested?.Invoke(textBox);
+            e.Handled = true;
+            return;
+        }
         if (PdfDrawingGeometry.IsDrawingTool(_getToolMode()))
         {
             _drawingController.DoubleTapped(e);
             return;
         }
-        if (IsInlineEditing || _getToolMode() is EditToolMode.SelectGraphics or EditToolMode.RedactRegion)
+        if (IsInlineEditing || _getToolMode() is EditToolMode.SelectGraphics or EditToolMode.RedactRegion or
+            EditToolMode.TextHighlight or EditToolMode.TextUnderline or EditToolMode.StickyNote or EditToolMode.CommentTextBox)
             return;
 
         Point position = e.GetPosition(_canvas);
@@ -492,17 +686,27 @@ public sealed class AnnotationCanvasController
             EditorColorService.Parse,
             (direction, position) =>
             {
-                if (PrimarySelection != null)
+                if (PrimarySelection is { Type: AnnotationType.PdfComment } comment)
+                    StartCommentTransform(comment, direction, position);
+                else if (PrimarySelection != null)
                     _interactionController.BeginResize(
                         PrimarySelection, direction, position, _fontSettings.AdjustTextWidth);
             },
             shape => SetElementCursor(
                 _canvas,
-                InputSystemCursor.Create(shape)));
+                InputSystemCursor.Create(shape)),
+            note => ToggleNoteRequested?.Invoke(note));
+        if (_commentPreview != null && !_canvas.Children.Contains(_commentPreview)) _canvas.Children.Add(_commentPreview);
+        if (_commentTextPreview != null && !_canvas.Children.Contains(_commentTextPreview)) _canvas.Children.Add(_commentTextPreview);
         _drawingController.Redraw();
     }
 
-    public bool HandleDrawingKey(Windows.System.VirtualKey key) => _drawingController.HandleKey(key);
+    public bool HandleDrawingKey(Windows.System.VirtualKey key)
+    {
+        if (key == Windows.System.VirtualKey.Escape && (_commentGesture != null || _commentTransform != null))
+        { CancelRegionGesture(); Render(); return true; }
+        return _drawingController.HandleKey(key);
+    }
     public void CancelDrawing() => _drawingController.Cancel();
 
     private void EnsureCanvasSize()
@@ -524,7 +728,9 @@ public sealed class AnnotationCanvasController
     {
         if (e.OriginalSource is Rectangle handle && handle.Tag is string direction)
         {
-            if (PrimarySelection != null)
+            if (PrimarySelection is { Type: AnnotationType.PdfComment } comment)
+                StartCommentTransform(comment, direction, position);
+            else if (PrimarySelection != null)
                 _interactionController.BeginResize(PrimarySelection, direction, position, _fontSettings.AdjustTextWidth);
             _canvas.CapturePointer(e.Pointer);
             _statusText.Text = Loc.Get("Resizing");
@@ -569,6 +775,10 @@ public sealed class AnnotationCanvasController
 
         var currentPointerPoint = e.GetCurrentPoint(_canvas);
         PdfAnnotation? moveTarget = PrimarySelection;
+        if (selectionMode == EditToolMode.SelectAnnotations && moveTarget?.PdfCommentSubtype is "Text" or "FreeText" && currentPointerPoint.Properties.IsLeftButtonPressed)
+        {
+            StartCommentTransform(moveTarget, "Move", position); _canvas.CapturePointer(e.Pointer); return;
+        }
         bool canStartMove = moveTarget != null &&
             _getToolMode() is EditToolMode.Select or EditToolMode.SelectGraphics &&
             (_getToolMode() != EditToolMode.SelectGraphics ||
@@ -594,6 +804,18 @@ public sealed class AnnotationCanvasController
             if (PrimarySelection == null)
                 _statusText.Text = Loc.Get("Ready");
         }
+    }
+
+    private void StartCommentTransform(PdfAnnotation annotation, string direction, Point position)
+    {
+        if (annotation.PageIndex != _getPageIndex() || annotation.PdfCommentSubtype is not ("Text" or "FreeText")) return;
+        _commentTransform = new(_getManager(), _getPageIndex(), _getManager().EditVersion, annotation, annotation.Clone(), position, direction);
+    }
+
+    private static void SetCommentBounds(PdfAnnotation annotation, PdfTextBox box)
+    {
+        annotation.X = box.X; annotation.Y = box.Y; annotation.Width = box.Width; annotation.Height = box.Height;
+        annotation.PdfCommentHitBounds = new() { box };
     }
 
     private void SelectGraphicsInRegion(List<PdfPageContent> contents, PdfTextBox region, int page)

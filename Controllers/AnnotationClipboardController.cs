@@ -279,6 +279,7 @@ public sealed class AnnotationClipboardController(
             FontWeight = fontSettings.IsBold ? 700 : 400,
             IsBold = fontSettings.IsBold,
             IsItalic = fontSettings.IsItalic,
+            IsUnderline = fontSettings.IsUnderline,
             IsApplied = false
         };
     }

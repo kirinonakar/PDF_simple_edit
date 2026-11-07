@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl x:Class="PDF_simple_edit.Controls.CommentSidebar"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:services="using:PDF_simple_edit.Services"
+    xmlns:loc="using:PDF_simple_edit.Localization">
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="1,0,0,0" Padding="8">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Grid>
+            <TextBlock Text="{loc:LocalizedString Key=CommentsAndBookmarks}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,32,0"/>
+            <Button x:Name="CloseButton" HorizontalAlignment="Right" Content="&#xE711;" FontFamily="Segoe Fluent Icons" Padding="6" AutomationProperties.Name="{loc:LocalizedString Key=Close}" Click="Close_Click"/>
+        </Grid>
+        <Pivot Grid.Row="1" Margin="-8,0">
+            <PivotItem Header="{loc:LocalizedString Key=Comments}">
+                <Grid Margin="4,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <TextBlock x:Name="CommentCount" Margin="8,0,8,8" Text="{loc:LocalizedString Key=NoCommentsOnThisPage}" TextWrapping="Wrap"/>
+                    <ListView x:Name="CommentsList" Grid.Row="1" SelectionMode="Single" SelectionChanged="Comments_SelectionChanged"/>
+                </Grid>
+            </PivotItem>
+            <PivotItem Header="{loc:LocalizedString Key=Bookmarks}">
+                <Grid Margin="4,0">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="8,0,8,8">
+                        <Button Content="{loc:LocalizedString Key=AddCurrentPageBookmark}" Padding="6,4" Click="AddBookmark_Click"/>
+                        <Button x:Name="DeleteBookmarkButton" Content="{loc:LocalizedString Key=Delete2}" Padding="6,4" IsEnabled="False" Click="DeleteBookmark_Click" ToolTipService.ToolTip="{loc:LocalizedString Key=DeleteBookmarkWithChildren}"/>
+                    </StackPanel>
+                    <TextBlock x:Name="NoBookmarks" Grid.Row="1" Text="{loc:LocalizedString Key=NoBookmarksInThisDocument}" Margin="8" TextWrapping="Wrap"/>
+                    <TreeView x:Name="BookmarksTree" Grid.Row="1" SelectionMode="Single" SelectionChanged="Bookmark_SelectionChanged" ItemInvoked="Bookmark_Invoked" AutomationProperties.Name="{loc:LocalizedString Key=Bookmarks}">
+                        <TreeView.ItemTemplate>
+                            <DataTemplate x:DataType="services:PdfBookmark">
+                                <TreeViewItem ItemsSource="{x:Bind Children}" IsExpanded="True">
+                                    <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" Tag="{x:Bind}" Loaded="BookmarkTitle_Loaded" ToolTipService.ToolTip="{x:Bind Title}"/>
+                                </TreeViewItem>
+                            </DataTemplate>
+                        </TreeView.ItemTemplate>
+                    </TreeView>
+                </Grid>
+            </PivotItem>
+        </Pivot>
+    </Grid>
+</UserControl>

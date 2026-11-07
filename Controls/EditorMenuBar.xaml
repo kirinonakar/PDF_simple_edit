@@ -109,6 +109,16 @@
             <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=HighlightText}" x:Name="MenuHighlight" Tag="HighlightTool" Click="Command_Click" IsEnabled="False">
                 <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xE7E6;"/></ToggleMenuFlyoutItem.Icon>
             </ToggleMenuFlyoutItem>
+            <MenuFlyoutSubItem x:Name="MenuComments" Text="{loc:LocalizedString Key=Comments}" IsEnabled="False">
+                <ToggleMenuFlyoutItem x:Name="MenuTextHighlight" Text="{loc:LocalizedString Key=TextHighlightComment}" Tag="TextHighlightTool" Click="Command_Click"/>
+                <ToggleMenuFlyoutItem x:Name="MenuTextUnderline" Text="{loc:LocalizedString Key=UnderlineComment}" Tag="TextUnderlineTool" Click="Command_Click"/>
+                <ToggleMenuFlyoutItem x:Name="MenuStickyNote" Text="{loc:LocalizedString Key=StickyNote}" Tag="StickyNoteTool" Click="Command_Click"/>
+                <ToggleMenuFlyoutItem x:Name="MenuCommentTextBox" Text="{loc:LocalizedString Key=CommentTextBox}" Tag="CommentTextBoxTool" Click="Command_Click"/>
+                <MenuFlyoutSeparator/>
+                <ToggleMenuFlyoutItem x:Name="MenuSelectAnnotations" Text="{loc:LocalizedString Key=SelectAnnotations}" Tag="SelectAnnotationsTool" Click="Command_Click"/>
+                <MenuFlyoutItem Text="{loc:LocalizedString Key=CommentsAndBookmarks}" Tag="ToggleCommentSidebar" Click="Command_Click"/>
+                <MenuFlyoutItem Text="{loc:LocalizedString Key=DeleteAllComments}" Tag="DeleteAllComments" Click="Command_Click"/>
+            </MenuFlyoutSubItem>
             <MenuFlyoutSubItem x:Name="MenuDrawing" Text="{loc:LocalizedString Key=Drawing}" IsEnabled="False">
                 <ToggleMenuFlyoutItem x:Name="MenuDrawFreehand" Text="{loc:LocalizedString Key=Freehand}" Tag="DrawFreehandTool" Click="Command_Click"/>
                 <ToggleMenuFlyoutItem x:Name="MenuDrawLine" Text="{loc:LocalizedString Key=Line}" Tag="DrawLineTool" Click="Command_Click"/>

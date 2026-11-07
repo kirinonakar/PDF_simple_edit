@@ -57,6 +57,24 @@ public sealed class AnnotationEditController
         if (targets.Count == 0)
             return false;
 
+        if (targets.All(a => a.Type == AnnotationType.PdfComment))
+        {
+            var commentManager = _getManager();
+            var annotations = _getAnnotations();
+            try
+            {
+                await commentManager.RemovePdfCommentsAsync(targets);
+                annotations.RemoveAll(a => a.Type == AnnotationType.PdfComment);
+                if (commentManager != _getManager()) return true;
+                _canvasController.ClearSelection();
+                await _renderCurrentPageAsync();
+                _canvasController.Render();
+                _statusText.Text = Loc.Format("AnnotationsDeleted", targets.Count);
+                return true;
+            }
+            catch (Exception error) { if (commentManager == _getManager()) _statusText.Text = error.Message; return false; }
+        }
+
         List<PdfAnnotation> originalTextTargets = targets
             .Where(annotation => annotation.IsOriginalTextReplacement)
             .ToList();
@@ -194,12 +212,22 @@ public sealed class AnnotationEditController
         MarkChanged(annotation);
     }
 
+    public async Task ApplyUnderlineAsync(bool isUnderline)
+    {
+        _fontSettings.IsUnderline = isUnderline;
+        if (await ApplyNativeStyleAsync(new(IsUnderline: isUnderline))) return;
+        var annotation = GetSelectedTextAnnotation();
+        if (annotation == null || !await PrepareTextReplacementAsync(annotation)) return;
+        annotation.IsUnderline = isUnderline;
+        MarkChanged(annotation);
+    }
+
     public async Task ApplyColorAsync(string color)
     {
         _fontSettings.Color = color;
         if (await ApplyNativeStyleAsync(new(Color: color))) return;
         PdfAnnotation? annotation = _canvasController.PrimarySelection;
-        if (annotation == null)
+        if (annotation == null || annotation.Type == AnnotationType.PdfComment)
             return;
 
         if (annotation.Type is AnnotationType.Text or AnnotationType.FreeText &&
@@ -218,6 +246,7 @@ public sealed class AnnotationEditController
     public async Task AlignSelectionAsync(AnnotationAlignment alignment)
     {
         List<PdfAnnotation> selection = _canvasController.SelectedAnnotations;
+        if (selection.Any(a => a.Type == AnnotationType.PdfComment)) return;
         if (selection.Any(annotation => annotation.IsOriginalImageReplacement))
         {
             var aligned = selection.Select(a => a.Clone()).ToList();

@@ -56,6 +56,7 @@
                                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74E;"/></MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>
                             <MenuFlyoutSeparator/>
+                            <MenuFlyoutItem x:Name="EditCommentItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=EditComment}" Visibility="Collapsed"/>
                             <MenuFlyoutItem x:Name="DeleteItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Delete2}">
                                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74D;"/></MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>

@@ -43,6 +43,40 @@
                            Text="{loc:LocalizedString Key=PreserveOriginalChangeFontSizeColorBoldItalicAlt}"/>
             </Grid>
             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Spacing="2">
+                <DropDownButton x:Name="CommentButton" x:FieldModifier="public" Content="{loc:LocalizedString Key=Comments}" IsEnabled="False" Padding="8,6" AutomationProperties.Name="{loc:LocalizedString Key=Comments}">
+                    <DropDownButton.Flyout>
+                        <MenuFlyout FlyoutBase.Placement="BottomEdgeAlignedLeft">
+                            <ToggleMenuFlyoutItem x:Name="TextHighlightItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=TextHighlightComment}" Tag="TextHighlight"/>
+                            <ToggleMenuFlyoutItem x:Name="TextUnderlineItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=UnderlineComment}" Tag="TextUnderline"/>
+                            <ToggleMenuFlyoutItem x:Name="StickyNoteItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=StickyNote}" Tag="StickyNote"/>
+                            <ToggleMenuFlyoutItem x:Name="CommentTextBoxItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=CommentTextBox}" Tag="CommentTextBox"/>
+                            <MenuFlyoutSeparator/>
+                            <ToggleMenuFlyoutItem x:Name="SelectAnnotationsItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=SelectAnnotations}" Tag="SelectAnnotations"/>
+                            <MenuFlyoutItem x:Name="ShowCommentSidebarItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=CommentsAndBookmarks}"/>
+                            <MenuFlyoutItem x:Name="DeleteAllCommentsItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=DeleteAllComments}"/>
+                        </MenuFlyout>
+                    </DropDownButton.Flyout>
+                </DropDownButton>
+                <DropDownButton x:Name="CommentSettingsButton" x:FieldModifier="public" IsEnabled="False" Padding="6" Height="{Binding ActualHeight, ElementName=CommentButton}" ToolTipService.ToolTip="{loc:LocalizedString Key=CommentSettings}" AutomationProperties.Name="{loc:LocalizedString Key=CommentSettings}">
+                    <Border x:Name="CommentColorIndicator" x:FieldModifier="public" Width="14" Height="4" Background="Yellow"/>
+                    <DropDownButton.Flyout>
+                        <Flyout FlyoutBase.Placement="BottomEdgeAlignedRight">
+                            <StackPanel Spacing="10" Width="360">
+                                <TextBlock Text="{loc:LocalizedString Key=CommentSettings}" FontWeight="Bold"/>
+                                <ColorPicker x:Name="CommentColorPicker" x:FieldModifier="public" Width="340" IsAlphaEnabled="False" Color="Yellow"/>
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="{loc:LocalizedString Key=Opacity}" VerticalAlignment="Center"/>
+                                    <Slider x:Name="CommentOpacitySlider" x:FieldModifier="public" Minimum="0.05" Maximum="1" StepFrequency="0.05" Value="1" Width="150"/>
+                                    <TextBlock x:Name="CommentOpacityText" x:FieldModifier="public" Text="100%" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <NumberBox x:Name="CommentFontSizeBox" x:FieldModifier="public" Header="{loc:LocalizedString Key=CommentFontSize}" Minimum="4" Maximum="72" Value="12" SpinButtonPlacementMode="Compact"/>
+                            </StackPanel>
+                        </Flyout>
+                    </DropDownButton.Flyout>
+                </DropDownButton>
+                <ToggleButton x:Name="CommentSidebarButton" x:FieldModifier="public" IsEnabled="False" Padding="8,6" Height="{Binding ActualHeight, ElementName=CommentButton}" ToolTipService.ToolTip="{loc:LocalizedString Key=CommentsAndBookmarks}" AutomationProperties.Name="{loc:LocalizedString Key=CommentsAndBookmarks}">
+                    <FontIcon Glyph="&#xE8F2;" FontSize="16"/>
+                </ToggleButton>
                 <DropDownButton x:Name="DrawingButton" x:FieldModifier="public" Content="{loc:LocalizedString Key=Drawing}" IsEnabled="False" Padding="8,6" AutomationProperties.Name="{loc:LocalizedString Key=DrawingTools}" ToolTipService.ToolTip="{loc:LocalizedString Key=FreehandRectangleEllipseArrowPolygon}">
                     <DropDownButton.Flyout>
                         <MenuFlyout FlyoutBase.Placement="BottomEdgeAlignedRight">
@@ -215,6 +249,9 @@
             </ToggleButton>
             <ToggleButton x:Name="ItalicButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=Italic}" Padding="8,6">
                 <FontIcon Glyph="&#xE8DB;" FontSize="14"/>
+            </ToggleButton>
+            <ToggleButton x:Name="UnderlineButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=TextUnderline}" AutomationProperties.Name="{loc:LocalizedString Key=TextUnderline}" Padding="8,6">
+                <FontIcon Glyph="&#xE8DC;" FontSize="14"/>
             </ToggleButton>
             <DropDownButton x:Name="FontColorButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=TextColor}" Padding="8,6">
                 <StackPanel Orientation="Horizontal" Spacing="4">

@@ -724,7 +724,7 @@ namespace PDF_simple_edit.Services
                 && string.Equals(region.Color, next.Color, StringComparison.OrdinalIgnoreCase)
                 && region.FontWeight == next.FontWeight
                 && region.IsBold == next.IsBold
-                && region.IsItalic == next.IsItalic;
+                && region.IsItalic == next.IsItalic && region.IsUnderline == next.IsUnderline;
         }
 
         private static bool CanMergeIntoEditRegion(PdfPageContent region, PdfPageContent next, out bool startsNewLine)
@@ -1204,6 +1204,7 @@ namespace PDF_simple_edit.Services
                     FontWeight = fontMetadata.Weight,
                     IsBold = isBold,
                     IsItalic = isItalic,
+                    IsUnderline = PdfTextUnderlineService.Read(textInfo),
                     ContentStreamIndex = target?.StreamIndex ?? -1,
                     ContentStreamObjectNumber = target?.StreamObjectNumber ?? -1,
                     OperationIndex = target?.OperationIndex ?? -1,
@@ -1228,6 +1229,7 @@ namespace PDF_simple_edit.Services
                     FontWeight = fontMetadata.Weight,
                     IsBold = isBold,
                     IsItalic = isItalic,
+                    IsUnderline = PdfTextUnderlineService.Read(textInfo),
                     OriginalPdfX = bounds.originalPdfX,
                     OriginalPdfY = bounds.originalPdfY,
                     ContentStreamIndex = fragment.ContentStreamIndex,

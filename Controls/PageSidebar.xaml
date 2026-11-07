@@ -23,13 +23,13 @@
             </ListView.ContextFlyout>
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="local:PageThumbnailData">
-                    <Grid Margin="{x:Bind DropMargin, Mode=OneWay}" Width="140">
+                    <Grid Margin="{x:Bind DropMargin, Mode=OneWay}" Width="{x:Bind CardWidth, Mode=OneWay}">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <Border Background="#FFE0E0E0" BorderBrush="#40000000" BorderThickness="1"
-                                CornerRadius="4" Width="120" Height="160"
+                                CornerRadius="4" Width="{x:Bind ThumbnailWidth, Mode=OneWay}" Height="{x:Bind ThumbnailHeight, Mode=OneWay}"
                                 HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Image Source="{x:Bind Thumbnail, Mode=OneWay}" Stretch="Uniform"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>

@@ -24,6 +24,13 @@ public enum EditorMenuCommand
     TogglePagePanel,
     SelectTool,
     SelectGraphicsTool,
+    TextHighlightTool,
+    TextUnderlineTool,
+    StickyNoteTool,
+    CommentTextBoxTool,
+    SelectAnnotationsTool,
+    DeleteAllComments,
+    ToggleCommentSidebar,
     AddTextTool,
     HighlightTool,
     RedactRegionTool,
@@ -89,6 +96,7 @@ public sealed partial class EditorMenuBar : UserControl
         MenuRedactRegion.IsEnabled = hasDoc;
         MenuSignature.IsEnabled = hasDoc;
         MenuDrawing.IsEnabled = hasDoc;
+        MenuComments.IsEnabled = hasDoc;
         MenuAddImage.IsEnabled = hasDoc;
         MenuExtractImages.IsEnabled = hasDoc;
         MenuSplitPdf.IsEnabled = hasDoc;
@@ -105,6 +113,11 @@ public sealed partial class EditorMenuBar : UserControl
     {
         MenuSelect.IsChecked = mode == EditToolMode.Select;
         MenuSelectGraphics.IsChecked = mode == EditToolMode.SelectGraphics;
+        MenuTextHighlight.IsChecked = mode == EditToolMode.TextHighlight;
+        MenuTextUnderline.IsChecked = mode == EditToolMode.TextUnderline;
+        MenuStickyNote.IsChecked = mode == EditToolMode.StickyNote;
+        MenuCommentTextBox.IsChecked = mode == EditToolMode.CommentTextBox;
+        MenuSelectAnnotations.IsChecked = mode == EditToolMode.SelectAnnotations;
         MenuAddText.IsChecked = mode == EditToolMode.AddText;
         MenuHighlight.IsChecked = mode == EditToolMode.Highlight;
         MenuRedactRegion.IsChecked = mode == EditToolMode.RedactRegion;

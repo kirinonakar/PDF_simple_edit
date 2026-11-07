@@ -1,6 +1,7 @@
 using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
+using AutomationProperties = Microsoft.UI.Xaml.Automation.AutomationProperties;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -27,7 +28,8 @@ public sealed class AnnotationOverlayController
         PdfAnnotation? editingAnnotation,
         Func<string, Color> parseColor,
         Action<string, Point> resizeStarted,
-        Action<InputSystemCursorShape> cursorChanged)
+        Action<InputSystemCursorShape> cursorChanged,
+        Action<PdfAnnotation> toggleNote)
     {
         foreach (UIElement child in canvas.Children.Where(child => child is not RichEditBox &&
             (child is not FrameworkElement element || element.Tag != NativeInlineTextEditorController.OverlayTag)).ToList())
@@ -37,6 +39,15 @@ public sealed class AnnotationOverlayController
         int insertIndex = 0;
         foreach (PdfAnnotation annotation in annotations.Where(item => item.PageIndex == pageIndex))
         {
+            if (annotation.Type == AnnotationType.PdfComment)
+            {
+                if (selectedAnnotations.Contains(annotation)) AddSelectionBorder(canvas, annotation, ref insertIndex);
+                if (annotation == primarySelection && annotation.PdfCommentSubtype == "FreeText")
+                    AddResizeHandles(canvas, annotation, ref insertIndex, resizeStarted, cursorChanged);
+                if (annotation.PdfCommentSubtype == "Text" && annotation.IsCommentOpen)
+                    AddNotePopup(canvas, annotation, toggleNote);
+                continue;
+            }
             if (annotation == editingAnnotation)
             {
                 if (annotation.NativeText != null) continue;
@@ -123,6 +134,30 @@ public sealed class AnnotationOverlayController
                     cursorChanged);
             }
         }
+    }
+
+    private static void AddNotePopup(Canvas canvas, PdfAnnotation annotation, Action<PdfAnnotation> toggleNote)
+    {
+        var layout = new Grid { Padding = new Thickness(10), RowSpacing = 8 };
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        var title = new TextBlock { Text = Loc.Get("StickyNote"), Foreground = new SolidColorBrush(Microsoft.UI.Colors.Black), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 0, 28, 0) };
+        var close = new Button { Content = "\u00d7", Padding = new Thickness(6, 0, 6, 0), HorizontalAlignment = HorizontalAlignment.Right };
+        AutomationProperties.SetName(close, Loc.Get("HideNote"));
+        close.Click += (_, _) => toggleNote(annotation);
+        var content = new TextBlock { Text = annotation.Content, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true,
+            Foreground = new SolidColorBrush(Microsoft.UI.Colors.Black) };
+        var scroll = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Grid.SetRow(scroll, 1);
+        layout.Children.Add(title); layout.Children.Add(close); layout.Children.Add(scroll);
+        var popup = new Border { Width = Math.Min(280, Math.Max(120, canvas.Width)), Height = 180, Child = layout,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.LightYellow), BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Gray),
+            BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4) };
+        popup.PointerPressed += (_, args) => args.Handled = true;
+        Canvas.SetLeft(popup, Math.Clamp((annotation.X + annotation.Width) * PdfToPixels + 8, 0, Math.Max(0, canvas.Width - popup.Width)));
+        Canvas.SetTop(popup, Math.Clamp(annotation.Y * PdfToPixels, 0, Math.Max(0, canvas.Height - popup.Height)));
+        Canvas.SetZIndex(popup, 100);
+        canvas.Children.Add(popup);
     }
 
     private static void AddSelectionBorder(
@@ -303,6 +338,7 @@ public sealed class AnnotationOverlayController
             FontStyle = annotation.IsItalic
                 ? Windows.UI.Text.FontStyle.Italic
                 : Windows.UI.Text.FontStyle.Normal,
+            TextDecorations = annotation.IsUnderline ? Windows.UI.Text.TextDecorations.Underline : Windows.UI.Text.TextDecorations.None,
             RenderTransform = hasOriginalLineLayout
                 ? new TranslateTransform
                 {
@@ -348,6 +384,7 @@ public sealed class AnnotationOverlayController
 
         foreach ((string direction, Point position) in handles)
         {
+            if (annotation.Type == AnnotationType.PdfComment && direction == "Rotate") continue;
             var handle = new Microsoft.UI.Xaml.Shapes.Rectangle
             {
                 Width = size,

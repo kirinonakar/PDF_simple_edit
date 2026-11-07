@@ -104,6 +104,7 @@ public sealed class EditorSettingsService
             SetValue(lines, "FontColor", fontSettings.Color);
             SetValue(lines, "IsBold", fontSettings.IsBold.ToString(CultureInfo.InvariantCulture));
             SetValue(lines, "IsItalic", fontSettings.IsItalic.ToString(CultureInfo.InvariantCulture));
+            SetValue(lines, "IsUnderline", fontSettings.IsUnderline.ToString(CultureInfo.InvariantCulture));
             File.WriteAllLines(_settingsPath, lines);
         }
         catch (Exception ex)
@@ -141,6 +142,8 @@ public sealed class EditorSettingsService
             settings.IsBold = bold;
         if (values.TryGetValue("IsItalic", out string? italicText) && bool.TryParse(italicText, out bool italic))
             settings.IsItalic = italic;
+        if (values.TryGetValue("IsUnderline", out string? underlineText) && bool.TryParse(underlineText, out bool underline))
+            settings.IsUnderline = underline;
     }
 
     private static bool TryReadPlacement(IReadOnlyDictionary<string, string> values, out WindowPlacement? placement)

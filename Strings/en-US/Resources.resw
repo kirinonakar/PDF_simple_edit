@@ -1387,4 +1387,46 @@ To remove passwords individually, use Encryption and password settings.</value>
   <data name="McpDescription" xml:space="preserve"><value>Connect an MCP client using the standard JSON configuration below. The client runs this executable with --mcp over stdio, without opening the editor. Tools support PDF creation, text/graphic editing, page management and image conversion. Saved files are processed independently of open editor tabs.</value></data>
   <data name="McpSettings" xml:space="preserve"><value>MCP settings</value></data>
   <data name="McpStandardConfiguration" xml:space="preserve"><value>Standard MCP configuration (JSON)</value></data>
+  <data name="Comments" xml:space="preserve"><value>Annotations</value></data>
+  <data name="TextHighlightComment" xml:space="preserve"><value>Text highlight</value></data>
+  <data name="UnderlineComment" xml:space="preserve"><value>Underline annotation</value></data>
+  <data name="StickyNote" xml:space="preserve"><value>Sticky note</value></data>
+  <data name="CommentTextBox" xml:space="preserve"><value>Annotation text box</value></data>
+  <data name="SelectAnnotations" xml:space="preserve"><value>Select annotations</value></data>
+  <data name="DeleteAllComments" xml:space="preserve"><value>Delete all annotations in document</value></data>
+  <data name="CommentsAndBookmarks" xml:space="preserve"><value>Annotations / Bookmarks</value></data>
+  <data name="CommentSettings" xml:space="preserve"><value>Annotation color, opacity and text size</value></data>
+  <data name="CommentFontSize" xml:space="preserve"><value>Text box font size (pt)</value></data>
+  <data name="CommentContents" xml:space="preserve"><value>Enter annotation contents</value></data>
+  <data name="AddComment" xml:space="preserve"><value>Add annotation</value></data>
+  <data name="ShowNote" xml:space="preserve"><value>Show note</value></data>
+  <data name="HideNote" xml:space="preserve"><value>Hide note</value></data>
+  <data name="Bookmarks" xml:space="preserve"><value>Bookmarks</value></data>
+  <data name="NoBookmarksInThisDocument" xml:space="preserve"><value>No bookmarks in this document.</value></data>
+  <data name="NoCommentsOnThisPage" xml:space="preserve"><value>No annotations on this page.</value></data>
+  <data name="NoCommentsInThisDocument" xml:space="preserve"><value>No annotations in this document.</value></data>
+  <data name="CommentsOnThisPage" xml:space="preserve"><value>Annotations on this page: {0}</value></data>
+  <data name="AnnotationAdded" xml:space="preserve"><value>Annotation added. Ctrl+Z: undo, Ctrl+S: save.</value></data>
+  <data name="AnnotationsDeleted" xml:space="preserve"><value>Deleted {0} annotation(s). Ctrl+Z: undo.</value></data>
+  <data name="AnnotationSelectedDeleteToRemove" xml:space="preserve"><value>Annotation selected. Delete: remove. Double-click a sticky note to show/hide it.</value></data>
+  <data name="TheSelectedAnnotationChangedSelectItAgain" xml:space="preserve"><value>The selected annotation changed. Select it again.</value></data>
+  <data name="ToolTextHighlightComment" xml:space="preserve"><value>Text highlight: drag from the first character to the last (Esc: cancel)</value></data>
+  <data name="ToolUnderlineComment" xml:space="preserve"><value>Underline annotation: drag from the first character to the last (Esc: cancel)</value></data>
+  <data name="ToolStickyNote" xml:space="preserve"><value>Sticky note: click to place a note (Esc: cancel)</value></data>
+  <data name="ToolCommentTextBox" xml:space="preserve"><value>Annotation text box: drag a box, then enter text (Esc: cancel)</value></data>
+  <data name="ToolSelectAnnotations" xml:space="preserve"><value>Select annotations: click, Ctrl+click for multiple, Delete to remove</value></data>
+  <data name="TextUnderline" xml:space="preserve"><value>Text underline</value></data>
+  <data name="CommentsInDocument" xml:space="preserve"><value>Annotations in document: {0}</value></data>
+  <data name="CommentPageHeader" xml:space="preserve"><value>Page {0}</value></data>
+  <data name="ResizePageSidebar" xml:space="preserve"><value>Resize page sidebar</value></data>
+  <data name="ResizeSearchSidebar" xml:space="preserve"><value>Resize search sidebar</value></data>
+  <data name="ResizeCommentSidebar" xml:space="preserve"><value>Resize annotations and bookmarks sidebar</value></data>
+  <data name="EditComment" xml:space="preserve"><value>Edit</value></data>
+  <data name="AddCurrentPageBookmark" xml:space="preserve"><value>Add current page</value></data>
+  <data name="AddBookmark" xml:space="preserve"><value>Add bookmark</value></data>
+  <data name="BookmarkPageTitle" xml:space="preserve"><value>Page {0}</value></data>
+  <data name="DeleteBookmarkWithChildren" xml:space="preserve"><value>Delete the selected bookmark and its children</value></data>
+  <data name="BookmarkChangedSelectAgain" xml:space="preserve"><value>The bookmarks changed. Select the bookmark again.</value></data>
+  <data name="BookmarkAdded" xml:space="preserve"><value>Bookmark added. Ctrl+Z: undo.</value></data>
+  <data name="BookmarkDeleted" xml:space="preserve"><value>Bookmark deleted. Ctrl+Z: undo.</value></data>
 </root>

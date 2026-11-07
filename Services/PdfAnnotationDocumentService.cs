@@ -13,6 +13,8 @@ public sealed class PdfAnnotationDocumentService
     public void Apply(PdfDocumentManager manager, PdfDocument document, PdfAnnotation annotation, bool textMetricsPrepared = false)
     {
         if (annotation.NativeText != null || (annotation.IsApplied && annotation.Type is AnnotationType.Image or AnnotationType.Highlight)) return;
+        if (annotation.IsUnderline && annotation.Type is AnnotationType.Text or AnnotationType.FreeText)
+            document.GetPage(annotation.PageIndex + 1).GetPdfObject().Put(PdfTextUnderlineService.PageFlag, PdfBoolean.TRUE);
         if (System.Math.Abs(annotation.Rotation) > .0001 && !annotation.IsEditablePath && !annotation.IsOriginalImageReplacement &&
             !annotation.IsOriginalTextReplacement && !(annotation.IsApplied && annotation.Type is AnnotationType.Text or AnnotationType.FreeText))
         {
@@ -93,7 +95,7 @@ public sealed class PdfAnnotationDocumentService
                     null,
                     characterSpacing,
                     annotation.FontWeight,
-                    originalLines);
+                    originalLines, annotation.IsUnderline);
                 break;
             case AnnotationType.Highlight:
                 manager.AddHighlightInternal(
@@ -139,6 +141,8 @@ public sealed class PdfAnnotationDocumentService
                 break;
         }
     }
+
+    internal static Color ParseCommentColor(string color) => ParseColor(color);
 
     private static Color ParseColor(string color)
     {

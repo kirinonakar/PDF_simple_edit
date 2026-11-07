@@ -28,6 +28,7 @@ public sealed record NativePdfGlyph
     public string Text { get; init; } = "";
     public byte[] Code { get; init; } = Array.Empty<byte>();
     public string RunId { get; init; } = "";
+    public bool IsUnderline { get; init; }
     public int ReplacementFontObjectNumber { get; init; }
     public string? ReplacementFontName { get; init; }
     public double? StyleFontSize { get; init; }
@@ -54,6 +55,7 @@ public sealed record NativePdfRun
     public string Color { get; init; } = "#000000";
     public bool IsBold { get; init; }
     public bool IsItalic { get; init; }
+    public bool IsUnderline { get; init; }
     public double Slant { get; init; }
     public double FontSize { get; init; }
     public double DisplayFontSize { get; init; }
@@ -80,7 +82,7 @@ public sealed record NativePdfTextBlock
 }
 
 public sealed record NativePdfTextStyle(string? Color = null, double? FontSize = null,
-    bool? IsBold = null, bool? IsItalic = null, string? FontFamily = null);
+    bool? IsBold = null, bool? IsItalic = null, string? FontFamily = null, bool? IsUnderline = null);
 
 public sealed record NativePdfTextEdit(NativePdfTextBlock Block, string Text, double DeltaX = 0, double DeltaY = 0,
     NativePdfTextStyle? Style = null, PdfAffineTransform? Transform = null, PdfTextBox? ReflowBounds = null);

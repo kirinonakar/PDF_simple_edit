@@ -149,14 +149,14 @@ namespace PDF_simple_edit.Helpers
             CommitPdfBytes(expectedBytes, editedBytes, uiState, PdfDocumentChange.Page(pageIndex), expectedVersion);
 
         private void CommitPdfBytes(byte[] expectedBytes, byte[] editedBytes, object? uiState,
-            PdfDocumentChange? change = null, long? expectedVersion = null, int? pageCount = null)
+            PdfDocumentChange? change = null, long? expectedVersion = null, int? pageCount = null, bool force = false)
         {
             change ??= new();
             lock (_docLock)
             {
                 if (!ReferenceEquals(_pdfBytes, expectedBytes) || expectedVersion.HasValue && EditVersion != expectedVersion)
                     throw new InvalidOperationException(Loc.Get("TheDocumentChangedDuringEditingPleaseTryAgain"));
-                if (ReferenceEquals(expectedBytes, editedBytes) || expectedBytes.AsSpan().SequenceEqual(editedBytes)) return;
+                if (!force && (ReferenceEquals(expectedBytes, editedBytes) || expectedBytes.AsSpan().SequenceEqual(editedBytes))) return;
                 _undoStack.Push(new(_pdfBytes!, uiState, _stateId, change));
                 _redoStack.Clear();
                 _history.Trim(_undoStack);
@@ -183,6 +183,69 @@ namespace PDF_simple_edit.Helpers
             var result = await Task.Run(() => new NativePdfTextService().EditMany(snapshot, pageIndex, edits));
             CommitNativeTextEdit(snapshot, result.Bytes, pageIndex);
         }
+
+        public Task<bool> AddTextMarkupAsync(int pageIndex, PdfTextBox region, bool underline, string color, double opacity) =>
+            AddTextMarkupCoreAsync(pageIndex, region, null, null, underline, color, opacity);
+
+        public Task<bool> AddTextMarkupRangeAsync(int pageIndex, PdfTextPoint start, PdfTextPoint end, bool underline, string color, double opacity) =>
+            AddTextMarkupCoreAsync(pageIndex, new(-1e8, -1e8, 2e8, 2e8), start, end, underline, color, opacity);
+
+        private async Task<bool> AddTextMarkupCoreAsync(int pageIndex, PdfTextBox region, PdfTextPoint? start, PdfTextPoint? end, bool underline, string color, double opacity)
+        {
+            byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
+            long version = EditVersion;
+            object? state = GetUIStateFunc?.Invoke();
+            var edited = await Task.Run(() =>
+            {
+                var blocks = new NativePdfTextService().Extract(snapshot, pageIndex);
+                if (start.HasValue && end.HasValue) blocks = PdfTextSelectionService.SelectRange(blocks, start.Value, end.Value);
+                var boxes = PdfCommentService.SelectText(blocks, region, out string contents, out var quads);
+                if (boxes.Count == 0) return null;
+                return RewritePdfBytes(snapshot, document => PdfCommentService.AddTextMarkup(document, pageIndex, boxes,
+                    underline, PdfAnnotationDocumentService.ParseCommentColor(color), (float)opacity, contents, quads));
+            });
+            if (edited == null) return false;
+            CommitPdfBytes(snapshot, edited, state, PdfDocumentChange.Page(pageIndex), version);
+            return true;
+        }
+
+        public async Task<int> RemovePdfCommentsAsync(IReadOnlyCollection<PdfAnnotation>? selection = null, bool hasPendingPaths = false)
+        {
+            byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
+            long version = EditVersion;
+            object? state = GetUIStateFunc?.Invoke();
+            var captured = selection?.Select(a => a.Clone()).ToList();
+            var edited = await Task.Run(() =>
+            {
+                int removed = 0;
+                byte[] bytes = RewritePdfBytes(snapshot, document => removed = PdfCommentService.Remove(document, captured));
+                return (Bytes: bytes, Count: removed);
+            });
+            if (edited.Count > 0 || hasPendingPaths)
+                CommitPdfBytes(snapshot, edited.Bytes, state,
+                    selection == null ? new() : new(selection.Select(a => a.PageIndex)), version, force: hasPendingPaths);
+            return edited.Count;
+        }
+
+        public Task AddNoteOrTextBoxAsync(int pageIndex, PdfTextBox box, bool sticky, string contents,
+            string color, double opacity, double fontSize) => ApplyEditAsync(document =>
+                PdfCommentService.AddNoteOrTextBox(document, pageIndex, box, sticky, contents,
+                    PdfAnnotationDocumentService.ParseCommentColor(color), (float)opacity, fontSize), PdfDocumentChange.Page(pageIndex));
+
+        public Task SetNoteOpenAsync(PdfAnnotation target, bool open) => ApplyEditAsync(document =>
+            PdfCommentService.SetNoteOpen(document, target, open), PdfDocumentChange.Page(target.PageIndex));
+
+        public Task UpdatePdfCommentAsync(PdfAnnotation target, PdfTextBox bounds, string? contents = null)
+        {
+            var captured = target.Clone();
+            return ApplyEditAsync(document => PdfCommentService.UpdateNoteOrTextBox(document, captured, bounds, contents), PdfDocumentChange.Page(target.PageIndex));
+        }
+
+        public Task AddBookmarkAsync(int pageIndex, string title) => ApplyEditAsync(document =>
+            PdfBookmarkService.Add(document, pageIndex, title), new(Array.Empty<int>()));
+
+        public Task RemoveBookmarkAsync(PdfBookmark target) => ApplyEditAsync(document =>
+            PdfBookmarkService.Remove(document, target), new(Array.Empty<int>()));
 
         public event EventHandler? DocumentChanged;
         public event EventHandler? Closed;
@@ -324,9 +387,15 @@ namespace PDF_simple_edit.Helpers
         {
             using var input = new MemoryStream(snapshot, writable: false);
             using var output = new MemoryStream();
-            using (var document = new PdfDocument(new PdfEditingReader(input), new PdfWriter(output, writerProperties ?? new WriterProperties())))
+            using (var document = new PdfDocument(new PdfEditingReader(input), new PdfWriter(output)))
+            {
                 editAction(document);
-            return output.ToArray();
+            }
+            byte[] finalized = PdfTextUnderlineService.RefreshBytes(output.ToArray());
+            if (writerProperties == null) return finalized;
+            using var protectedOutput = new MemoryStream();
+            using (var protectedDocument = new PdfDocument(new PdfEditingReader(new MemoryStream(finalized, writable: false)), new PdfWriter(protectedOutput, writerProperties))) { }
+            return protectedOutput.ToArray();
         }
 
         public byte[]? GetPdfBytesWithEdits(Action<PdfDocument> editAction)
@@ -445,7 +514,7 @@ namespace PDF_simple_edit.Helpers
             IReadOnlyList<double>? lineBaselineOffsets = null,
             int characterSpacing = 0,
             int fontWeight = 400,
-            IReadOnlyList<string>? originalLines = null)
+            IReadOnlyList<string>? originalLines = null, bool isUnderline = false)
         {
             _contentWriter.AddText(
                 doc,
@@ -466,7 +535,7 @@ namespace PDF_simple_edit.Helpers
                 lineBaselineOffsets,
                 characterSpacing,
                 fontWeight,
-                originalLines);
+                originalLines, isUnderline);
         }
 
         public void AddHighlight(

@@ -36,7 +36,8 @@ public sealed partial class NativePdfTextService
             FontFamily = run.FontName, FontSize = run.DisplayFontSize, Color = run.Color,
             OriginalFontObjectNumber = run.FontObjectNumber, LineHeight = block.LineHeight,
             BaselineOffset = block.Glyphs[0].Origin.Y - block.Bounds.Y,
-            FontWeight = run.IsBold ? 700 : 400, IsBold = run.IsBold, IsItalic = run.IsItalic };
+            FontWeight = run.IsBold ? 700 : 400, IsBold = run.IsBold, IsItalic = run.IsItalic,
+            IsUnderline = block.Glyphs.Where(g => !g.IsVirtual).All(g => g.IsUnderline) };
     }
     private sealed record Operation(int Start, int End, int TextIndex, List<PdfObject> Items)
     {
@@ -96,6 +97,8 @@ public sealed partial class NativePdfTextService
         processor.ProcessPageContent(page);
         return new(sources, listener.Runs, Group(listener.Runs), map, listener.Colors);
     }
+
+    internal static List<NativePdfRun> ReadUnderlineRuns(PdfPage page) => Read(page).Runs;
 
     private static Source ReadSource(PdfStream stream, PdfResources resources, string path,
         List<Target> targets, HashSet<int> ancestors)
@@ -200,7 +203,8 @@ public sealed partial class NativePdfTextService
                 var bounds = new PdfTextBox(points.Min(p => p.X), points.Min(p => p.Y),
                     points.Max(p => p.X) - points.Min(p => p.X), points.Max(p => p.Y) - points.Min(p => p.Y));
                 glyphs.Add(new NativePdfGlyph { Text = character.GetText(), Code = character.GetPdfString().GetValueBytes(),
-                    RunId = id, Origin = origin, End = endPoint, Bounds = bounds, Advance = character.GetUnscaledWidth() });
+                    RunId = id, Origin = origin, End = endPoint, Bounds = bounds, Advance = character.GetUnscaledWidth(),
+                    IsUnderline = PdfTextUnderlineService.Read(info) });
             }
             string hex = PdfDisplayColorService.ToHex(info.GetFillColor());
             Colors[id] = (info.GetFillColor(), info.GetStrokeColor());
@@ -213,6 +217,7 @@ public sealed partial class NativePdfTextService
                 OperandIndex = operand, FontObjectNumber = font.GetPdfObject().GetIndirectReference()?.GetObjNumber() ?? -1,
                 FontName = metadata.RawName, Color = hex, FontSize = size,
                 IsBold = metadata.Weight >= 600,
+                IsUnderline = PdfTextUnderlineService.Read(info),
                 IsItalic = metadata.RawName.Contains("Italic", StringComparison.OrdinalIgnoreCase) || metadata.RawName.Contains("Obl", StringComparison.OrdinalIgnoreCase) || Math.Abs(slant) > .08,
                 Slant = slant,
                 DisplayFontSize = baselineLengthSquared < 1e-12 ? Math.Abs(size) :
@@ -368,7 +373,7 @@ public sealed partial class NativePdfTextService
                             .Concat(run.Glyphs.Skip(insertion).Where((g, i) => !selectedIndexes.Contains(i + insertion))).ToList();
                     }
                     bool unchanged = run.Glyphs.Count == placed.Count && run.Glyphs.Zip(placed).All(pair =>
-                        pair.Second.ShapeTransform == null && pair.Second.ReplacementFontObjectNumber == 0 && pair.Second.StyleFontSize == null && pair.Second.StyleColor == null && pair.Second.StyleSlantDelta == 0 &&
+                        pair.First.IsUnderline == pair.Second.IsUnderline && pair.Second.ShapeTransform == null && pair.Second.ReplacementFontObjectNumber == 0 && pair.Second.StyleFontSize == null && pair.Second.StyleColor == null && pair.Second.StyleSlantDelta == 0 &&
                         pair.First.Code.SequenceEqual(pair.Second.Code) && Math.Abs(pair.First.Origin.X - pair.Second.Origin.X) < .00001 &&
                         Math.Abs(pair.First.Origin.Y - pair.Second.Origin.Y) < .00001);
                     if (unchanged) continue;
@@ -422,8 +427,10 @@ public sealed partial class NativePdfTextService
             if (!modified) return new(bytes, layout!) { Layouts = layouts };
             page.GetPdfObject().Put(PdfName.Contents, contents);
             page.SetModified();
+            if (data.Runs.Any(r => r.IsUnderline) || layouts.SelectMany(b => b.Glyphs).Any(g => g.IsUnderline))
+                page.GetPdfObject().Put(PdfTextUnderlineService.PageFlag, PdfBoolean.TRUE);
         }
-        byte[] resultBytes = output.ToArray();
+        byte[] resultBytes = PdfTextUnderlineService.RefreshBytes(output.ToArray());
         using var finalDoc = new PdfDocument(new PdfReader(new MemoryStream(resultBytes)));
         var finalPage = finalDoc.GetPage(pageIndex + 1); var finalBox = finalPage.GetCropBox();
         var finalMap = new PageMap(finalBox.GetX(), finalBox.GetY(), finalBox.GetWidth(), finalBox.GetHeight(), ((finalPage.GetRotation() % 360) + 360) % 360);
@@ -947,7 +954,10 @@ public sealed partial class NativePdfTextService
                     Write(shapeTransform.Value.Command);
                 }
                 Slant(glyph.StyleSlantDelta);
+                if (glyph.IsUnderline || run.IsUnderline)
+                    Write($"/PDFSimpleTextStyle << /Underline {(glyph.IsUnderline ? "true" : "false")} >> BDC\n");
                 Write($"<{Convert.ToHexString(glyph.Code)}> Tj\n");
+                if (glyph.IsUnderline || run.IsUnderline) Write("EMC\n");
                 Slant(-glyph.StyleSlantDelta);
                 if (shapeTransform.HasValue) Write(shapeTransform.Value.Inverse().Command);
                 cursor = textX + glyph.Advance;

@@ -15,7 +15,8 @@ namespace PDF_simple_edit.Models
         Image,
         FreeText,
         Signature,
-        Drawing
+        Drawing,
+        PdfComment
     }
 
     public enum DrawingKind { Freehand, Rectangle, Ellipse, Arrow, Polygon, TriangleArrow, OutlineArrow, Line }
@@ -36,6 +37,11 @@ namespace PDF_simple_edit.Models
         public double Width { get; set; }
         public double Height { get; set; }
         public string Content { get; set; } = string.Empty;
+        // References a real PDF markup annotation; page content is never an editing target.
+        public string? PdfCommentKey { get; set; }
+        public List<PdfTextBox> PdfCommentHitBounds { get; set; } = new();
+        public string PdfCommentSubtype { get; set; } = "";
+        public bool IsCommentOpen { get; set; }
         // Logical text before inserting soft line breaks during an overlay resize.
         public string? ReflowText { get; set; }
         public string FontFamily { get; set; } = "맑은 고딕";
@@ -44,6 +50,7 @@ namespace PDF_simple_edit.Models
         public int FontWeight { get; set; } = 400;
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
+        public bool IsUnderline { get; set; }
         // Explicit WinUI tracking in 1/1000-em units; null uses natural advances.
         public int? CharacterSpacing { get; set; }
         public double Opacity { get; set; } = 1.0;
@@ -96,6 +103,10 @@ namespace PDF_simple_edit.Models
                 Width = this.Width,
                 Height = this.Height,
                 Content = this.Content,
+                PdfCommentKey = this.PdfCommentKey,
+                PdfCommentHitBounds = new(this.PdfCommentHitBounds),
+                PdfCommentSubtype = this.PdfCommentSubtype,
+                IsCommentOpen = this.IsCommentOpen,
                 ReflowText = this.ReflowText,
                 FontFamily = this.FontFamily,
                 FontSize = this.FontSize,
@@ -103,6 +114,7 @@ namespace PDF_simple_edit.Models
                 FontWeight = this.FontWeight,
                 IsBold = this.IsBold,
                 IsItalic = this.IsItalic,
+                IsUnderline = this.IsUnderline,
                 CharacterSpacing = this.CharacterSpacing,
                 Opacity = this.Opacity,
                 LineWidth = this.LineWidth,
@@ -265,6 +277,7 @@ namespace PDF_simple_edit.Models
         public int FontWeight { get; set; } = 400;
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
+        public bool IsUnderline { get; set; }
         public int ContentStreamIndex { get; set; } = -1;
         public int ContentStreamObjectNumber { get; set; } = -1;
         public int OperationIndex { get; set; } = -1;
@@ -305,7 +318,12 @@ namespace PDF_simple_edit.Models
         RedactRegion,
         DrawTriangleArrow,
         DrawOutlineArrow,
-        DrawLine
+        DrawLine,
+        TextHighlight,
+        TextUnderline,
+        SelectAnnotations,
+        StickyNote,
+        CommentTextBox
     }
 
     /// <summary>
@@ -328,6 +346,7 @@ namespace PDF_simple_edit.Models
         public int FontWeight { get; set; } = 400;
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
+        public bool IsUnderline { get; set; }
         public int ContentStreamIndex { get; set; } = -1;
         public int ContentStreamObjectNumber { get; set; } = -1;
         public int OperationIndex { get; set; } = -1;
@@ -395,6 +414,7 @@ namespace PDF_simple_edit.Models
         public int FontWeight { get; set; } = 400;
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
+        public bool IsUnderline { get; set; }
         public int ContentStreamIndex { get; set; } = -1;
         public int ContentStreamObjectNumber { get; set; } = -1;
         public int OperationIndex { get; set; } = -1;
@@ -425,6 +445,7 @@ namespace PDF_simple_edit.Models
         public string Color { get; set; } = "#000000";
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
+        public bool IsUnderline { get; set; }
         
         // Highlight settings
         public string HighlightColor { get; set; } = "#FFFF00";
@@ -441,6 +462,7 @@ namespace PDF_simple_edit.Models
                 Color = Color,
                 IsBold = IsBold,
                 IsItalic = IsItalic,
+                IsUnderline = IsUnderline,
                 HighlightColor = HighlightColor,
                 HighlightOpacity = HighlightOpacity
             };

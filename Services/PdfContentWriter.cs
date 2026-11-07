@@ -33,7 +33,7 @@ namespace PDF_simple_edit.Services
             IReadOnlyList<double>? lineBaselineOffsets = null,
             int characterSpacing = 0,
             int fontWeight = 400,
-            IReadOnlyList<string>? originalLines = null)
+            IReadOnlyList<string>? originalLines = null, bool isUnderline = false)
         {
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages()) return;
 
@@ -556,6 +556,12 @@ namespace PDF_simple_edit.Services
             PdfCanvas canvas = new PdfCanvas(page, true);
             
             canvas.SaveState();
+            if (isUnderline)
+            {
+                page.GetPdfObject().Put(PdfTextUnderlineService.PageFlag, PdfBoolean.TRUE);
+                var properties = new PdfDictionary(); properties.Put(PdfTextUnderlineService.Underline, PdfBoolean.TRUE);
+                canvas.BeginMarkedContent(PdfTextUnderlineService.StyleTag, properties);
+            }
             var textTransform = PdfPageCoordinates.ToDisplay(page).Inverse().After(
                 new PdfAffineTransform(1, 0, 0, -1, -rect.GetLeft(), rect.GetTop()));
             canvas.ConcatMatrix(textTransform.A, textTransform.B, textTransform.C, textTransform.D, textTransform.E, textTransform.F);
@@ -616,6 +622,7 @@ namespace PDF_simple_edit.Services
             }
 
             canvas.EndText();
+            if (isUnderline) canvas.EndMarkedContent();
             canvas.RestoreState();
             canvas.Release();
         }

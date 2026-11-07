@@ -5,6 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:PDF_simple_edit"
     xmlns:controls="using:PDF_simple_edit.Controls"
+    xmlns:loc="using:PDF_simple_edit.Localization"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
@@ -62,18 +63,33 @@
         </TabView>
 
         <!-- Content Area -->
-        <Grid Grid.Row="4">
+        <Grid x:Name="EditorContentArea" Grid.Row="4">
+            <Grid.Resources>
+                <Style TargetType="controls:SidebarResizeHandle">
+                    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="controls:SidebarResizeHandle">
+                        <Border Background="{TemplateBinding Background}"/>
+                    </ControlTemplate></Setter.Value></Setter>
+                </Style>
+            </Grid.Resources>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="PagePanelColumn" Width="200"/>
+                <ColumnDefinition x:Name="PageGripColumn" Width="5"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition x:Name="FindGripColumn" Width="0"/>
                 <ColumnDefinition x:Name="FindPanelColumn" Width="0"/>
+                <ColumnDefinition x:Name="CommentGripColumn" Width="0"/>
+                <ColumnDefinition x:Name="CommentPanelColumn" Width="0"/>
             </Grid.ColumnDefinitions>
 
             <controls:PageSidebar x:Name="PagePanel" Grid.Column="0"/>
 
-            <controls:PdfEditorSurface x:Name="PdfSurface" Grid.Column="1"/>
+            <controls:SidebarResizeHandle x:Name="PagePanelGrip" Grid.Column="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" AutomationProperties.Name="{loc:LocalizedString Key=ResizePageSidebar}"/>
+            <controls:PdfEditorSurface x:Name="PdfSurface" Grid.Column="2"/>
 
-            <controls:FindPanelControl x:Name="FindPanel" Grid.Column="2" Visibility="Collapsed"/>
+            <controls:SidebarResizeHandle x:Name="FindPanelGrip" Grid.Column="3" Background="{ThemeResource DividerStrokeColorDefaultBrush}" AutomationProperties.Name="{loc:LocalizedString Key=ResizeSearchSidebar}"/>
+            <controls:FindPanelControl x:Name="FindPanel" Grid.Column="4" Visibility="Collapsed"/>
+            <controls:SidebarResizeHandle x:Name="CommentPanelGrip" Grid.Column="5" Background="{ThemeResource DividerStrokeColorDefaultBrush}" AutomationProperties.Name="{loc:LocalizedString Key=ResizeCommentSidebar}"/>
+            <controls:CommentSidebar x:Name="CommentPanel" Grid.Column="6" Visibility="Collapsed"/>
         </Grid>
 
         <controls:EditorStatusBar x:Name="StatusBar" Grid.Row="5"/>

@@ -96,7 +96,7 @@ public sealed partial class NativePdfTextService
                 style.IsItalic is bool italic && italic != run.IsItalic;
             bool resize = Math.Abs(ratio - 1) > .000001;
             metricsChanged |= resize || replaceFace;
-            var token = glyph with { StyleColor = style.Color ?? glyph.StyleColor,
+            var token = glyph with { IsUnderline = style.IsUnderline ?? glyph.IsUnderline, StyleColor = style.Color ?? glyph.StyleColor,
                 StyleFontSize = resize ? newSize : glyph.StyleFontSize };
             if (replaceFace && !glyph.IsVirtual)
             {
@@ -198,6 +198,7 @@ public sealed partial class NativePdfTextService
         annotation.X = content.X; annotation.Y = content.Y; annotation.Width = content.Width; annotation.Height = content.Height;
         annotation.FontFamily = content.FontFamily; annotation.FontSize = content.FontSize;
         annotation.IsBold = content.IsBold; annotation.IsItalic = content.IsItalic; annotation.FontWeight = content.FontWeight;
+        annotation.IsUnderline = content.IsUnderline;
         annotation.Color = content.Color; annotation.LineHeight = content.LineHeight;
         annotation.BaselineOffset = content.BaselineOffset; annotation.OriginalFontObjectNumber = content.OriginalFontObjectNumber;
         annotation.IsOriginalTextReplacement = true; annotation.IsApplied = false;

@@ -256,6 +256,7 @@ namespace PDF_simple_edit
                     _fileController.OpenPdfFileAsync,
                     ShowErrorDialogAsync);
                 WireChildControlEvents();
+                InitializeCommentControls();
                 DocTabView.TabItemsSource = _tabs;
                 // TextBox 내부 처리로 이미 Handled 된 키도 편집 확정 로직에서
                 // 확인할 수 있도록 캔버스에 handledEventsToo 핸들러를 등록합니다.
@@ -428,12 +429,13 @@ namespace PDF_simple_edit
                 PageListView.ItemsSource = null;
                 UpdateUIState();
                 UpdateTitleBar();
+                _ = RefreshCommentsAsync();
             }
         }
 
         #endregion
 
-        private void ExecuteMenuCommand(EditorMenuCommand command)
+        private async void ExecuteMenuCommand(EditorMenuCommand command)
         {
             switch (command)
             {
@@ -452,6 +454,13 @@ namespace PDF_simple_edit
                 case EditorMenuCommand.TogglePagePanel: TogglePagePanel_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.SelectTool: SelectTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.SelectGraphicsTool: SelectGraphicsTool_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.TextHighlightTool: SetToolMode(EditToolMode.TextHighlight); break;
+                case EditorMenuCommand.TextUnderlineTool: SetToolMode(EditToolMode.TextUnderline); break;
+                case EditorMenuCommand.StickyNoteTool: SetToolMode(EditToolMode.StickyNote); break;
+                case EditorMenuCommand.CommentTextBoxTool: SetToolMode(EditToolMode.CommentTextBox); break;
+                case EditorMenuCommand.SelectAnnotationsTool: SetToolMode(EditToolMode.SelectAnnotations); break;
+                case EditorMenuCommand.DeleteAllComments: await DeleteAllCommentsAsync(); break;
+                case EditorMenuCommand.ToggleCommentSidebar: ToggleCommentSidebar(); break;
                 case EditorMenuCommand.AddTextTool: AddTextTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.HighlightTool: HighlightTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.RedactRegionTool: RedactRegionTool_Click(EditorMenu, new RoutedEventArgs()); break;
@@ -704,6 +713,9 @@ namespace PDF_simple_edit
             BtnRedo.IsEnabled = hasDoc && _pdfManager.CanRedo;
             BtnSelect.IsEnabled = hasDoc;
             BtnSelectGraphics.IsEnabled = hasDoc;
+            EditorToolbar.CommentButton.IsEnabled = hasDoc;
+            EditorToolbar.CommentSettingsButton.IsEnabled = hasDoc;
+            EditorToolbar.CommentSidebarButton.IsEnabled = hasDoc;
             BtnAddText.IsEnabled = hasDoc;
             BtnHighlight.IsEnabled = hasDoc;
             BtnRedactRegion.IsEnabled = hasDoc;
@@ -977,6 +989,9 @@ namespace PDF_simple_edit
 
             BtnSelect.IsChecked = mode == EditToolMode.Select;
             BtnSelectGraphics.IsChecked = mode == EditToolMode.SelectGraphics;
+            foreach (var item in CommentToolItems) item.IsChecked = item.Tag is string commentTag && commentTag == mode.ToString();
+            EditorToolbar.CommentButton.Content = CommentToolItems.FirstOrDefault(item => item.IsChecked)?.Text ?? Loc.Get("Comments");
+            SyncCommentToolColor(mode);
             BtnAddText.IsChecked = mode == EditToolMode.AddText;
             BtnHighlight.IsChecked = mode == EditToolMode.Highlight;
             BtnRedactRegion.IsChecked = mode == EditToolMode.RedactRegion;
@@ -990,6 +1005,11 @@ namespace PDF_simple_edit
             {
                 EditToolMode.AddText => Loc.Get("ToolAddText"),
                 EditToolMode.Highlight => Loc.Get("ToolHighlightText"),
+                EditToolMode.TextHighlight => Loc.Get("ToolTextHighlightComment"),
+                EditToolMode.TextUnderline => Loc.Get("ToolUnderlineComment"),
+                EditToolMode.StickyNote => Loc.Get("ToolStickyNote"),
+                EditToolMode.CommentTextBox => Loc.Get("ToolCommentTextBox"),
+                EditToolMode.SelectAnnotations => Loc.Get("ToolSelectAnnotations"),
                 EditToolMode.RedactRegion => Loc.Get("ToolRedactRegionDragToRemoveContentEscCancel"),
                 EditToolMode.Signature => Loc.Get("ToolDrawSignature"),
                 EditToolMode.DrawFreehand => Loc.Get("ToolFreehandDragToDrawEscCancel"),
@@ -1034,6 +1054,7 @@ namespace PDF_simple_edit
         private void UpdateCursor(EditToolMode mode)
         {
             if (OverlayCanvas == null) return;
+            _annotationCanvasController?.UpdateToolCursor(mode);
         }
 
         private void SelectTool_Click(object sender, RoutedEventArgs e)
@@ -1190,6 +1211,12 @@ namespace PDF_simple_edit
 
         private void AnnotationContextMenu_Opening(object? sender, object e)
         {
+            bool isComment = _annotationCanvasController.PrimarySelection?.Type == AnnotationType.PdfComment;
+            PdfSurface.EditCommentItem.Visibility = _annotationCanvasController.PrimarySelection?.PdfCommentSubtype is "Text" or "FreeText" ? Visibility.Visible : Visibility.Collapsed;
+            PdfSurface.AlignLeftItem.IsEnabled = !isComment;
+            PdfSurface.AlignRightItem.IsEnabled = !isComment;
+            PdfSurface.AlignTopItem.IsEnabled = !isComment;
+            PdfSurface.AlignBottomItem.IsEnabled = !isComment;
             int selectedCount = _annotationCanvasController.SelectedAnnotations.Count;
             int copyableCount = _clipboardController.GetCopyableSelection().Count;
             bool hasCopyableSelection = copyableCount > 0;
@@ -1249,8 +1276,11 @@ namespace PDF_simple_edit
         private void OverlayCanvas_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e) =>
             _annotationCanvasController.DoubleTapped(e);
 
-        private void RenderAnnotationOverlays() =>
+        private void RenderAnnotationOverlays()
+        {
             _annotationCanvasController.Render();
+            _ = RefreshCommentsAsync();
+        }
 
         #endregion
 
@@ -1261,7 +1291,8 @@ namespace PDF_simple_edit
         private void OpenFindPanel()
         {
             FindPanel.Visibility = Visibility.Visible;
-            FindPanelColumn.Width = new GridLength(300);
+            FindPanelColumn.Width = new GridLength(_findSidebarWidth);
+            FindGripColumn.Width = new GridLength(5);
             TxtFindText.Focus(FocusState.Programmatic);
         }
 
@@ -1269,6 +1300,7 @@ namespace PDF_simple_edit
         {
             FindPanel.Visibility = Visibility.Collapsed;
             FindPanelColumn.Width = new GridLength(0);
+            FindGripColumn.Width = new GridLength(0);
             _documentSearchController.ClearHighlights(OverlayCanvas);
         }
 
@@ -1402,6 +1434,7 @@ namespace PDF_simple_edit
 
             if (e.Key == Windows.System.VirtualKey.Delete &&
                 _annotationCanvasController.PrimarySelection != null &&
+                !textInputFocused &&
                 !_annotationCanvasController.IsInlineEditing)
             {
                 await DeleteSelectedAnnotationsAsync();
@@ -1449,7 +1482,8 @@ namespace PDF_simple_edit
         {
             bool show = EditorMenu.ShowPagePanel;
             PagePanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-            PagePanelColumn.Width = show ? new GridLength(200) : new GridLength(0);
+            PagePanelColumn.Width = new GridLength(show ? _pageSidebarWidth : 0);
+            PageGripColumn.Width = new GridLength(show ? 5 : 0);
         }
 
         #endregion

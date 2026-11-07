@@ -28,6 +28,10 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 ### 🖋️ Annotation & Highlighting
 - **Smooth Highlighting**: Add semi-transparent highlights to text blocks.
 - **Advanced Color Control**: Integrated color picker (eyedropper) and transparency sliders to customize highlight styles.
+- **PDF Annotations**: The **Annotations** menu adds highlights, underlines, sticky notes and text boxes as standard PDF annotations; nearby settings control color, opacity and text-box font size.
+- **Annotation Management**: Use **Select annotations** to pick annotations, then remove them with `Delete` or the context menu; **Delete all annotations in document** clears every page while keeping links, form fields and page content. Undo/redo applies.
+- **Annotations / Bookmarks Sidebar**: The right sidebar groups annotations by page for selection, editing, deletion and sticky-note show/hide, and lists bookmarks hierarchically with hover tooltips and page navigation.
+- **Bookmark Editing**: Use **Add current page** to add a bookmark and **Delete** to remove it with its children; changes are saved in the PDF with undo/redo.
 - **Signature Tool**: Draw, customize, select, move, resize proportionally, edit, and save mouse-drawn signatures for reuse after reopening the PDF.
 - **Drawing Tools**: Choose smooth Freehand, Line, Arrow, Triangle-head Arrow, Outline Arrow, Rectangle, Ellipse, or Polygon from the drawing menu. Drag to draw; for polygons, click vertices and double-click, press `Enter`, or click the first vertex to close. Press `Esc` to cancel. Set the color and stroke width beside the drawing menu. For rectangles, ellipses, and polygons, check **Fill** in the color settings to fill the interior with the selected color.
 

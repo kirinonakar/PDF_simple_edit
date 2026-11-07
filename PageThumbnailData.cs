@@ -15,6 +15,15 @@ namespace PDF_simple_edit
         private int _pageNumber;
         private BitmapImage? _thumbnail;
         private Thickness _dropMargin = new(8);
+        private double _thumbnailWidth = 120;
+
+        public double ThumbnailWidth
+        {
+            get => _thumbnailWidth;
+            set { if (Math.Abs(_thumbnailWidth - value) < .1) return; _thumbnailWidth = value; OnPropertyChanged(); OnPropertyChanged(nameof(ThumbnailHeight)); OnPropertyChanged(nameof(CardWidth)); }
+        }
+        public double CardWidth => ThumbnailWidth + 20;
+        public double ThumbnailHeight => ThumbnailWidth * (_thumbnail?.PixelWidth > 0 ? (double)_thumbnail.PixelHeight / _thumbnail.PixelWidth : 4.0 / 3);
 
         public int PageNumber
         {
@@ -29,7 +38,7 @@ namespace PDF_simple_edit
         public BitmapImage? Thumbnail
         {
             get => _thumbnail;
-            set { _thumbnail = value; OnPropertyChanged(); }
+            set { _thumbnail = value; OnPropertyChanged(); OnPropertyChanged(nameof(ThumbnailHeight)); }
         }
 
         /// <summary>

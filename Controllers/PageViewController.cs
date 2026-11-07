@@ -214,6 +214,7 @@ public sealed class PageViewController
             {
                 token.ThrowIfCancellationRequested();
                 if (!ReferenceEquals(snapshot, manager.GetPdfBytes()) || !ReferenceEquals(thumbnails, _getThumbnails())) return;
+                thumbnail.ThumbnailWidth = _renderService.ThumbnailDisplayWidth;
                 thumbnails.Add(thumbnail);
             }
             if (_isInlineEditing()) UpdateLiveThumbnail();

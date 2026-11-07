@@ -53,10 +53,22 @@ public sealed class AnnotationSelectionController
         EditToolMode selectionMode = EditToolMode.Select,
         Func<bool>? isCurrent = null)
     {
+        if (selectionMode == EditToolMode.SelectAnnotations)
+        {
+            byte[]? source = manager.GetPdfBytes();
+            if (source == null) return new(primarySelection, false, null);
+            var comments = await Task.Run(() => PdfCommentService.Read(source, pageIndex));
+            if (isCurrent?.Invoke() == false || !ReferenceEquals(source, manager.GetPdfBytes())) return new(primarySelection, false, null);
+            var previous = annotations.Where(a => a.PageIndex == pageIndex && a.Type == AnnotationType.PdfComment).ToList();
+            annotations.RemoveAll(a => a.PageIndex == pageIndex && a.Type == AnnotationType.PdfComment);
+            annotations.AddRange(comments.Select(a => previous.FirstOrDefault(p => p.PdfCommentKey == a.PdfCommentKey) ?? a));
+            selectedAnnotations.RemoveAll(a => a.Type == AnnotationType.PdfComment && !annotations.Contains(a));
+            if (primarySelection != null && !annotations.Contains(primarySelection)) primarySelection = selectedAnnotations.LastOrDefault();
+        }
         PdfAnnotation? found = _contentService.FindAnnotationAt(
             annotations, pageIndex, x, y, selectionMode);
         PdfAnnotation? addedFromPageContent = null;
-        if (found == null || found.IsOriginalImageReplacement)
+        if (selectionMode != EditToolMode.SelectAnnotations && (found == null || found.IsOriginalImageReplacement))
         {
             analysisStarted();
             List<PdfPageContent> pageContents = await manager.ExtractPageContentsAsync(pageIndex,

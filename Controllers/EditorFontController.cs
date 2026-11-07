@@ -58,6 +58,11 @@ public sealed class EditorFontController
         CmbFontSize.SelectionChanged += FontSize_Changed;
         BtnBold.Click += FontBold_Click;
         BtnItalic.Click += FontItalic_Click;
+        _toolbar.UnderlineButton.Click += async (_, _) =>
+        {
+            await _annotationEditController.ApplyUnderlineAsync(_toolbar.UnderlineButton.IsChecked == true);
+            _saveSettings();
+        };
         ColorPalette.SelectionChanged += FontColor_Changed;
     }
 
@@ -94,7 +99,7 @@ public sealed class EditorFontController
             _fontSettings.FontSize,
             _fontSettings.IsBold,
             _fontSettings.IsItalic,
-            _fontSettings.Color);
+            _fontSettings.Color, _fontSettings.IsUnderline);
     }
 
     private bool _changingTextMode;
@@ -143,7 +148,7 @@ public sealed class EditorFontController
                 annotation.FontSize,
                 annotation.IsBold,
                 annotation.IsItalic,
-                annotation.Color);
+                annotation.Color, annotation.IsUnderline);
             return;
         }
 
@@ -155,7 +160,7 @@ public sealed class EditorFontController
         double fontSize,
         bool isBold,
         bool isItalic,
-        string color)
+        string color, bool isUnderline)
     {
         _isSyncingFontControls = true;
         try
@@ -203,6 +208,7 @@ public sealed class EditorFontController
                 BtnBold.IsChecked = isBold;
             if (BtnItalic != null)
                 BtnItalic.IsChecked = isItalic;
+            _toolbar.UnderlineButton.IsChecked = isUnderline;
             if (FontColorIndicator != null)
                 FontColorIndicator.Background = new SolidColorBrush(EditorColorService.Parse(color));
             ColorPalette.SelectedItem = ColorPalette.Items.OfType<Border>()

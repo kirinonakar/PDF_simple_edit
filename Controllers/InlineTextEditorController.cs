@@ -191,6 +191,10 @@ public sealed class InlineTextEditorController
             IsSpellCheckEnabled = false
         };
         SetEditorText(editor, initialText);
+        var characterFormat = editor.Document.GetDefaultCharacterFormat();
+        characterFormat.Underline = (existingAnnotation?.IsUnderline ?? settings.IsUnderline) ? Microsoft.UI.Text.UnderlineType.Single : Microsoft.UI.Text.UnderlineType.None;
+        editor.Document.SetDefaultCharacterFormat(characterFormat);
+        editor.Document.GetRange(0, initialText.Length).CharacterFormat.Underline = characterFormat.Underline;
         ApplyEditorLineSpacing(editor, displayLineHeight);
         Canvas.SetLeft(editor, pdfX * PdfToPixels);
         Canvas.SetTop(editor, pdfY * PdfToPixels + topOffset);
@@ -683,6 +687,7 @@ public sealed class InlineTextEditorController
                     FontWeight = _settings.IsBold ? 700 : 400,
                     IsBold = _settings.IsBold,
                     IsItalic = _settings.IsItalic,
+                    IsUnderline = _settings.IsUnderline,
                     Width = size.width,
                     Height = size.height,
                     IsApplied = false
