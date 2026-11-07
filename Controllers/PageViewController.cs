@@ -534,9 +534,13 @@ public sealed class PageViewController
         ApplyZoom();
     }
 
-    public void FitToPage()
+    public void FitToPage() => FitToViewport(fitHeight: true);
+
+    public void FitToWidth() => FitToViewport(fitHeight: false);
+
+    private void FitToViewport(bool fitHeight)
     {
-        if (!_getManager().IsLoaded || _overlayCanvas.Width <= 0 || _overlayCanvas.Height <= 0)
+        if (!_getManager().IsLoaded || _overlayCanvas.Width <= 0 || (fitHeight && _overlayCanvas.Height <= 0))
             return;
 
         double viewportWidth = _scrollViewer.ViewportWidth > 0
@@ -545,7 +549,7 @@ public sealed class PageViewController
         double viewportHeight = _scrollViewer.ViewportHeight > 0
             ? _scrollViewer.ViewportHeight
             : _scrollViewer.ActualHeight;
-        if (viewportWidth <= 0 || viewportHeight <= 0)
+        if (viewportWidth <= 0 || (fitHeight && viewportHeight <= 0))
             return;
 
         // The ScrollViewer zooms the page and its surrounding content margin.
@@ -553,7 +557,9 @@ public sealed class PageViewController
         // inside the viewport without creating a small scrollable remainder.
         Thickness margin = (_scrollViewer.Content as FrameworkElement)?.Margin ?? new Thickness(0);
         double zoomWidth = (viewportWidth - 1) / (_overlayCanvas.Width + margin.Left + margin.Right);
-        double zoomHeight = (viewportHeight - 1) / (_overlayCanvas.Height + margin.Top + margin.Bottom);
+        double zoomHeight = fitHeight
+            ? (viewportHeight - 1) / (_overlayCanvas.Height + margin.Top + margin.Bottom)
+            : double.PositiveInfinity;
         _setZoomLevel(Math.Clamp(Math.Min(zoomWidth, zoomHeight),
             _scrollViewer.MinZoomFactor, _scrollViewer.MaxZoomFactor));
         _scrollViewer.ChangeView(0, 0, (float)_getZoomLevel(), disableAnimation: true);

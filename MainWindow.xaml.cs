@@ -556,6 +556,7 @@ namespace PDF_simple_edit
             EditorToolbar.ZoomOutButton.Click += ZoomOut_Click;
             EditorToolbar.ZoomInButton.Click += ZoomIn_Click;
             EditorToolbar.FitToPageButton.Click += FitToPage_Click;
+            EditorToolbar.FitToWidthButton.Click += FitToWidth_Click;
 
             PageListView.SelectionChanged += PageListView_SelectionChanged;
             PagePanel.ExtractMenuItem.Click += ExtractSelectedPages_Click;
@@ -734,6 +735,7 @@ namespace PDF_simple_edit
             EditorToolbar.CommentButton.IsEnabled = hasDoc;
             EditorToolbar.CommentSettingsButton.IsEnabled = hasDoc;
             EditorToolbar.CommentSidebarButton.IsEnabled = hasDoc;
+            EditorToolbar.FitToWidthButton.IsEnabled = hasDoc;
             BtnAddText.IsEnabled = hasDoc;
             BtnHighlight.IsEnabled = hasDoc;
             BtnRedactRegion.IsEnabled = hasDoc;
@@ -992,6 +994,9 @@ namespace PDF_simple_edit
             FitToPage();
 
         private void FitToPage() => _pageViewController.FitToPage();
+
+        private void FitToWidth_Click(object sender, RoutedEventArgs e) =>
+            _pageViewController.FitToWidth();
 
         private void PdfScrollViewer_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e) =>
             _pageViewController.ViewChanged(e.IsIntermediate);

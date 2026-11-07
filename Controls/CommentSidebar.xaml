@@ -16,24 +16,31 @@
                     <TextBlock Text="{Binding}" FontSize="14"/>
                 </DataTemplate>
             </Pivot.HeaderTemplate>
-            <PivotItem Header="{loc:LocalizedString Key=Comments}">
-                <Grid Margin="4,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                    <TextBlock x:Name="CommentCount" Margin="8,0,8,8" Text="{loc:LocalizedString Key=NoCommentsOnThisPage}" TextWrapping="Wrap"/>
-                    <ListView x:Name="CommentsList" Grid.Row="1" SelectionMode="Single" SelectionChanged="Comments_SelectionChanged"/>
+            <PivotItem Header="{loc:LocalizedString Key=Comments}" Margin="0">
+                <Grid Margin="8,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <TextBlock x:Name="CommentCount" Margin="4,0,4,8" Text="{loc:LocalizedString Key=NoCommentsOnThisPage}" TextWrapping="Wrap"/>
+                    <ListView x:Name="CommentsList" Grid.Row="1" Padding="0" SelectionMode="Single" SelectionChanged="Comments_SelectionChanged">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="Padding" Value="0"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                    </ListView>
                 </Grid>
             </PivotItem>
-            <PivotItem Header="{loc:LocalizedString Key=Bookmarks}">
-                <Grid Margin="4,0">
+            <PivotItem Header="{loc:LocalizedString Key=Bookmarks}" Margin="0">
+                <Grid Margin="8,0">
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="8,0,8,8">
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="4,0,4,8">
                         <Button Content="{loc:LocalizedString Key=AddCurrentPageBookmark}" Padding="6,4" Click="AddBookmark_Click"/>
                         <Button x:Name="DeleteBookmarkButton" Content="{loc:LocalizedString Key=Delete2}" Padding="6,4" IsEnabled="False" Click="DeleteBookmark_Click" ToolTipService.ToolTip="{loc:LocalizedString Key=DeleteBookmarkWithChildren}"/>
                     </StackPanel>
-                    <TextBlock x:Name="NoBookmarks" Grid.Row="1" Text="{loc:LocalizedString Key=NoBookmarksInThisDocument}" Margin="8" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="NoBookmarks" Grid.Row="1" Text="{loc:LocalizedString Key=NoBookmarksInThisDocument}" Margin="4,8" TextWrapping="Wrap"/>
                     <TreeView x:Name="BookmarksTree" Grid.Row="1" SelectionMode="Single" SelectionChanged="Bookmark_SelectionChanged" ItemInvoked="Bookmark_Invoked" AutomationProperties.Name="{loc:LocalizedString Key=Bookmarks}">
                         <TreeView.ItemTemplate>
                             <DataTemplate x:DataType="services:PdfBookmark">
-                                <TreeViewItem ItemsSource="{x:Bind Children}" IsExpanded="True">
+                                <TreeViewItem ItemsSource="{x:Bind Children}" Tag="{x:Bind}" IsExpanded="True" Loaded="BookmarkItem_Loaded">
                                     <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" Tag="{x:Bind}" Loaded="BookmarkTitle_Loaded" ToolTipService.ToolTip="{x:Bind Title}"/>
                                 </TreeViewItem>
                             </DataTemplate>

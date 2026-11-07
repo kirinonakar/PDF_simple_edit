@@ -1075,6 +1075,9 @@
   <data name="FitToPage" xml:space="preserve">
     <value>페이지에 맞추기</value>
   </data>
+  <data name="FitToWidth" xml:space="preserve">
+    <value>너비에 맞춤</value>
+  </data>
   <data name="ShowPagePanel" xml:space="preserve">
     <value>페이지 패널 표시</value>
   </data>

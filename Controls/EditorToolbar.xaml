@@ -275,6 +275,9 @@
             <Button x:Name="FitToPageButton" x:FieldModifier="public" Padding="8,6" ToolTipService.ToolTip="{loc:LocalizedString Key=FitToPage}" Background="Transparent" BorderThickness="0">
                 <FontIcon Glyph="&#xE9A6;" FontSize="14"/>
             </Button>
+            <Button x:Name="FitToWidthButton" x:FieldModifier="public" Padding="8,6" ToolTipService.ToolTip="{loc:LocalizedString Key=FitToWidth}" AutomationProperties.Name="{loc:LocalizedString Key=FitToWidth}" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                <PathIcon Width="14" Height="14" Data="M0,2 H1.5 V14 H0 Z M14.5,2 H16 V14 H14.5 Z M2,8 L5.5,4.5 L6.5,5.5 L4.75,7.25 H11.25 L9.5,5.5 L10.5,4.5 L14,8 L10.5,11.5 L9.5,10.5 L11.25,8.75 H4.75 L6.5,10.5 L5.5,11.5 Z"/>
+            </Button>
         </StackPanel>
     </Grid>
 </UserControl>

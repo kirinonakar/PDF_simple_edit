@@ -1075,6 +1075,9 @@ To remove passwords individually, use Encryption and password settings.</value>
   <data name="FitToPage" xml:space="preserve">
     <value>Fit to page</value>
   </data>
+  <data name="FitToWidth" xml:space="preserve">
+    <value>Fit to width</value>
+  </data>
   <data name="ShowPagePanel" xml:space="preserve">
     <value>Show page panel</value>
   </data>
