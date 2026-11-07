@@ -12,12 +12,12 @@ using Windows.Graphics.Imaging;
 namespace PDF_simple_edit.Mcp;
 
 /// <summary>Image content is sent to the calling agent, rather than an external OCR/model API.</summary>
-internal sealed record PdfMcpImageResult(object Metadata, byte[] Png)
+internal sealed record PdfMcpImageResult(object Metadata, byte[] Jpeg)
 {
     public object[] Content => new object[]
     {
         new { type = "text", text = JsonSerializer.Serialize(Metadata) },
-        new { type = "image", mimeType = "image/png", data = Convert.ToBase64String(Png) }
+        new { type = "image", mimeType = "image/jpeg", data = Convert.ToBase64String(Jpeg) }
     };
 }
 
@@ -31,12 +31,12 @@ internal static partial class PdfMcpTools
                 new { type = "object", properties = fields, required, additionalProperties = false },
                 new { readOnlyHint = readOnly, destructiveHint = !readOnly, openWorldHint = false }));
         }
-        Add("pdf_vlm_ocr", "Return one page image + revision for your own vision model. Transcribe words/short lines, then pdf_vlm_ocr_apply. Read every target page first. Requires image-capable client; no external model API.",
+        Add("pdf_vlm_ocr", "Return one JPEG page image (longest edge at most 2048 pixels) + revision for your own vision model. Transcribe words/short lines, then pdf_vlm_ocr_apply. Read every target page first. Requires image-capable client; no external model API.",
             new[] { "inputPath" }, true, new(Input)
             {
                 ["page"] = Page,
-                ["maxDimension"] = new { type = "integer", minimum = 512, maximum = 4096,
-                    description = "Longest preview edge in pixels, default 2048. Increase for small print." }
+                ["maxDimension"] = new { type = "integer", minimum = 512, maximum = 2048,
+                    description = "Maximum length of the JPEG's longest edge in pixels, default 2048. Aspect ratio is preserved." }
             });
 
         object coordinate = new { type = "number", minimum = 0, maximum = 16384 };
@@ -77,7 +77,7 @@ internal static partial class PdfMcpTools
     {
         using var renderer = await PdfRenderDocument.LoadAsync(bytes);
         int pageIndex = arguments.Integer("page", 1, 1, renderer.PageCount) - 1;
-        int limit = arguments.Integer("maxDimension", 2048, 512, 4096);
+        int limit = arguments.Integer("maxDimension", 2048, 512, 2048);
         var size = renderer.GetPageSize(pageIndex);
         double scale = (limit - 1.0) / Math.Max(size.Width, size.Height);
         using var rendered = await renderer.RenderAsync(pageIndex, scale, cancellation)
@@ -95,7 +95,11 @@ internal static partial class PdfMcpTools
         using var output = new MemoryStream();
         using (var stream = output.AsRandomAccessStream())
         {
-            var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, stream).AsTask(cancellation);
+            var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.JpegEncoderId, stream,
+                new BitmapPropertySet
+                {
+                    ["ImageQuality"] = new BitmapTypedValue(0.9f, Windows.Foundation.PropertyType.Single)
+                }).AsTask(cancellation);
             encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore, width, height, 96, 96, pixels.DetachPixelData());
             await encoder.FlushAsync().AsTask(cancellation);
             cancellation.ThrowIfCancellationRequested();

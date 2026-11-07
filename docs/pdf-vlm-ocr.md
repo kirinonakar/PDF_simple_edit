@@ -18,12 +18,14 @@ Call `pdf_vlm_ocr`:
 ```
 
 The MCP result contains a text block with JSON metadata, followed by an actual
-`image` block (`mimeType: image/png`, base64 `data`). It is not a path that the
+`image` block (`mimeType: image/jpeg`, base64 `data`). It is not a path that the
 agent must open separately. The client must pass image tool results through to
 the agent's vision model. Metadata contains the source `revision`, `pageCount`,
 1-based `page`, actual image pixel dimensions, and instructions for applying OCR.
-`page` defaults to 1. `maxDimension` defaults to 2048 (512–4096) and limits the
-longest preview edge; increase it for small print. No file is written by this tool.
+`page` defaults to 1. `maxDimension` defaults to 2048 (512–2048) and limits the
+longest preview edge while preserving the aspect ratio. Images are encoded as
+JPEG at 90% quality, and neither dimension exceeds 2048 pixels. No file is written
+by this tool.
 
 Read the image and transcribe visible text exactly, with tight word or short-line
 bounding boxes. Preserve the language, punctuation and reading order. Do not
