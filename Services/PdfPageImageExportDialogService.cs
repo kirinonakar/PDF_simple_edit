@@ -25,7 +25,7 @@ public sealed class PdfPageImageExportDialogService
         allPages.Checked += (_, _) => pages.IsEnabled = false;
         specifiedPages.Checked += (_, _) => { pages.IsEnabled = true; pages.Focus(FocusState.Programmatic); };
         var resolution = new ComboBox { Header = Loc.Get("ImageExportResolution"), HorizontalAlignment = HorizontalAlignment.Stretch };
-        foreach (int dpi in new[] { 96, 150, 300 })
+        foreach (int dpi in new[] { 96, 150, 300, 600 })
             resolution.Items.Add(new ComboBoxItem { Content = $"{dpi} DPI", Tag = dpi });
         resolution.SelectedIndex = 2;
         var error = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Microsoft.UI.Colors.Red) };

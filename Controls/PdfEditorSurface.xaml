@@ -16,7 +16,7 @@
         </StackPanel>
 
         <ScrollViewer x:Name="Viewer" x:FieldModifier="public" Visibility="Collapsed" ZoomMode="Enabled"
-                      MinZoomFactor="0.25" MaxZoomFactor="5"
+                      MinZoomFactor="0.1" MaxZoomFactor="5"
                       HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
             <Grid x:Name="ContentGrid" x:FieldModifier="public" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="20">
                 <Image x:Name="PageImage" x:FieldModifier="public" Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Top"/>
