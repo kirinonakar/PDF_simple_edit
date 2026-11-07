@@ -8,6 +8,10 @@ namespace PDF_simple_edit.Services;
 /// <summary>Logical character ranges between two PDF-coordinate caret positions.</summary>
 public static class PdfTextSelectionService
 {
+    public static string GetSelectedText(IReadOnlyList<NativePdfTextBlock> selected) =>
+        string.Join(Environment.NewLine, selected.Select(block => string.Concat(block.Glyphs
+            .Select(glyph => glyph.IsSoftBreak ? Environment.NewLine : glyph.Text))));
+
     public static List<NativePdfTextBlock> SelectRange(IReadOnlyList<NativePdfTextBlock> blocks,
         PdfTextPoint start, PdfTextPoint end)
     {

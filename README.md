@@ -49,6 +49,8 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 - **Text Search**: Powerful search functionality to find specific phrases within the document.
 - **Korean / English UI**: The interface is fully localized in Korean and English.
 - **Keyboard Shortcuts**:
+  - `↑` / `Page Up`: Previous page
+  - `↓` / `Page Down`: Next page
   - `S`: Switch to **Text Selection**
   - `G`: Switch to **Graphic Selection**
   - `A`: Switch to **Add Text Tool**

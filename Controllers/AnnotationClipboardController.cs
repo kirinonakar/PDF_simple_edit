@@ -55,6 +55,25 @@ public sealed class AnnotationClipboardController(
 
     public async Task<bool> CopySelectedObjectsAsync()
     {
+        string selectedPdfText = canvasController.TextSelection.SelectedText;
+        if (selectedPdfText.Length > 0)
+        {
+            try
+            {
+                var textPackage = new DataPackage { RequestedOperation = DataPackageOperation.Copy };
+                textPackage.SetText(selectedPdfText);
+                Clipboard.SetContent(textPackage);
+                Clipboard.Flush();
+                statusText.Text = Loc.Get("CopiedTextToTheClipboard");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Clipboard copy error: {ex}");
+                statusText.Text = Loc.Get("CouldNotCopyToTheClipboard");
+                return false;
+            }
+        }
         List<PdfAnnotation> selectedObjects = GetCopyableSelection();
         if (selectedObjects.Count == 0)
             return false;

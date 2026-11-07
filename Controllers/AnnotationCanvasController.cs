@@ -53,6 +53,7 @@ public sealed class AnnotationCanvasController
     private readonly InlineTextEditorController _inlineTextEditorController = new();
     private readonly AnnotationSelectionController _selectionController;
     private readonly DrawingInteractionController _drawingController;
+    public PdfTextSelectionController TextSelection { get; }
 
     private uint? _pendingSelectPointerId;
     private long _selectPointerPressSequence;
@@ -118,6 +119,7 @@ public sealed class AnnotationCanvasController
         _applyPickedHighlightColor = applyPickedHighlightColor;
         _renderCurrentPageAsync = renderCurrentPageAsync;
         _focusAfterInlineEdit = focusAfterInlineEdit;
+        TextSelection = new(canvas, statusText, getManager, getPageIndex, getToolMode);
         _selectionController = new AnnotationSelectionController(_contentService);
         _drawingController = new DrawingInteractionController(canvas, statusText, getManager, getPageIndex,
             getToolMode, getDrawingColor, getDrawingLineWidth, getDrawingFill, annotation =>
@@ -156,12 +158,14 @@ public sealed class AnnotationCanvasController
 
     public void ClearSelection()
     {
+        TextSelection.Clear();
         PrimarySelection = null;
         SelectedAnnotations.Clear();
     }
 
     public void CancelSelectionGesture()
     {
+        TextSelection.Clear();
         if (_commentTransform is { } transform)
             SetCommentBounds(transform.Target, new(transform.Original.X, transform.Original.Y, transform.Original.Width, transform.Original.Height));
         _commentTransform = null;
@@ -189,6 +193,7 @@ public sealed class AnnotationCanvasController
 
     public void CancelRegionGesture()
     {
+        TextSelection.CancelGesture();
         if (_regionStart != null || _commentGesture != null || _commentTransform != null) CancelSelectionGesture();
     }
 
@@ -218,6 +223,15 @@ public sealed class AnnotationCanvasController
         double pdfX = position.X / PdfToPixels;
         double pdfY = position.Y / PdfToPixels;
         EditToolMode toolMode = _getToolMode();
+        if (toolMode == EditToolMode.None)
+        {
+            if (!isLeftButton) return;
+            ClearSelection();
+            Render();
+            _focusAfterInlineEdit(false);
+            await TextSelection.PressedAsync(e);
+            return;
+        }
         if (toolMode == EditToolMode.SelectAnnotations) selectPressSequence = ++_selectPointerPressSequence;
 
         if (toolMode is EditToolMode.TextHighlight or EditToolMode.TextUnderline or EditToolMode.StickyNote or EditToolMode.CommentTextBox)
@@ -332,6 +346,7 @@ public sealed class AnnotationCanvasController
 
     public void PointerMoved(PointerRoutedEventArgs e)
     {
+        if (TextSelection.Moved(e)) return;
         if (_commentTransform is { } transform)
         {
             var point = e.GetCurrentPoint(_canvas);
@@ -443,6 +458,7 @@ public sealed class AnnotationCanvasController
 
     public async Task PointerReleasedAsync(PointerRoutedEventArgs e)
     {
+        if (TextSelection.Released(e)) return;
         if (_commentTransform is { } transform)
         {
             _commentTransform = null; _canvas.ReleasePointerCapture(e.Pointer); e.Handled = true;
@@ -632,7 +648,7 @@ public sealed class AnnotationCanvasController
     }
 
     public void UpdateToolCursor(EditToolMode mode) => SetElementCursor(_canvas, InputSystemCursor.Create(
-        mode is EditToolMode.TextHighlight or EditToolMode.TextUnderline ? InputSystemCursorShape.IBeam : InputSystemCursorShape.Arrow));
+        mode is EditToolMode.None or EditToolMode.TextHighlight or EditToolMode.TextUnderline ? InputSystemCursorShape.IBeam : InputSystemCursorShape.Arrow));
 
     public void DoubleTapped(DoubleTappedRoutedEventArgs e)
     {
@@ -648,7 +664,7 @@ public sealed class AnnotationCanvasController
             _drawingController.DoubleTapped(e);
             return;
         }
-        if (IsInlineEditing || _getToolMode() is EditToolMode.SelectGraphics or EditToolMode.RedactRegion or
+        if (IsInlineEditing || _getToolMode() is EditToolMode.None or EditToolMode.SelectGraphics or EditToolMode.RedactRegion or
             EditToolMode.TextHighlight or EditToolMode.TextUnderline or EditToolMode.StickyNote or EditToolMode.CommentTextBox)
             return;
 
@@ -699,10 +715,13 @@ public sealed class AnnotationCanvasController
         if (_commentPreview != null && !_canvas.Children.Contains(_commentPreview)) _canvas.Children.Add(_commentPreview);
         if (_commentTextPreview != null && !_canvas.Children.Contains(_commentTextPreview)) _canvas.Children.Add(_commentTextPreview);
         _drawingController.Redraw();
+        TextSelection.Render();
     }
 
     public bool HandleDrawingKey(Windows.System.VirtualKey key)
     {
+        if (key == Windows.System.VirtualKey.Escape && _getToolMode() == EditToolMode.None)
+        { TextSelection.Clear(); return true; }
         if (key == Windows.System.VirtualKey.Escape && (_commentGesture != null || _commentTransform != null))
         { CancelRegionGesture(); Render(); return true; }
         return _drawingController.HandleKey(key);

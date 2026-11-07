@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml.Media;
 using PDF_simple_edit.Helpers;
 using PDF_simple_edit.Models;
@@ -26,6 +27,7 @@ namespace PDF_simple_edit
     {
         private readonly ObservableCollection<PdfDocumentTab> _tabs = new();
         private PdfDocumentTab? _activeTab;
+        private WindowNavigationKeyFilter? _navigationKeyFilter;
 
         private int _currentPageIndex
         {
@@ -33,7 +35,11 @@ namespace PDF_simple_edit
             set
             {
                 if (_activeTab == null) return;
-                if (_activeTab.CurrentPageIndex != value) _annotationCanvasController?.CancelDrawing();
+                if (_activeTab.CurrentPageIndex != value)
+                {
+                    _annotationCanvasController?.CancelDrawing();
+                    _annotationCanvasController?.TextSelection.Clear();
+                }
                 _activeTab.CurrentPageIndex = value;
             }
         }
@@ -169,8 +175,7 @@ namespace PDF_simple_edit
                         }
                         else
                         {
-                            BtnSelect.Focus(FocusState.Programmatic);
-                            Content.Focus(FocusState.Programmatic);
+                            PdfScrollViewer.Focus(FocusState.Programmatic);
                         }
                     });
                 _annotationCanvasController.RegionRedactionRequested = RedactRegionAsync;
@@ -256,6 +261,7 @@ namespace PDF_simple_edit
                     _fileController.OpenPdfFileAsync,
                     ShowErrorDialogAsync);
                 WireChildControlEvents();
+                Content.PreviewKeyDown += PageNavigation_KeyDown;
                 InitializeCommentControls();
                 DocTabView.TabItemsSource = _tabs;
                 // TextBox 내부 처리로 이미 Handled 된 키도 편집 확정 로직에서
@@ -267,6 +273,8 @@ namespace PDF_simple_edit
 
                 // 1. 현재 윈도우의 핸들(HWND) 가져오기
                 IntPtr hWnd = WindowNative.GetWindowHandle(this);
+                try { _navigationKeyFilter = new WindowNavigationKeyFilter(hWnd, TryHandlePageNavigationKey); }
+                catch (Exception error) { System.Diagnostics.Debug.WriteLine($"Navigation key filter initialization: {error}"); }
 
                 // 2. WindowId 및 AppWindow 객체 가져오기
                 WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
@@ -384,6 +392,7 @@ namespace PDF_simple_edit
 
         private async void DocTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            _annotationCanvasController?.TextSelection.Clear();
             _annotationCanvasController?.CancelDrawing();
             _annotationCanvasController?.CancelRegionGesture();
             _pageViewController?.CancelPendingOperations();
@@ -595,6 +604,7 @@ namespace PDF_simple_edit
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
+            _navigationKeyFilter?.Dispose();
             _pageViewController.CancelPendingOperations();
             _documentSearchController.CancelPendingSearch();
             foreach (var tab in _tabs) tab.PdfManager.Close();
@@ -1220,7 +1230,7 @@ namespace PDF_simple_edit
             int selectedCount = _annotationCanvasController.SelectedAnnotations.Count;
             int copyableCount = _clipboardController.GetCopyableSelection().Count;
             bool hasCopyableSelection = copyableCount > 0;
-            PdfSurface.CopyItem.Visibility = hasCopyableSelection
+            PdfSurface.CopyItem.Visibility = hasCopyableSelection || _annotationCanvasController.TextSelection.HasSelection
                 ? Visibility.Visible
                 : Visibility.Collapsed;
             PdfSurface.CutItem.Visibility = hasCopyableSelection && copyableCount == selectedCount
@@ -1359,6 +1369,59 @@ namespace PDF_simple_edit
         #endregion
 
         #region Keyboard Shortcuts Extension
+        private async void PageNavigation_KeyDown(object sender, KeyRoutedEventArgs e)
+        {
+            bool previous = e.Key is Windows.System.VirtualKey.Up or Windows.System.VirtualKey.PageUp;
+            bool next = e.Key is Windows.System.VirtualKey.Down or Windows.System.VirtualKey.PageDown;
+            if ((!previous && !next) || !CanNavigatePageFromKeyboard())
+                return;
+
+            e.Handled = true;
+            await NavigatePageFromKeyboardAsync(previous);
+        }
+
+        private bool CanNavigatePageFromKeyboard()
+        {
+            var root = Content.XamlRoot;
+            if (!_pdfManager.IsLoaded || _annotationCanvasController.IsInlineEditing || root == null ||
+                VisualTreeHelper.GetOpenPopupsForXamlRoot(root).Count > 0 || KeyboardStateService.IsControlDown() ||
+                InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Menu).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down) ||
+                InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down))
+                return false;
+
+            for (var focused = FocusManager.GetFocusedElement(root) as DependencyObject; focused != null;
+                focused = VisualTreeHelper.GetParent(focused))
+            {
+                if (focused is TextBox or RichEditBox or NumberBox or ComboBox or Slider or ContentDialog)
+                    return false;
+            }
+            return true;
+        }
+
+        private bool TryHandlePageNavigationKey(Windows.System.VirtualKey key)
+        {
+            if (!CanNavigatePageFromKeyboard()) return false;
+            var manager = _pdfManager;
+            // WinUI MenuBarItem listens to handled KeyDown events too. Consume the
+            // native key first, then run page navigation outside the hook callback.
+            return DispatcherQueue.TryEnqueue(async () =>
+            {
+                if (manager != _pdfManager || !CanNavigatePageFromKeyboard()) return;
+                await NavigatePageFromKeyboardAsync(key is Windows.System.VirtualKey.Up or Windows.System.VirtualKey.PageUp);
+            });
+        }
+
+        private async Task NavigatePageFromKeyboardAsync(bool previous)
+        {
+            PdfScrollViewer.Focus(FocusState.Programmatic);
+            if ((previous && _currentPageIndex == 0) || (!previous && _currentPageIndex >= _pdfManager.PageCount - 1))
+                return;
+            _annotationCanvasController.CancelSelectionGesture();
+            _annotationCanvasController.ClearSelection();
+            if (previous) await _pageViewController.MovePreviousAsync();
+            else await _pageViewController.MoveNextAsync();
+        }
+
         private async void MainWindow_KeyDown(object sender, KeyRoutedEventArgs e)
         {
             if (KeyboardStateService.IsControlKey(e.Key))
@@ -1407,7 +1470,7 @@ namespace PDF_simple_edit
                 !_annotationCanvasController.IsInlineEditing)
             {
                 if (e.Key == Windows.System.VirtualKey.C &&
-                    _clipboardController.GetCopyableSelection().Count > 0)
+                    (_annotationCanvasController.TextSelection.HasSelection || _clipboardController.GetCopyableSelection().Count > 0))
                 {
                     e.Handled = true;
                     await _clipboardController.CopySelectedObjectsAsync();

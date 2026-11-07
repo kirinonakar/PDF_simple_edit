@@ -11,6 +11,11 @@
             <Button x:Name="CloseButton" HorizontalAlignment="Right" Content="&#xE711;" FontFamily="Segoe Fluent Icons" Padding="6" AutomationProperties.Name="{loc:LocalizedString Key=Close}" Click="Close_Click"/>
         </Grid>
         <Pivot Grid.Row="1" Margin="-8,0">
+            <Pivot.HeaderTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding}" FontSize="14"/>
+                </DataTemplate>
+            </Pivot.HeaderTemplate>
             <PivotItem Header="{loc:LocalizedString Key=Comments}">
                 <Grid Margin="4,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                     <TextBlock x:Name="CommentCount" Margin="8,0,8,8" Text="{loc:LocalizedString Key=NoCommentsOnThisPage}" TextWrapping="Wrap"/>
