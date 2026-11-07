@@ -98,7 +98,6 @@ The server exposes these tools through `tools/list`, including argument schemas:
 | `pdf_edit_text` | Replace, delete, move, scale, rotate, reflow and restyle original text |
 | `pdf_add_graphic` | Rectangle, ellipse, line, polygon, freehand, highlight or image; rotation and opacity |
 | `pdf_edit_graphic` | Move, resize, rotate, recolor paths, or replace a graphic/image/annotation |
-
 | `pdf_delete_object` | Remove original text, graphics, images or annotations |
 | `pdf_delete_objects` | Delete multiple inspected objects across pages using the same source revision |
 | `pdf_batch` | Apply multiple edits, additions, redactions, form and page operations to one PDF atomically |
