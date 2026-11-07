@@ -39,23 +39,6 @@ internal static class PdfMcpCreationGuide
             },
             arguments = JsonSerializer.Deserialize<JsonElement>(PositionedExample)
         },
-        "roundtrip" => new
-        {
-            steps = new object[]
-            {
-                new { tool = "pdf_to_json", arguments = new { inputPath = @"D:\Documents\original.pdf", outputPath = @"D:\Documents\archive.json" } },
-                new { tool = "pdf_create", arguments = new { jsonPath = @"D:\Documents\archive.json", outputPath = @"D:\Documents\restored.pdf" } }
-            },
-            rules = new[]
-            {
-                "Archive format is pdf-simple-editor/archive-v1. pdfBase64 contains the entire original PDF; sha256 validates it. Do not author or alter these fields manually.",
-                "Restoration returns exactly the original PDF bytes, retaining fonts, vectors, images, annotations, metadata and object ordering.",
-                "sourceInfo is a read-only page/object inspection snapshot, not editable creation data. Changing sourceInfo does not edit the restored PDF. For edits, use PDF editing tools after restoration, or author a new text/content/pages document.",
-                "When using jsonPath, only outputPath and overwrite may accompany it. Explicit output arguments override those in the JSON file. Nested jsonPath references are rejected.",
-                "JSON file may be a raw pdf_create arguments object or {name:'pdf_create',arguments:{...}} (use proper double-quoted JSON). All asset/output paths inside must be absolute.",
-                "CLI: PDFSimpleEditor.exe --create input.json --output output.pdf; PDFSimpleEditor.exe input.json --output output.pdf; PDFSimpleEditor.exe --to-json input.pdf --output archive.json. Add --overwrite only when replacement is intended."
-            }
-        },
         _ => new
         {
             recommendedWorkflow = new[]
@@ -66,11 +49,13 @@ internal static class PdfMcpCreationGuide
                 "Call pdf_create with the JSON inline, or {jsonPath:absolute_file,outputPath:absolute_pdf}. Do not wrap a raw arguments JSON file in a tools/call protocol message.",
                 "On validation/layout errors, use the reported field/type and adjust JSON before retrying. Failed creation does not replace the output. Existing destinations need explicit overwrite=true.",
                 "Verify created text with pdf_read and geometry with pdf_inspect. Use pdf_to_images to review the visual result.",
-                "For exact PDF→JSON→PDF preservation, use pdf_to_json then pdf_create jsonPath; see topic=roundtrip."
+                "When using jsonPath, only outputPath and overwrite may accompany it. Explicit output arguments override those in the JSON file. Nested jsonPath references are rejected.",
+                "JSON file may be a raw pdf_create arguments object or {name:'pdf_create',arguments:{...}} (use proper double-quoted JSON). All asset/output paths inside must be absolute.",
+                "CLI: PDFSimpleEditor.exe --create input.json --output output.pdf; PDFSimpleEditor.exe input.json --output output.pdf. Add --overwrite only when replacement is intended."
             },
             simpleArguments = new { outputPath = @"D:\Documents\document.pdf", text = "Document body\n한글 본문", fontSize = 12, margin = 36 },
-            modes = new { text = "Automatic plain text", content = "Automatic structured blocks", pages = "Explicit page elements", jsonPath = "Load creation JSON or lossless archive", blank = "No content fields; optional pageCount" },
-            nextTopics = new[] { "flow", "positioned", "roundtrip", "schema" }
+            modes = new { text = "Automatic plain text", content = "Automatic structured blocks", pages = "Explicit page elements", jsonPath = "Load creation JSON", blank = "No content fields; optional pageCount" },
+            nextTopics = new[] { "flow", "positioned", "schema" }
         }
     };
 

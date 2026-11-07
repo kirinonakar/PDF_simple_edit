@@ -94,12 +94,10 @@ internal static partial class PdfMcpTools
         }
         Dictionary<string, object> Fields(params (string key, object field)[] values) => values.ToDictionary(p => p.key, p => p.field);
         var objectId = Fields(("objectId", Field("string", "Exact object ID returned by pdf_inspect or pdf_find_text for this file revision and page.")));
-        Add("pdf_create", "Create PDF from one mode: text, content, pages or jsonPath. Before complex JSON, call pdf_create_help (flow/positioned; schema for exact fields). title is metadata. pdf_to_json archives restore byte-for-byte via jsonPath.", new[] { "outputPath" }, false,
+        Add("pdf_create", "Create PDF from one mode: text, content, pages or jsonPath. Before complex JSON, call pdf_create_help (flow/positioned; schema for exact fields). title is metadata.", new[] { "outputPath" }, false,
             Output, Style, PdfMcpCreationService.Schema(Graphic));
         Add("pdf_create_help", "On-demand creation guide/examples. topic=schema returns the full validated pdf_create schema, including nested fields.", Array.Empty<string>(), true,
-            Fields(("topic", new { type = "string", @enum = new[] { "overview", "flow", "positioned", "roundtrip", "schema" } })));
-        Add("pdf_to_json", "Export lossless JSON archive plus read-only inspection. Restore identical PDF bytes with pdf_create jsonPath.", new[] { "inputPath", "outputPath" }, false,
-            Input, new Dictionary<string, object>(Output) { ["outputPath"] = Field("string", "Absolute destination JSON archive path. Parent directory must exist.") });
+            Fields(("topic", new { type = "string", @enum = new[] { "overview", "flow", "positioned", "schema" } })));
         Add("pdf_inspect", "Get revision, page sizes and editable IDs on one page. Filter with kind/region/maxObjects. Form fields: kind=all only, independent of maxObjects. Use pdf_find_text for document-wide text search.", new[] { "inputPath" }, true,
             Input, Fields(("page", Page),
                 ("kind", new { type = "string", @enum = new[] { "all", "text", "graphics" }, description = "Object category; default all. text returns editable body text only." }),
@@ -145,7 +143,7 @@ internal static partial class PdfMcpTools
 
     public static async Task<object> ExecuteAsync(string name, JsonElement arguments, CancellationToken cancellation)
     {
-        if (name == "pdf_create") arguments = await PdfMcpJsonArchive.ExpandRequestAsync(arguments, cancellation);
+        if (name == "pdf_create") arguments = await PdfMcpCreationJson.ExpandRequestAsync(arguments, cancellation);
         Validate(arguments, JsonSerializer.SerializeToElement(Catalog[name].inputSchema), "arguments");
         cancellation.ThrowIfCancellationRequested();
         var a = new PdfMcpArguments(arguments);
@@ -154,8 +152,7 @@ internal static partial class PdfMcpTools
         if (a.Has("outputPath"))
         {
             string destination = a.Path("outputPath");
-            string extension = name == "pdf_to_json" ? ".json" : ".pdf";
-            if (!System.IO.Path.GetExtension(destination).Equals(extension, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException($"outputPath must end in {extension}.");
+            if (!System.IO.Path.GetExtension(destination).Equals(".pdf", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("outputPath must end in .pdf.");
             destinationVersion = PdfFileVersion.Read(destination);
             if (destinationVersion.Hash != null && !a.Flag("overwrite")) throw new IOException("Output already exists. Choose a new path or set overwrite=true explicitly.");
         }
@@ -199,13 +196,6 @@ internal static partial class PdfMcpTools
         if (name == "pdf_find_text") return await FindTextAsync(a, bytes, revision, cancellation);
         if (name == "pdf_vlm_ocr") return await RenderVlmOcrAsync(a, bytes, revision, cancellation);
         if (name == "pdf_vlm_ocr_apply") return await ApplyVlmOcrAsync(a, bytes, revision, inputPath, destinationVersion, cancellation);
-        if (name == "pdf_to_json")
-        {
-            var archive = await PdfMcpJsonArchive.ExportAsync(bytes, revision, a, Inspect, cancellation);
-            cancellation.ThrowIfCancellationRequested();
-            await PdfAtomicFile.WriteAsync(a.Path("outputPath"), archive, destinationVersion);
-            return new { outputPath = a.Path("outputPath"), pdfRevision = revision, format = PdfMcpJsonArchive.Format };
-        }
         if (name == "pdf_read") return await Task.Run(() => PdfMcpReader.Read(a, bytes, revision, cancellation), cancellation);
         if (name is "pdf_to_images" or "pdf_extract_images")
         {
@@ -330,10 +320,6 @@ internal static partial class PdfMcpTools
         }, name == "pdf_extract_pages" ? a : null);
         return edited;
     }
-
-    // Lossless archives retain the complete, unfiltered inspection snapshot.
-    private static Task<object> Inspect(PdfMcpArguments a, byte[] bytes, string revision) =>
-        InspectAsync(a, bytes, revision, CancellationToken.None);
 
     internal static void AddGraphic(PdfDocument pdf, int pageIndex, PdfMcpArguments a, PdfTextBox? original = null)
     {

@@ -108,9 +108,6 @@ public sealed class EditorFontController
         if (_changingTextMode) return;
         var mode = (TextEditingMode)_toolbar.TextEditingModeComboBox.SelectedIndex;
         if (!Enum.IsDefined(mode)) return;
-        _toolbar.TextEditingModeDescription.Text = mode == TextEditingMode.PreserveOriginal
-            ? Loc.Get("PreserveOriginalChangeFontSizeColorBoldItalicAlt")
-            : Loc.Get("ChangeFontAndSizeEditByReplacingOriginalText");
         if (_fontSettings.TextEditingMode == mode) return;
         _changingTextMode = true;
         _toolbar.TextEditingModeComboBox.IsEnabled = false;

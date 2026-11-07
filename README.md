@@ -88,7 +88,6 @@ The server exposes these tools through `tools/list`, including argument schemas:
 | --- | --- |
 | `pdf_create` | Complete PDFs from plain text, structured flow blocks, positioned page elements or a JSON file |
 | `pdf_create_help` | Agent authoring guide, working examples and the live JSON schema |
-| `pdf_to_json` | Lossless PDF archive with readable page/object information; restore through `pdf_create` |
 | `pdf_inspect` | Document revision, page sizes and editable objects; optional kind, region and count filters |
 | `pdf_find_text` | Search editable text across all pages and return matching object IDs, page numbers and bounds |
 | `pdf_read` | Read body text for one page, a page range or all pages; results remain separated by page |

@@ -393,12 +393,6 @@
   <data name="DrawingAddedUseSelectGraphicsGToEditIt" xml:space="preserve">
     <value>Drawing added. Use Select graphics (G) to edit it.</value>
   </data>
-  <data name="PreserveOriginalChangeFontSizeColorBoldItalicAlt" xml:space="preserve">
-    <value>Preserve original · Change font, size, color, bold, italic · Alt+drag to move</value>
-  </data>
-  <data name="ChangeFontAndSizeEditByReplacingOriginalText" xml:space="preserve">
-    <value>Change font and size · Edit by replacing original text</value>
-  </data>
   <data name="SwitchedToOriginalPreservingModeSelectTheTextAgain" xml:space="preserve">
     <value>Switched to original-preserving mode. Select the text again.</value>
   </data>

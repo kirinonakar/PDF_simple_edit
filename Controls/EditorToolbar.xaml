@@ -26,7 +26,6 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="{loc:LocalizedString Key=TextEditingMode}" VerticalAlignment="Center" Margin="0,0,10,0"/>
                 <ComboBox x:Name="TextEditingModeComboBox" x:FieldModifier="public" Grid.Column="1" Width="168" SelectedIndex="1"
@@ -38,9 +37,6 @@
                           IsChecked="False" VerticalAlignment="Center"
                           Content="{loc:LocalizedString Key=AdjustTextWidth}"
                           ToolTipService.ToolTip="{loc:LocalizedString Key=AdjustTextWidthTooltip}"/>
-                <TextBlock x:Name="TextEditingModeDescription" x:FieldModifier="public" Grid.Column="3" Margin="10,0,0,0"
-                           VerticalAlignment="Center" FontSize="12" TextTrimming="CharacterEllipsis"
-                           Text="{loc:LocalizedString Key=PreserveOriginalChangeFontSizeColorBoldItalicAlt}"/>
             </Grid>
             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Spacing="2">
                 <DropDownButton x:Name="CommentButton" x:FieldModifier="public" Content="{loc:LocalizedString Key=Comments}" IsEnabled="False" Padding="8,6" AutomationProperties.Name="{loc:LocalizedString Key=Comments}">

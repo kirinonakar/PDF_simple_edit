@@ -393,12 +393,6 @@
   <data name="DrawingAddedUseSelectGraphicsGToEditIt" xml:space="preserve">
     <value>그리기가 추가되었습니다. 그래픽 선택(G)으로 편집할 수 있습니다.</value>
   </data>
-  <data name="PreserveOriginalChangeFontSizeColorBoldItalicAlt" xml:space="preserve">
-    <value>원본 유지 · 글꼴·크기·색상·굵게·기울임 변경 · Alt+드래그 이동</value>
-  </data>
-  <data name="ChangeFontAndSizeEditByReplacingOriginalText" xml:space="preserve">
-    <value>글꼴·크기 변경 가능 · 원본 텍스트를 교체하여 편집</value>
-  </data>
   <data name="SwitchedToOriginalPreservingModeSelectTheTextAgain" xml:space="preserve">
     <value>원본 보존 방식으로 전환했습니다. 텍스트를 다시 선택해 주세요.</value>
   </data>

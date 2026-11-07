@@ -57,11 +57,7 @@ internal sealed partial class PdfMcpCreationService
         };
         return new()
         {
-            ["jsonPath"] = String("Absolute path to a UTF-8 JSON file containing pdf_create arguments or an archive from pdf_to_json. Only outputPath/overwrite may accompany jsonPath; explicit output arguments override the file."),
-            ["format"] = String("Lossless archive format identifier, emitted by pdf_to_json. Do not change."),
-            ["pdfBase64"] = String("Original PDF bytes from pdf_to_json. Restored byte-for-byte, without rebuilding page content."),
-            ["sha256"] = String("SHA-256 of pdfBase64's decoded bytes; required for archive restoration."),
-            ["sourceInfo"] = new { type = "object", readOnly = true, additionalProperties = true, description = "Read-only inspection snapshot in lossless archives. This is not a content-editing input." },
+            ["jsonPath"] = String("Absolute path to a UTF-8 JSON file containing pdf_create arguments. Only outputPath/overwrite may accompany jsonPath; explicit output arguments override the file."),
             ["text"] = String("Plain body text, automatically wrapped and paginated. Mutually exclusive with content/pages."),
             ["content"] = Array(new Dictionary<string, object> { ["$ref"] = "#/$defs/block" }, 1),
             ["pages"] = Array(Object(page), 1),
@@ -75,8 +71,6 @@ internal sealed partial class PdfMcpCreationService
 
     internal static byte[] Create(PdfMcpArguments arguments, CancellationToken cancellation)
     {
-        if (arguments.Has("pdfBase64")) return PdfMcpJsonArchive.Restore(arguments, cancellation);
-        if (arguments.Has("format") || arguments.Has("sha256") || arguments.Has("sourceInfo")) throw new ArgumentException("Archive fields require pdfBase64 from pdf_to_json.");
         int modes = new[] { "text", "content", "pages" }.Count(arguments.Has);
         if (modes > 1) throw new ArgumentException("Supply only one of text, content or pages.");
         if (modes != 0 && arguments.Has("pageCount")) throw new ArgumentException("pageCount is only for blank documents; content determines the page count.");

@@ -1,8 +1,8 @@
 # PDF creation JSON for agents
 
 Call `pdf_create_help` before composing a complex document. Use `topic: "schema"`
-for the live schema, `flow` or `positioned` for complete working examples, and
-`roundtrip` for exact restoration. The examples returned by the tool are valid
+for the live schema, or `flow` or `positioned` for complete working examples.
+The examples returned by the tool are valid
 creation arguments; replace their output paths with an existing local folder.
 
 ## Choose a creation mode
@@ -12,7 +12,7 @@ creation arguments; replace their output paths with an existing local folder.
 | `text` | Plain body text | Automatic wrapping and page breaks |
 | `content` | Structured documents with generic blocks | Automatic |
 | `pages` | Exact typography, backgrounds and geometry | Explicit page list |
-| `jsonPath` | Arguments stored in a UTF-8 JSON file, or a lossless archive | As defined in the file |
+| `jsonPath` | Arguments stored in a UTF-8 JSON file | As defined in the file |
 
 Supply one mode. Do not combine `text`, `content`, or `pages`. Do not combine
 `pageCount` with content: it is only for legacy blank documents. `title` sets
@@ -115,7 +115,7 @@ rotation. Opacity ranges from 0 to 1. `polygon`/`freehand` require absolute page
 `points: [{"x": 10, "y": 20}, ...]`; polygons need at least three points. Lines
 default to the diagonal of their specified box.
 
-## JSON files and exact PDF roundtrips
+## JSON files and CLI creation
 
 Write the creation arguments as UTF-8 JSON, then call:
 
@@ -128,30 +128,15 @@ envelope. Do not put a whole JSON-RPC `tools/call` message in the file. Only
 `outputPath` and `overwrite` may accompany `jsonPath`; they override the file's
 output options. Nested `jsonPath` references are rejected.
 
-For an exact copy of an existing PDF:
-
-1. Call `pdf_to_json` with the PDF `inputPath` and a `.json` `outputPath`.
-2. Call `pdf_create` with that archive's `jsonPath` and a new PDF `outputPath`.
-3. The restored file has the same bytes and SHA-256 as the original.
-
-The archive's format is `pdf-simple-editor/archive-v1`. It stores `pdfBase64`,
-`sha256`, and a readable `sourceInfo` inspection snapshot. Do not manually change
-the binary/checksum fields. `sourceInfo` is read-only and does not drive drawing;
-changing it does not edit the PDF. Use the PDF editing tools, or author new
-`text`/`content`/`pages` JSON, when making changes. Unknown/unsupported graphics
-can have an inspection error while their original bytes remain preserved.
-
 CLI equivalents:
 
 ```powershell
 PDFSimpleEditor.exe --create input.json --output result.pdf
 PDFSimpleEditor.exe input.json --output result.pdf
-PDFSimpleEditor.exe --to-json original.pdf --output archive.json
-PDFSimpleEditor.exe --create archive.json --output restored.pdf
 ```
 
 Without `--output`, creation uses `outputPath` in the JSON, or the input filename
-with `.pdf`; export defaults to the input filename with `.json`. Existing files
+with `.pdf`. Existing files
 are protected unless `overwrite: true` / `--overwrite` is explicit. Invalid input
 does not replace the destination. Verify text using `pdf_read`, object geometry
 using `pdf_inspect`, and visual output using `pdf_to_images`.
