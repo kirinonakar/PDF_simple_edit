@@ -156,6 +156,12 @@
             </MenuFlyoutItem>
         </MenuBarItem>
 
+        <MenuBarItem Title="OCR">
+            <MenuFlyoutItem Text="{loc:LocalizedString Key=OcrTitle}" x:Name="MenuOcr" Tag="Ocr" Click="Command_Click" IsEnabled="False">
+                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8A5;"/></MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+        </MenuBarItem>
+
         <MenuBarItem Title="{loc:LocalizedString Key=Protection}">
             <MenuFlyoutItem Text="{loc:LocalizedString Key=SetOrChangeEncryptionAndPasswords}" x:Name="MenuProtectionSettings" Tag="ProtectionSettings" Click="Command_Click" IsEnabled="False">
                 <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72E;"/></MenuFlyoutItem.Icon>

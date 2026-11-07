@@ -61,6 +61,7 @@ namespace PDF_simple_edit
         private EditorImageController _imageController = null!;
         private EditorFontController _fontController = null!;
         private PdfPageOperationsController _pageOperationsController = null!;
+        private PdfOcrController _ocrController = null!;
         private PageViewController _pageViewController = null!;
         private PdfFormOverlayController _formOverlayController = null!;
         private WindowSettingsController _windowSettingsController = null!;
@@ -238,6 +239,12 @@ namespace PDF_simple_edit
                     AddDocumentTab,
                     () => WindowNative.GetWindowHandle(this), () => Content.XamlRoot,
                     UpdateUIState, ShowErrorDialogAsync);
+                _ocrController = new PdfOcrController(() => _pdfManager, () => _currentPageIndex, () => Content.XamlRoot,
+                    async () =>
+                    {
+                        await _annotationCanvasController.FinishActiveInlineEditAsync();
+                        await _formOverlayController.FinishActiveEditAsync();
+                    }, TxtStatus, ShowErrorDialogAsync);
                 _windowSettingsController = new WindowSettingsController(
                     this,
                     new EditorSettingsService(),
@@ -487,6 +494,7 @@ namespace PDF_simple_edit
                 case EditorMenuCommand.MergePdf: MergePdf_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.ImagesToPdf: ImagesToPdf_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.PdfToImage: PdfToImage_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.Ocr: await _ocrController.RunAsync(); break;
                 case EditorMenuCommand.SplitPdf: SplitPdf_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.DeletePage: DeletePage_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.ProtectionSettings: ProtectionSettings_Click(EditorMenu, new RoutedEventArgs()); break;

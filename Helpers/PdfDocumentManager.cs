@@ -177,6 +177,19 @@ namespace PDF_simple_edit.Helpers
             if (change.StructureChanged) PageStructureChanged?.Invoke(this, EventArgs.Empty);
         }
 
+        public async Task<PdfOcrResult> ApplyOcrAsync(PdfOcrOptions options, IProgress<PdfOcrProgress>? progress = null,
+            System.Threading.CancellationToken cancellationToken = default)
+        {
+            byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
+            long version = EditVersion;
+            object? state = GetUIStateFunc?.Invoke();
+            var result = await new PdfOcrService().RecognizeAsync(snapshot, options, progress, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (result.ChangedPages.Count > 0)
+                CommitPdfBytes(snapshot, result.Bytes, state, new PdfDocumentChange(result.ChangedPages), version);
+            return result;
+        }
+
         public async Task ApplyNativeTextEditsAsync(int pageIndex, IReadOnlyList<NativePdfTextEdit> edits)
         {
             byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));

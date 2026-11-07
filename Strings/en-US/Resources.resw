@@ -1429,4 +1429,20 @@ To remove passwords individually, use Encryption and password settings.</value>
   <data name="BookmarkChangedSelectAgain" xml:space="preserve"><value>The bookmarks changed. Select the bookmark again.</value></data>
   <data name="BookmarkAdded" xml:space="preserve"><value>Bookmark added. Ctrl+Z: undo.</value></data>
   <data name="BookmarkDeleted" xml:space="preserve"><value>Bookmark deleted. Ctrl+Z: undo.</value></data>
+  <data name="OcrTitle" xml:space="preserve"><value>Recognize text (Windows OCR)</value></data>
+  <data name="OcrLanguage" xml:space="preserve"><value>Recognition language</value></data>
+  <data name="OcrCurrentPage" xml:space="preserve"><value>Current page ({0})</value></data>
+  <data name="OcrAllPages" xml:space="preserve"><value>All pages ({0})</value></data>
+  <data name="OcrSkipTextPages" xml:space="preserve"><value>Skip pages that already contain text</value></data>
+  <data name="OcrDescription" xml:space="preserve"><value>Add an invisible text layer while keeping the page appearance. Text becomes selectable, copyable and searchable. Save (Ctrl+S) or Save As to keep it in the PDF. Running OCR again replaces this app's previous OCR layer on the selected pages.</value></data>
+  <data name="OcrLanguageHelp" xml:space="preserve"><value>Languages installed in Windows are listed. Add OCR support under Windows Settings → Time &amp; language → Language &amp; region → Language options. Clear “Skip pages” to also recognize scanned regions on pages containing existing text.</value></data>
+  <data name="OcrStart" xml:space="preserve"><value>Start OCR</value></data>
+  <data name="OcrNoLanguages" xml:space="preserve"><value>No Windows OCR languages are installed. Install an OCR language under Windows Settings → Time &amp; language → Language &amp; region → Language options, then try again.</value></data>
+  <data name="OcrLanguageUnavailable" xml:space="preserve"><value>The selected Windows OCR language is unavailable. Check the installed OCR language packs and try again.</value></data>
+  <data name="OcrMissingFont" xml:space="preserve"><value>No embeddable installed font covers the recognized character “{0}”. Install a font for the recognition language and try again.</value></data>
+  <data name="OcrProgress" xml:space="preserve"><value>OCR: {0}/{1} pages complete · Page {2}</value></data>
+  <data name="OcrCancelling" xml:space="preserve"><value>Cancelling OCR…</value></data>
+  <data name="OcrCancelled" xml:space="preserve"><value>OCR cancelled. No OCR changes were applied.</value></data>
+  <data name="OcrFailed" xml:space="preserve"><value>OCR failed. No OCR changes were applied.</value></data>
+  <data name="OcrCompleted" xml:space="preserve"><value>OCR complete: {0} pages updated, {1} words; {2} text pages skipped, {3} pages without recognized text. Ctrl+S: save · Ctrl+Z: undo.</value></data>
 </root>
