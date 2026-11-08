@@ -102,6 +102,9 @@
   <data name="ToolAddImage" xml:space="preserve">
     <value>Tool: Add image</value>
   </data>
+  <data name="ToolNoneDragHint" xml:space="preserve">
+    <value>drag: text selection, ctrl+drag: pan</value>
+  </data>
   <data name="ToolSelectText" xml:space="preserve">
     <value>Tool: Select text</value>
   </data>

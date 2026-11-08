@@ -1059,6 +1059,7 @@ namespace PDF_simple_edit
 
             TxtToolMode.Text = mode switch
             {
+                EditToolMode.None => Loc.Get("ToolNoneDragHint"),
                 EditToolMode.AddText => Loc.Get("ToolAddText"),
                 EditToolMode.Highlight => Loc.Get("ToolHighlightText"),
                 EditToolMode.TextHighlight => Loc.Get("ToolTextHighlightComment"),

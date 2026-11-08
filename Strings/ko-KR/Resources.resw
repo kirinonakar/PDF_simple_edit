@@ -102,6 +102,9 @@
   <data name="ToolAddImage" xml:space="preserve">
     <value>도구: 이미지 추가</value>
   </data>
+  <data name="ToolNoneDragHint" xml:space="preserve">
+    <value>drag: text selection, ctrl+drag: pan</value>
+  </data>
   <data name="ToolSelectText" xml:space="preserve">
     <value>도구: 텍스트 선택</value>
   </data>

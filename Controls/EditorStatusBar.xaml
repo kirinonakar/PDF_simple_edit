@@ -26,7 +26,7 @@
         </StackPanel>
         <AppBarSeparator Grid.Column="1" Opacity="0.3"/>
         <TextBlock x:Name="StatusText" x:FieldModifier="public" Grid.Column="2" Text="{loc:LocalizedString Key=Ready}" FontSize="12" VerticalAlignment="Center"/>
-        <TextBlock x:Name="ToolModeText" x:FieldModifier="public" Grid.Column="3" FontSize="12" VerticalAlignment="Center" Margin="8,0"/>
+        <TextBlock x:Name="ToolModeText" x:FieldModifier="public" Grid.Column="3" Text="{loc:LocalizedString Key=ToolNoneDragHint}" FontSize="12" VerticalAlignment="Center" Margin="8,0"/>
         <AppBarSeparator Grid.Column="4" Opacity="0.3"/>
         <TextBlock x:Name="FileInfoText" x:FieldModifier="public" Grid.Column="5" FontSize="12" VerticalAlignment="Center"/>
     </Grid>
