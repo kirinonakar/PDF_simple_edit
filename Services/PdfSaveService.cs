@@ -217,5 +217,4 @@ public sealed class PdfSaveService
             annotation.IsApplied = true;
     }
 
-    internal static Task WriteAtomicallyAsync(string filePath, byte[] contents) => PdfAtomicFile.WriteAsync(filePath, contents);
 }

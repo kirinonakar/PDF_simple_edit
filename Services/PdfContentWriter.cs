@@ -558,7 +558,7 @@ namespace PDF_simple_edit.Services
             canvas.SaveState();
             if (isUnderline)
             {
-                page.GetPdfObject().Put(PdfTextUnderlineService.PageFlag, PdfBoolean.TRUE);
+                PdfTextUnderlineService.MarkPage(page);
                 var properties = new PdfDictionary(); properties.Put(PdfTextUnderlineService.Underline, PdfBoolean.TRUE);
                 canvas.BeginMarkedContent(PdfTextUnderlineService.StyleTag, properties);
             }

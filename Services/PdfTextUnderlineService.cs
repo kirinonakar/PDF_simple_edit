@@ -19,23 +19,44 @@ internal static class PdfTextUnderlineService
     internal static readonly PdfName Underline = new("Underline");
     private static readonly PdfName DecorationTag = new("PDFSimpleTextUnderlines");
     internal static readonly PdfName PageFlag = new("PDFSimpleHasTextUnderline");
+    private static readonly PdfName DocumentFlag = new("PDFSimpleHasTextUnderlines");
+
+    internal static void MarkPage(PdfPage page)
+    {
+        page.GetPdfObject().Put(PageFlag, PdfBoolean.TRUE);
+        page.GetDocument().GetCatalog().GetPdfObject().Put(DocumentFlag, PdfBoolean.TRUE);
+    }
+
+    // Older files have only page flags. Discover them once in the already open
+    // writer and persist a document flag so undecorated edits need no second parse.
+    internal static bool HasUnderlines(PdfDocument document)
+    {
+        var catalog = document.GetCatalog().GetPdfObject();
+        if (catalog.GetAsBoolean(DocumentFlag) is { } known) return known.GetValue();
+        bool found = Enumerable.Range(1, document.GetNumberOfPages())
+            .Any(i => document.GetPage(i).GetPdfObject().GetAsBoolean(PageFlag)?.GetValue() == true);
+        if (document.GetWriter() != null) catalog.Put(DocumentFlag, new PdfBoolean(found));
+        return found;
+    }
 
     internal static bool Read(TextRenderInfo info) => info.GetCanvasTagHierarchy()
         .FirstOrDefault(t => StyleTag.Equals(t.GetRole()))?.GetProperty(Underline) is PdfBoolean flag && flag.GetValue();
 
     internal static void RefreshDocument(PdfDocument document)
     {
+        bool hasUnderlines = false;
         for (int i = 1; i <= document.GetNumberOfPages(); i++)
         {
             var page = document.GetPage(i);
             if (page.GetPdfObject().GetAsBoolean(PageFlag)?.GetValue() == true) RefreshPage(page);
+            hasUnderlines |= page.GetPdfObject().GetAsBoolean(PageFlag)?.GetValue() == true;
         }
+        document.GetCatalog().GetPdfObject().Put(DocumentFlag, new PdfBoolean(hasUnderlines));
     }
 
-    internal static byte[] RefreshBytes(byte[] bytes)
+    internal static byte[] RefreshBytes(byte[] bytes, bool hasUnderlines)
     {
-        using (var inspection = new PdfDocument(new PdfReader(new MemoryStream(bytes, writable: false))))
-            if (!Enumerable.Range(1, inspection.GetNumberOfPages()).Any(i => inspection.GetPage(i).GetPdfObject().GetAsBoolean(PageFlag)?.GetValue() == true)) return bytes;
+        if (!hasUnderlines) return bytes;
         using var output = new MemoryStream();
         // Fonts added by the writer are complete only after its first close.
         using (var document = new PdfDocument(new PdfEditingReader(new MemoryStream(bytes, writable: false)), new PdfWriter(output)))

@@ -20,6 +20,7 @@ tests/*
 !tests/Ocr/
 !tests/McpVlmOcr/
 !tests/McpTextStyle/
+!tests/EditHistory/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs

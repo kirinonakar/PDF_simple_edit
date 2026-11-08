@@ -443,13 +443,22 @@ internal static partial class PdfMcpTools
     private static byte[] Rewrite(byte[] bytes, Action<PdfDocument> edit, PdfMcpArguments? extract = null)
     {
         using var buffer = new MemoryStream();
+        bool hasUnderlines;
         if (extract is { } a)
         {
             using var source = Open(bytes);
-            using (var output = new PdfDocument(new PdfWriter(buffer))) source.CopyPagesTo(ReadPages(a, source.GetNumberOfPages()), output);
+            using (var output = new PdfDocument(new PdfWriter(buffer)))
+            {
+                source.CopyPagesTo(ReadPages(a, source.GetNumberOfPages()), output);
+                hasUnderlines = PdfTextUnderlineService.HasUnderlines(output);
+            }
         }
-        else using (var pdf = new PdfDocument(new PdfEditingReader(new MemoryStream(bytes)), new PdfWriter(buffer))) edit(pdf);
-        return PdfTextUnderlineService.RefreshBytes(buffer.ToArray());
+        else using (var pdf = new PdfDocument(new PdfEditingReader(new MemoryStream(bytes)), new PdfWriter(buffer)))
+        {
+            edit(pdf);
+            hasUnderlines = PdfTextUnderlineService.HasUnderlines(pdf);
+        }
+        return PdfTextUnderlineService.RefreshBytes(buffer.ToArray(), hasUnderlines);
     }
     private static PdfDocument Open(byte[] bytes) => new(new PdfReader(new MemoryStream(bytes)));
     private static PageSize Size(PdfMcpArguments a) => new((float)a.Number("width", 595.276, 1, 14400), (float)a.Number("height", 841.89, 1, 14400));

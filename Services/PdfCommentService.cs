@@ -108,7 +108,8 @@ public static class PdfCommentService
             .FirstOrDefault(a => a.Key == target.PdfCommentKey).Annotation as PdfTextAnnotation;
         if (annotation == null) throw new InvalidOperationException(LocalizationService.Get("TheSelectedAnnotationChangedSelectItAgain"));
         annotation.SetOpen(open);
-        annotation.GetPopup()?.SetOpen(open);
+        annotation.SetModified();
+        if (annotation.GetPopup() is { } popup) { popup.SetOpen(open); popup.SetModified(); }
     }
 
     private static string CommentColor(NativeAnnotation annotation)
@@ -143,11 +144,13 @@ public static class PdfCommentService
                 float dx = (float)mapped.X - previous.GetX(), dy = (float)mapped.Y - previous.GetY();
                 popup.SetRectangle(new PdfArray(new float[] { popupRectangle.GetLeft() + dx, popupRectangle.GetBottom() + dy,
                     popupRectangle.GetRight() + dx, popupRectangle.GetTop() + dy }));
+                popup.SetModified();
             }
             annotation.SetRectangle(new PdfArray(new float[] { (float)mapped.X, (float)mapped.Y, (float)mapped.Right, (float)mapped.Bottom }));
             annotation.SetContents(new PdfString(text, PdfEncodings.UNICODE_BIG));
         }
         annotation.SetDate(new PdfDate().GetPdfObject());
+        annotation.SetModified();
     }
 
     public static PdfMarkupAnnotation AddNoteOrTextBox(PdfDocument document, int pageIndex, PdfTextBox box, bool sticky,

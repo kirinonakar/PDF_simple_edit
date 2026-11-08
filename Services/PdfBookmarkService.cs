@@ -21,6 +21,7 @@ public static class PdfBookmarkService
         if (string.IsNullOrWhiteSpace(title)) throw new ArgumentException(nameof(title));
         if (pageIndex < 0 || pageIndex >= document.GetNumberOfPages()) throw new ArgumentOutOfRangeException(nameof(pageIndex));
         document.GetOutlines(false).AddOutline(title.Trim()).AddDestination(PdfExplicitDestination.CreateFit(document.GetPage(pageIndex + 1)));
+        MarkOutlinesModified(document);
     }
 
     public static void Remove(PdfDocument document, PdfBookmark target)
@@ -35,6 +36,22 @@ public static class PdfBookmarkService
         if (target.IndexPath.Length == 0 || node == null || node.GetTitle() != target.Title)
             throw new InvalidOperationException(LocalizationService.Get("BookmarkChangedSelectAgain"));
         node.RemoveOutline();
+        MarkOutlinesModified(document);
+    }
+
+    private static void MarkOutlinesModified(PdfDocument document)
+    {
+        // Outline operations update parent counts and sibling links through raw
+        // dictionaries. Existing indirect dictionaries need an explicit dirty
+        // flag to be written in append mode, including after deleting a child.
+        document.GetCatalog().SetModified();
+        var pending = new Stack<PdfOutline>();
+        pending.Push(document.GetOutlines(false));
+        while (pending.TryPop(out var outline))
+        {
+            outline.GetContent().SetModified();
+            foreach (var child in outline.GetAllChildren()) pending.Push(child);
+        }
     }
 
     public static List<PdfBookmark> Read(byte[] bytes)

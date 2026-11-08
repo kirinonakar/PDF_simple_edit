@@ -323,6 +323,7 @@ public sealed partial class NativePdfTextService
         using var input = new MemoryStream(bytes);
         using var output = new MemoryStream();
         NativePdfTextBlock? layout = null;
+        bool hasUnderlines;
         var layouts = new List<NativePdfTextBlock>();
         // Windows.Data.Pdf can keep rendering the original revision of some
         // PDFs after an incremental update (including the AJCC9 abstract). Write
@@ -428,9 +429,10 @@ public sealed partial class NativePdfTextService
             page.GetPdfObject().Put(PdfName.Contents, contents);
             page.SetModified();
             if (data.Runs.Any(r => r.IsUnderline) || layouts.SelectMany(b => b.Glyphs).Any(g => g.IsUnderline))
-                page.GetPdfObject().Put(PdfTextUnderlineService.PageFlag, PdfBoolean.TRUE);
+                PdfTextUnderlineService.MarkPage(page);
+            hasUnderlines = PdfTextUnderlineService.HasUnderlines(doc);
         }
-        byte[] resultBytes = PdfTextUnderlineService.RefreshBytes(output.ToArray());
+        byte[] resultBytes = PdfTextUnderlineService.RefreshBytes(output.ToArray(), hasUnderlines);
         using var finalDoc = new PdfDocument(new PdfReader(new MemoryStream(resultBytes)));
         var finalPage = finalDoc.GetPage(pageIndex + 1); var finalBox = finalPage.GetCropBox();
         var finalMap = new PageMap(finalBox.GetX(), finalBox.GetY(), finalBox.GetWidth(), finalBox.GetHeight(), ((finalPage.GetRotation() % 360) + 360) % 360);

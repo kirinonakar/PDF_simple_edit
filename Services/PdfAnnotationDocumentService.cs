@@ -14,7 +14,7 @@ public sealed class PdfAnnotationDocumentService
     {
         if (annotation.NativeText != null || (annotation.IsApplied && annotation.Type is AnnotationType.Image or AnnotationType.Highlight)) return;
         if (annotation.IsUnderline && annotation.Type is AnnotationType.Text or AnnotationType.FreeText)
-            document.GetPage(annotation.PageIndex + 1).GetPdfObject().Put(PdfTextUnderlineService.PageFlag, PdfBoolean.TRUE);
+            PdfTextUnderlineService.MarkPage(document.GetPage(annotation.PageIndex + 1));
         if (System.Math.Abs(annotation.Rotation) > .0001 && !annotation.IsEditablePath && !annotation.IsOriginalImageReplacement &&
             !annotation.IsOriginalTextReplacement && !(annotation.IsApplied && annotation.Type is AnnotationType.Text or AnnotationType.FreeText))
         {

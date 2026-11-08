@@ -153,7 +153,7 @@ namespace PDF_simple_edit.Helpers
             CommitPdfBytes(expectedBytes, editedBytes, uiState, new(pages, geometryChanged: true), expectedVersion);
 
         private void CommitPdfBytes(byte[] expectedBytes, byte[] editedBytes, object? uiState,
-            PdfDocumentChange? change = null, long? expectedVersion = null, int? pageCount = null, bool force = false)
+            PdfDocumentChange? change = null, long? expectedVersion = null, int? pageCount = null, bool force = false, bool appended = false)
         {
             change ??= new();
             lock (_docLock)
@@ -161,7 +161,9 @@ namespace PDF_simple_edit.Helpers
                 if (!ReferenceEquals(_pdfBytes, expectedBytes) || expectedVersion.HasValue && EditVersion != expectedVersion)
                     throw new InvalidOperationException(Loc.Get("TheDocumentChangedDuringEditingPleaseTryAgain"));
                 if (!force && (ReferenceEquals(expectedBytes, editedBytes) || expectedBytes.AsSpan().SequenceEqual(editedBytes))) return;
-                _undoStack.Push(new(_pdfBytes!, uiState, _stateId, change));
+                _undoStack.Push(appended
+                    ? new(Array.Empty<byte>(), uiState, _stateId, change, expectedBytes.Length)
+                    : new(_pdfBytes!, uiState, _stateId, change));
                 _redoStack.Clear();
                 _history.Trim(_undoStack);
                 _stateId = Guid.NewGuid();
@@ -218,11 +220,11 @@ namespace PDF_simple_edit.Helpers
                 if (start.HasValue && end.HasValue) blocks = PdfTextSelectionService.SelectRange(blocks, start.Value, end.Value);
                 var boxes = PdfCommentService.SelectText(blocks, region, out string contents, out var quads);
                 if (boxes.Count == 0) return null;
-                return RewritePdfBytes(snapshot, document => PdfCommentService.AddTextMarkup(document, pageIndex, boxes,
+                return ((byte[] Bytes, bool Appended)?)AppendPdfBytes(snapshot, document => PdfCommentService.AddTextMarkup(document, pageIndex, boxes,
                     underline, PdfAnnotationDocumentService.ParseCommentColor(color), (float)opacity, contents, quads));
             });
             if (edited == null) return false;
-            CommitPdfBytes(snapshot, edited, state, PdfDocumentChange.Page(pageIndex), version);
+            CommitPdfBytes(snapshot, edited.Value.Bytes, state, PdfDocumentChange.Page(pageIndex), version, appended: edited.Value.Appended);
             return true;
         }
 
@@ -235,34 +237,34 @@ namespace PDF_simple_edit.Helpers
             var edited = await Task.Run(() =>
             {
                 int removed = 0;
-                byte[] bytes = RewritePdfBytes(snapshot, document => removed = PdfCommentService.Remove(document, captured));
-                return (Bytes: bytes, Count: removed);
+                var result = AppendPdfBytes(snapshot, document => removed = PdfCommentService.Remove(document, captured));
+                return (result.Bytes, result.Appended, Count: removed);
             });
             if (edited.Count > 0 || hasPendingPaths)
                 CommitPdfBytes(snapshot, edited.Bytes, state,
-                    selection == null ? new() : new(selection.Select(a => a.PageIndex)), version, force: hasPendingPaths);
+                    selection == null ? new() : new(selection.Select(a => a.PageIndex)), version, force: hasPendingPaths, appended: edited.Appended);
             return edited.Count;
         }
 
         public Task AddNoteOrTextBoxAsync(int pageIndex, PdfTextBox box, bool sticky, string contents,
             string color, double opacity, double fontSize) => ApplyEditAsync(document =>
                 PdfCommentService.AddNoteOrTextBox(document, pageIndex, box, sticky, contents,
-                    PdfAnnotationDocumentService.ParseCommentColor(color), (float)opacity, fontSize), PdfDocumentChange.Page(pageIndex));
+                    PdfAnnotationDocumentService.ParseCommentColor(color), (float)opacity, fontSize), PdfDocumentChange.Page(pageIndex), incremental: true);
 
         public Task SetNoteOpenAsync(PdfAnnotation target, bool open) => ApplyEditAsync(document =>
-            PdfCommentService.SetNoteOpen(document, target, open), PdfDocumentChange.Page(target.PageIndex));
+            PdfCommentService.SetNoteOpen(document, target, open), PdfDocumentChange.Page(target.PageIndex), incremental: true);
 
         public Task UpdatePdfCommentAsync(PdfAnnotation target, PdfTextBox bounds, string? contents = null)
         {
             var captured = target.Clone();
-            return ApplyEditAsync(document => PdfCommentService.UpdateNoteOrTextBox(document, captured, bounds, contents), PdfDocumentChange.Page(target.PageIndex));
+            return ApplyEditAsync(document => PdfCommentService.UpdateNoteOrTextBox(document, captured, bounds, contents), PdfDocumentChange.Page(target.PageIndex), incremental: true);
         }
 
         public Task AddBookmarkAsync(int pageIndex, string title) => ApplyEditAsync(document =>
-            PdfBookmarkService.Add(document, pageIndex, title), new(Array.Empty<int>()));
+            PdfBookmarkService.Add(document, pageIndex, title), new(Array.Empty<int>()), incremental: true);
 
         public Task RemoveBookmarkAsync(PdfBookmark target) => ApplyEditAsync(document =>
-            PdfBookmarkService.Remove(document, target), new(Array.Empty<int>()));
+            PdfBookmarkService.Remove(document, target), new(Array.Empty<int>()), incremental: true);
 
         public event EventHandler? DocumentChanged;
         public event EventHandler? Closed;
@@ -306,11 +308,6 @@ namespace PDF_simple_edit.Helpers
                         _stateId = _savedStateId = Guid.NewGuid();
                         _savedProtection = _protection;
                         EditVersion++;
-
-                        DocumentChanged?.Invoke(this, EventArgs.Empty);
-                        PageStructureChanged?.Invoke(this, EventArgs.Empty);
-                        ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-                        return PdfOpenStatus.Success;
                     }
                     catch (Exception ex)
                     {
@@ -318,41 +315,11 @@ namespace PDF_simple_edit.Helpers
                         return PdfOpenStatus.Failed;
                     }
                 }
+                DocumentChanged?.Invoke(this, EventArgs.Empty);
+                PageStructureChanged?.Invoke(this, EventArgs.Empty);
+                ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+                return PdfOpenStatus.Success;
             });
-        }
-
-        public async Task<bool> SaveAsync()
-        {
-            if (_pdfBytes == null || string.IsNullOrEmpty(_filePath))
-                return false;
-            return await SaveAsAsync(_filePath, true);
-        }
-
-        public async Task<bool> SaveAsAsync(string filePath, bool isUserSave = true)
-        {
-            byte[]? snapshot = _pdfBytes;
-            if (snapshot == null) return false;
-            long version = EditVersion;
-            var protection = _protection;
-            var diskVersion = await GetSaveFileVersionAsync(filePath);
-            byte[] output = await Task.Run(() => isUserSave ? PdfSecurityService.Encrypt(snapshot, protection) : snapshot);
-            await Task.Run(() => PdfSecurityService.Validate(output, protection));
-            await PdfAtomicFile.WriteAsync(filePath, output, diskVersion);
-            byte[] diskHash = await Task.Run(() => SHA256.HashData(output));
-            RecordDiskWrite(filePath, diskHash);
-            if (isUserSave) return ReplacePdfBytesAfterSave(snapshot, version, snapshot, filePath, diskHash);
-            return true;
-        }
-
-        /// <summary>
-        /// 사용자 저장(디스크 기록)용 바이트를 만든다. 암호로 보호된 문서는 원래의
-        /// 열기·권한 비밀번호와 선택한 암호화 설정을 적용하며, 메모리의
-        /// 문서는 계속 평문으로 유지된다.
-        /// </summary>
-        public byte[] ProtectBytesForSave(byte[] content)
-        {
-            lock (_docLock)
-                return PdfSecurityService.Encrypt(content, _protection);
         }
 
         /// <summary>
@@ -378,23 +345,24 @@ namespace PDF_simple_edit.Helpers
                 pageIndex.HasValue ? PdfDocumentChange.Page(pageIndex.Value) : new(pages), version);
         }
 
-        private async Task ApplyEditAsync(Action<PdfDocument> editAction, PdfDocumentChange change)
+        private async Task ApplyEditAsync(Action<PdfDocument> editAction, PdfDocumentChange change, bool incremental = false)
         {
             byte[] snapshot = _pdfBytes ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
             long version = EditVersion;
             object? state = GetUIStateFunc?.Invoke();
             var edited = await Task.Run(() =>
             {
-                byte[] bytes = RewritePdfBytes(snapshot, editAction);
+                var result = incremental ? AppendPdfBytes(snapshot, editAction) : (Bytes: RewritePdfBytes(snapshot, editAction), Appended: false);
+                byte[] bytes = result.Bytes;
                 int? count = null;
                 if (change.StructureChanged)
                 {
                     using var document = new PdfDocument(new PdfReader(new MemoryStream(bytes, writable: false)));
                     count = document.GetNumberOfPages();
                 }
-                return (Bytes: bytes, Count: count);
+                return (Bytes: bytes, Count: count, result.Appended);
             });
-            CommitPdfBytes(snapshot, edited.Bytes, state, change, version, edited.Count);
+            CommitPdfBytes(snapshot, edited.Bytes, state, change, version, edited.Count, appended: edited.Appended);
         }
 
         public byte[] CreatePdfBytesWithEdits(Action<PdfDocument> editAction) =>
@@ -404,15 +372,40 @@ namespace PDF_simple_edit.Helpers
         {
             using var input = new MemoryStream(snapshot, writable: false);
             using var output = new MemoryStream();
+            bool hasUnderlines;
             using (var document = new PdfDocument(new PdfEditingReader(input), new PdfWriter(output)))
             {
                 editAction(document);
+                hasUnderlines = PdfTextUnderlineService.HasUnderlines(document);
             }
-            byte[] finalized = PdfTextUnderlineService.RefreshBytes(output.ToArray());
+            byte[] finalized = PdfTextUnderlineService.RefreshBytes(output.ToArray(), hasUnderlines);
             if (writerProperties == null) return finalized;
             using var protectedOutput = new MemoryStream();
             using (var protectedDocument = new PdfDocument(new PdfEditingReader(new MemoryStream(finalized, writable: false)), new PdfWriter(protectedOutput, writerProperties))) { }
             return protectedOutput.ToArray();
+        }
+
+        // Restricted to comments and outlines: page-content edits and redactions
+        // still rewrite so removed data is not retained in older PDF revisions.
+        private static (byte[] Bytes, bool Appended) AppendPdfBytes(byte[] snapshot, Action<PdfDocument> editAction)
+        {
+            using var input = new MemoryStream(snapshot, writable: false);
+            using var output = new MemoryStream();
+            using var reader = new PdfEditingReader(input);
+            using var writer = new PdfWriter(output);
+            PdfDocument document;
+            try
+            {
+                document = new PdfDocument(reader, writer, new StampingProperties().UseAppendMode());
+            }
+            catch (iText.Kernel.Exceptions.PdfException) when (reader.HasRebuiltXref() || reader.HasFixedXref())
+            {
+                // iText cannot append to a repaired xref. Fall back before the
+                // action runs, so edits with captured results are never replayed.
+                return (RewritePdfBytes(snapshot, editAction), false);
+            }
+            using (document) editAction(document);
+            return (output.ToArray(), true);
         }
 
         public byte[]? GetPdfBytesWithEdits(Action<PdfDocument> editAction)
@@ -435,6 +428,7 @@ namespace PDF_simple_edit.Helpers
                 if (!ReferenceEquals(_pdfBytes, expectedBytes) || EditVersion != expectedVersion) return false;
                 if (ReferenceEquals(_pageCountSource, expectedBytes)) _pageCountSource = pdfBytes;
                 if (ReferenceEquals(_geometrySource, expectedBytes)) _geometrySource = pdfBytes;
+                if (!ReferenceEquals(expectedBytes, pdfBytes)) _history.Rebase(expectedBytes);
                 _pdfBytes = pdfBytes;
                 _filePath = filePath;
                 if (diskHash != null) _diskVersion = new(diskHash);
@@ -443,10 +437,10 @@ namespace PDF_simple_edit.Helpers
                 _isModified = false;
                 _contentCache.Clear();
                 // Saving is a checkpoint, not a new document. Retain both stacks.
-                ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-                DocumentChanged?.Invoke(this, new PdfDocumentChange(Array.Empty<int>()));
-                return true;
             }
+            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+            DocumentChanged?.Invoke(this, new PdfDocumentChange(Array.Empty<int>()));
+            return true;
         }
 
         public List<PdfAnnotation> LoadSavedSignatures()
@@ -497,6 +491,7 @@ namespace PDF_simple_edit.Helpers
             byte[] detachedBytes = CreatePdfBytesWithEdits(RemoveSavedSignatureAnnotations);
             lock (_docLock)
             {
+                _history.Rebase(_pdfBytes!);
                 _pdfBytes = detachedBytes;
                 _contentCache.Clear();
             }
@@ -691,10 +686,10 @@ namespace PDF_simple_edit.Helpers
                 _contentCache.Clear();
                 _undoStack.Clear();
                 _redoStack.Clear();
-                DocumentChanged?.Invoke(this, EventArgs.Empty);
-                PageStructureChanged?.Invoke(this, EventArgs.Empty);
-                ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
             }
+            DocumentChanged?.Invoke(this, EventArgs.Empty);
+            PageStructureChanged?.Invoke(this, EventArgs.Empty);
+            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
         }
 
         public void Close()
@@ -722,58 +717,40 @@ namespace PDF_simple_edit.Helpers
             ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        public void Undo()
-        {
-            if (!CanUndo || _pdfBytes == null) return;
+        public void Undo() => RestoreHistory(undo: true);
 
+        public void Redo() => RestoreHistory(undo: false);
+
+        private void RestoreHistory(bool undo)
+        {
+            if (_pdfBytes == null || !(undo ? CanUndo : CanRedo)) return;
+            // UI callbacks and event subscribers may synchronously read the
+            // manager from another thread. Never invoke them under _docLock.
+            object? currentState = GetUIStateFunc?.Invoke();
+            PdfHistoryEntry entry;
             lock (_docLock)
             {
-                var currentState = GetUIStateFunc?.Invoke();
-                var past = _undoStack.Pop();
-                _redoStack.Push(new(_pdfBytes, currentState, _stateId, past.Change));
-                _history.Trim(_redoStack);
-                _stateId = past.StateId;
-                _pdfBytes = past.Bytes;
+                var source = undo ? _undoStack : _redoStack;
+                var destination = undo ? _redoStack : _undoStack;
+                if (_pdfBytes == null || !source.TryPeek(out entry!)) return;
+                byte[] restored = entry.Restore(_pdfBytes);
+                var reverse = entry.Reverse(_pdfBytes, currentState, _stateId);
+                source.Pop();
+                destination.Push(reverse);
+                _history.Trim(destination);
+                _stateId = entry.StateId;
+                _pdfBytes = restored;
                 _pageCountSource = null;
                 _geometrySource = null;
                 _pageSizes.Clear();
                 EditVersion++;
-
                 _isModified = _stateId != _savedStateId || _protection != _savedProtection;
                 _contentCache.Clear();
-
-                ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-                UndoRedoPerformed?.Invoke(this, past.UIState);
-                DocumentChanged?.Invoke(this, past.Change);
-                if (past.Change.StructureChanged) PageStructureChanged?.Invoke(this, EventArgs.Empty);
             }
-        }
-
-        public void Redo()
-        {
-            if (!CanRedo || _pdfBytes == null) return;
-
-            lock (_docLock)
-            {
-                var currentState = GetUIStateFunc?.Invoke();
-                var next = _redoStack.Pop();
-                _undoStack.Push(new(_pdfBytes, currentState, _stateId, next.Change));
-                _history.Trim(_undoStack);
-                _stateId = next.StateId;
-                _pdfBytes = next.Bytes;
-                _pageCountSource = null;
-                _geometrySource = null;
-                _pageSizes.Clear();
-                EditVersion++;
-
-                _isModified = _stateId != _savedStateId || _protection != _savedProtection;
-                _contentCache.Clear();
-
-                ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
-                UndoRedoPerformed?.Invoke(this, next.UIState);
-                DocumentChanged?.Invoke(this, next.Change);
-                if (next.Change.StructureChanged) PageStructureChanged?.Invoke(this, EventArgs.Empty);
-            }
+            ModifiedStateChanged?.Invoke(this, EventArgs.Empty);
+            UndoRedoPerformed?.Invoke(this, entry.UIState);
+            DocumentChanged?.Invoke(this, entry.Change);
+            if (entry.Change.StructureChanged) PageStructureChanged?.Invoke(this, EventArgs.Empty);
         }
 
         public (double width, double height) GetPhysicalPageSize(int pageIndex)
