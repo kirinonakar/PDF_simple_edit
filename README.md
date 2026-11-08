@@ -51,6 +51,8 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 - **Windows OCR**: Open **OCR → Recognize text (Windows OCR)**, choose an installed recognition language, and process the current page or all pages. OCR adds an invisible, embedded Unicode text layer for selection, copying and search; use Save or Save As to keep it in the PDF. Pages with existing text are skipped by default (clear the option for mixed text/scanned pages). Re-running OCR replaces this app's earlier OCR layer on the chosen pages. Install additional OCR languages in Windows Settings → Time & language → Language & region → Language options.
 - **Korean / English UI**: The interface is fully localized in Korean and English.
 - **Keyboard Shortcuts**:
+  - Drag: text selection when no tool is selected
+  - `Ctrl` + drag: Pan the page when no tool is selected
   - `↑` / `Page Up`: Previous page
   - `↓` / `Page Down`: Next page
   - `S`: Switch to **Text Selection**

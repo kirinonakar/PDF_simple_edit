@@ -147,6 +147,7 @@ namespace PDF_simple_edit
                 InitializeComponent();
                 _annotationCanvasController = new AnnotationCanvasController(
                     OverlayCanvas,
+                    PdfScrollViewer,
                     PdfPageImage,
                     TxtStatus,
                     DispatcherQueue,

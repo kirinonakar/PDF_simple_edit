@@ -31,6 +31,7 @@ public sealed class AnnotationCanvasController
     private const double PdfToPixels = 96.0 / 72.0;
 
     private readonly Canvas _canvas;
+    private readonly ScrollViewer _scrollViewer;
     private readonly Image _pageImage;
     private readonly TextBlock _statusText;
     private readonly DispatcherQueue _dispatcherQueue;
@@ -74,6 +75,7 @@ public sealed class AnnotationCanvasController
     private sealed record CommentTransform(PdfDocumentManager Manager, int Page, long Version, PdfAnnotation Target,
         PdfAnnotation Original, Point Start, string Direction);
     private CommentTransform? _commentTransform;
+    private (uint PointerId, Point Start, double HorizontalOffset, double VerticalOffset)? _panGesture;
 
     public string CommentColor { get; set; } = "#FFFF00";
     public double CommentOpacity { get; set; } = 1;
@@ -86,6 +88,7 @@ public sealed class AnnotationCanvasController
 
     public AnnotationCanvasController(
         Canvas canvas,
+        ScrollViewer scrollViewer,
         Image pageImage,
         TextBlock statusText,
         DispatcherQueue dispatcherQueue,
@@ -105,6 +108,7 @@ public sealed class AnnotationCanvasController
         Action<bool> focusAfterInlineEdit)
     {
         _canvas = canvas;
+        _scrollViewer = scrollViewer;
         _pageImage = pageImage;
         _statusText = statusText;
         _dispatcherQueue = dispatcherQueue;
@@ -165,6 +169,7 @@ public sealed class AnnotationCanvasController
 
     public void CancelSelectionGesture()
     {
+        CancelPanGesture();
         TextSelection.Clear();
         if (_commentTransform is { } transform)
             SetCommentBounds(transform.Target, new(transform.Original.X, transform.Original.Y, transform.Original.Width, transform.Original.Height));
@@ -193,6 +198,7 @@ public sealed class AnnotationCanvasController
 
     public void CancelRegionGesture()
     {
+        CancelPanGesture();
         TextSelection.CancelGesture();
         if (_regionStart != null || _commentGesture != null || _commentTransform != null) CancelSelectionGesture();
     }
@@ -229,6 +235,18 @@ public sealed class AnnotationCanvasController
             ClearSelection();
             Render();
             _focusAfterInlineEdit(false);
+            if (KeyboardStateService.IsControlDown())
+            {
+                if (_canvas.CapturePointer(e.Pointer))
+                {
+                    // Use viewport coordinates: canvas coordinates change as the page scrolls.
+                    _panGesture = (e.Pointer.PointerId, e.GetCurrentPoint(_scrollViewer).Position,
+                        _scrollViewer.HorizontalOffset, _scrollViewer.VerticalOffset);
+                    SetElementCursor(_canvas, InputSystemCursor.Create(InputSystemCursorShape.Hand));
+                }
+                e.Handled = true;
+                return;
+            }
             await TextSelection.PressedAsync(e);
             return;
         }
@@ -346,6 +364,24 @@ public sealed class AnnotationCanvasController
 
     public void PointerMoved(PointerRoutedEventArgs e)
     {
+        if (_panGesture is { } pan)
+        {
+            if (pan.PointerId != e.Pointer.PointerId) return;
+            var point = e.GetCurrentPoint(_scrollViewer);
+            if (!point.Properties.IsLeftButtonPressed)
+            {
+                CancelPanGesture();
+            }
+            else
+            {
+                _scrollViewer.ChangeView(
+                    Math.Clamp(pan.HorizontalOffset + pan.Start.X - point.Position.X, 0, _scrollViewer.ScrollableWidth),
+                    Math.Clamp(pan.VerticalOffset + pan.Start.Y - point.Position.Y, 0, _scrollViewer.ScrollableHeight),
+                    null, disableAnimation: true);
+            }
+            e.Handled = true;
+            return;
+        }
         if (TextSelection.Moved(e)) return;
         if (_commentTransform is { } transform)
         {
@@ -458,6 +494,12 @@ public sealed class AnnotationCanvasController
 
     public async Task PointerReleasedAsync(PointerRoutedEventArgs e)
     {
+        if (_panGesture is { } pan)
+        {
+            if (pan.PointerId == e.Pointer.PointerId) CancelPanGesture();
+            e.Handled = true;
+            return;
+        }
         if (TextSelection.Released(e)) return;
         if (_commentTransform is { } transform)
         {
@@ -645,6 +687,14 @@ public sealed class AnnotationCanvasController
             _commentTextPreview.Children.Add(polygon);
         }
         _canvas.Children.Add(_commentTextPreview);
+    }
+
+    private void CancelPanGesture()
+    {
+        if (_panGesture == null) return;
+        _panGesture = null;
+        _canvas.ReleasePointerCaptures();
+        UpdateToolCursor(_getToolMode());
     }
 
     public void UpdateToolCursor(EditToolMode mode) => SetElementCursor(_canvas, InputSystemCursor.Create(
