@@ -13,14 +13,7 @@
 tmp/
 output/
 tests/*
-!tests/PageGeometry/
-!tests/McpInspection/
-!tests/PdfComments/
-!tests/TextSelection/
-!tests/Ocr/
-!tests/McpVlmOcr/
-!tests/McpTextStyle/
-!tests/EditHistory/
+!tests/ClipboardCopy/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs

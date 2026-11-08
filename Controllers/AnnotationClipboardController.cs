@@ -42,6 +42,12 @@ public sealed class AnnotationClipboardController(
         if (!await CopySelectedObjectsAsync())
             return false;
 
+        // Copy can yield while another process holds the clipboard. Do not cut a
+        // different selection if the user changed it during that wait.
+        if (!selectedObjects.SequenceEqual(GetCopyableSelection()) ||
+            selectedObjects.Count != canvasController.SelectedAnnotations.Count)
+            return false;
+
         if (!await deleteSelectionAsync())
             return false;
 
@@ -62,8 +68,7 @@ public sealed class AnnotationClipboardController(
             {
                 var textPackage = new DataPackage { RequestedOperation = DataPackageOperation.Copy };
                 textPackage.SetText(selectedPdfText);
-                Clipboard.SetContent(textPackage);
-                Clipboard.Flush();
+                await ClipboardCopyService.SetContentAsync(textPackage);
                 statusText.Text = Loc.Get("CopiedTextToTheClipboard");
                 return true;
             }
@@ -108,8 +113,7 @@ public sealed class AnnotationClipboardController(
                 dataPackage.SetBitmap(RandomAccessStreamReference.CreateFromFile(imageFile));
             }
 
-            Clipboard.SetContent(dataPackage);
-            Clipboard.Flush();
+            await ClipboardCopyService.SetContentAsync(dataPackage);
             statusText.Text = selectedObjects.Count > 1
                 ? Loc.Format("CopiedObjectsToTheClipboard", selectedObjects.Count)
                 : selectedObjects[0].Type == AnnotationType.Image
