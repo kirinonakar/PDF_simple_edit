@@ -109,7 +109,7 @@ The server exposes these tools through `tools/list`, including argument schemas:
 | `pdf_merge` | Merge PDFs in the supplied order |
 | `pdf_extract_pages` | Extract/split pages in the supplied order |
 | `pdf_to_images` | Render whole pages as PNG; select ranges and 72–600 DPI |
-| `pdf_extract_images` | Extract embedded raster images, including nested images |
+| `pdf_extract_images` | Extract embedded raster images from selected pages or the whole PDF |
 | `images_to_pdf` | Fit each supplied image onto one A4 PDF page |
 
 ## 🛠️ Technology Stack

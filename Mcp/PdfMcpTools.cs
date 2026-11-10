@@ -132,8 +132,8 @@ internal static partial class PdfMcpTools
             Input, Output, Fields(("pages", PageArray)));
         Add("pdf_to_images", "Render selected pages to PNG; omit pages for all. DPI default 150. Returns paths; never overwrites images.", new[] { "inputPath", "outputFolder" }, false,
             Input, Fields(("outputFolder", Text), ("pages", Field("string", "Optional 1-based page range; omit to render all.")), ("dpi", new { type = "integer", minimum = 72, maximum = 600 })));
-        Add("pdf_extract_images", "Extract embedded raster images (including forms), not page renders. Returns paths and partial failures.", new[] { "inputPath", "outputFolder" }, false,
-            Input, Fields(("outputFolder", Text)));
+        Add("pdf_extract_images", "Extract embedded raster images, including images in form XObjects, from selected pages. Returns paths and partial failures.", new[] { "inputPath", "outputFolder" }, false,
+            Input, Fields(("outputFolder", Text), ("pages", Field("string", "1-based page range, e.g. 1,3,5-8. Omit or use all for the whole PDF."))));
         Add("images_to_pdf", "Create PDF from ordered PNG/JPEG/BMP/GIF/TIFF/WebP images; one fitted portrait/landscape A4 page per image.", new[] { "imagePaths", "outputPath" }, false,
             Output, Fields(("imagePaths", Paths)));
         AddBatchTools(result);
@@ -200,15 +200,13 @@ internal static partial class PdfMcpTools
         if (name is "pdf_to_images" or "pdf_extract_images")
         {
             string parent = a.Path("outputFolder");
-            Directory.CreateDirectory(parent);
-            // Reserve a unique subfolder per call, preventing any accidental
-            // overwrite and making partial output easy to identify on failure.
+            // Use a unique subfolder per call to keep exports separate.
             string folder = System.IO.Path.Combine(parent, $"pdf-export-{Guid.NewGuid():N}");
-            Directory.CreateDirectory(folder);
             try
             {
                 if (name == "pdf_to_images")
                 {
+                    Directory.CreateDirectory(folder);
                     using var pdf = Open(bytes);
                     var pages = a.Has("pages") ? PdfPageImageExportService.ParsePageIndices(a.Text("pages"), pdf.GetNumberOfPages())
                         : Enumerable.Range(0, pdf.GetNumberOfPages()).ToArray();
@@ -216,10 +214,12 @@ internal static partial class PdfMcpTools
                     await new PdfPageImageExportService().ExportPagesAsync(bytes, pages, folder, "page", a.Integer("dpi", 150, 72, 600));
                     return new { outputFolder = folder, files = Directory.GetFiles(folder).Order().ToArray(), pageCount = pages.Count };
                 }
-                var result = await new PdfImageExtractionService().ExtractAllAsync(bytes, folder, "image");
+                string? selection = a.Has("pages") ? a.Text("pages") : null;
+                var result = await new PdfImageExtractionService().ExtractAsync(bytes, folder, "image", selection);
                 return new { outputFolder = folder, files = Directory.GetFiles(folder).Order().ToArray(), result.SavedCount, result.FailedCount };
             }
-            catch (Exception error) { throw new IOException($"Export failed; any completed images are in {folder}. {error.Message}", error); }
+            catch (Exception error) when (Directory.Exists(folder))
+            { throw new IOException($"Export failed; any completed images are in {folder}. {error.Message}", error); }
         }
 
         byte[] edited = name is "pdf_batch" or "pdf_delete_objects"

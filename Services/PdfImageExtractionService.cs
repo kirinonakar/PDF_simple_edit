@@ -24,22 +24,28 @@ public sealed class PdfImageExtractionService
     public Task<PdfImageExtractionResult> ExtractAllAsync(
         byte[] pdfBytes,
         string outputFolder,
-        string documentName)
+        string documentName) => ExtractAsync(pdfBytes, outputFolder, documentName, pages: null);
+
+    internal Task<PdfImageExtractionResult> ExtractAsync(
+        byte[] pdfBytes,
+        string outputFolder,
+        string documentName,
+        string? pages)
     {
         ArgumentNullException.ThrowIfNull(pdfBytes);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputFolder);
 
         byte[] snapshot = (byte[])pdfBytes.Clone();
         string safeDocumentName = MakeSafeFileName(documentName, "document");
-        return Task.Run(() => ExtractAll(snapshot, outputFolder, safeDocumentName));
+        return Task.Run(() => Extract(snapshot, outputFolder, safeDocumentName, pages));
     }
 
-    private static PdfImageExtractionResult ExtractAll(
+    private static PdfImageExtractionResult Extract(
         byte[] pdfBytes,
         string outputFolder,
-        string documentName)
+        string documentName,
+        string? pages)
     {
-        Directory.CreateDirectory(outputFolder);
         int savedCount = 0;
         int failedCount = 0;
 
@@ -47,8 +53,15 @@ public sealed class PdfImageExtractionService
         using var reader = new PdfReader(input);
         using var document = new PdfDocument(reader);
 
-        for (int pageNumber = 1; pageNumber <= document.GetNumberOfPages(); pageNumber++)
+        int pageCount = document.GetNumberOfPages();
+        IEnumerable<int> pageIndices = pages == null || pages.Trim().Equals("all", StringComparison.OrdinalIgnoreCase)
+            ? Enumerable.Range(0, pageCount)
+            : PdfPageImageExportService.ParsePageIndices(pages, pageCount);
+        Directory.CreateDirectory(outputFolder);
+
+        foreach (int pageIndex in pageIndices)
         {
+            int pageNumber = pageIndex + 1;
             var listener = new ImageExtractionListener();
             try
             {
