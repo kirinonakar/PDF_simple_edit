@@ -1051,7 +1051,9 @@ namespace PDF_simple_edit
             BtnSelect.IsChecked = mode == EditToolMode.Select;
             BtnSelectGraphics.IsChecked = mode == EditToolMode.SelectGraphics;
             foreach (var item in CommentToolItems) item.IsChecked = item.Tag is string commentTag && commentTag == mode.ToString();
-            EditorToolbar.CommentButton.Content = CommentToolItems.FirstOrDefault(item => item.IsChecked)?.Text ?? Loc.Get("Comments");
+            var activeCommentTool = CommentToolItems.FirstOrDefault(item => item.IsChecked);
+            EditorToolbar.CommentButton.Content = activeCommentTool?.Text ?? Loc.Get("Comments");
+            EditorToolbar.CommentToolIndicator.Visibility = activeCommentTool != null ? Visibility.Visible : Visibility.Collapsed;
             SyncCommentToolColor(mode);
             BtnAddText.IsChecked = mode == EditToolMode.AddText;
             BtnHighlight.IsChecked = mode == EditToolMode.Highlight;
@@ -1059,7 +1061,9 @@ namespace PDF_simple_edit
             BtnSignature.IsChecked = mode == EditToolMode.Signature;
             foreach (var item in DrawingToolItems)
                 item.IsChecked = item.Tag is string tag && tag == mode.ToString();
-            EditorToolbar.DrawingButton.Content = DrawingToolItems.FirstOrDefault(item => item.IsChecked)?.Text ?? Loc.Get("Drawing");
+            var activeDrawingTool = DrawingToolItems.FirstOrDefault(item => item.IsChecked);
+            EditorToolbar.DrawingButton.Content = activeDrawingTool?.Text ?? Loc.Get("Drawing");
+            EditorToolbar.DrawingToolIndicator.Visibility = activeDrawingTool != null ? Visibility.Visible : Visibility.Collapsed;
             BtnColorPicker.IsChecked = mode == EditToolMode.ColorPicker;
 
             TxtToolMode.Text = mode switch

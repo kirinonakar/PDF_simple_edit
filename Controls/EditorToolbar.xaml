@@ -4,6 +4,14 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:loc="using:PDF_simple_edit.Localization">
+    <UserControl.Resources>
+        <Style x:Key="ActiveToolIndicatorStyle" TargetType="Border">
+            <Setter Property="BorderBrush" Value="{ThemeResource ToggleButtonBackgroundChecked}"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}"/>
+            <Setter Property="IsHitTestVisible" Value="False"/>
+        </Style>
+    </UserControl.Resources>
     <Grid Padding="8,4" BorderBrush="#30000000" BorderThickness="0,0,0,1">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -39,20 +47,23 @@
                           ToolTipService.ToolTip="{loc:LocalizedString Key=AdjustTextWidthTooltip}"/>
             </Grid>
             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Spacing="2">
-                <DropDownButton x:Name="CommentButton" x:FieldModifier="public" Content="{loc:LocalizedString Key=Comments}" IsEnabled="False" Padding="8,6" AutomationProperties.Name="{loc:LocalizedString Key=Comments}">
-                    <DropDownButton.Flyout>
-                        <MenuFlyout FlyoutBase.Placement="BottomEdgeAlignedLeft">
-                            <ToggleMenuFlyoutItem x:Name="TextHighlightItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=TextHighlightComment}" Tag="TextHighlight"/>
-                            <ToggleMenuFlyoutItem x:Name="TextUnderlineItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=UnderlineComment}" Tag="TextUnderline"/>
-                            <ToggleMenuFlyoutItem x:Name="StickyNoteItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=StickyNote}" Tag="StickyNote"/>
-                            <ToggleMenuFlyoutItem x:Name="CommentTextBoxItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=CommentTextBox}" Tag="CommentTextBox"/>
-                            <MenuFlyoutSeparator/>
-                            <ToggleMenuFlyoutItem x:Name="SelectAnnotationsItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=SelectAnnotations}" Tag="SelectAnnotations"/>
-                            <MenuFlyoutItem x:Name="ShowCommentSidebarItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=CommentsAndBookmarks}"/>
-                            <MenuFlyoutItem x:Name="DeleteAllCommentsItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=DeleteAllComments}"/>
-                        </MenuFlyout>
-                    </DropDownButton.Flyout>
-                </DropDownButton>
+                <Grid VerticalAlignment="Center">
+                    <DropDownButton x:Name="CommentButton" x:FieldModifier="public" Content="{loc:LocalizedString Key=Comments}" IsEnabled="False" Padding="8,6" AutomationProperties.Name="{loc:LocalizedString Key=Comments}">
+                        <DropDownButton.Flyout>
+                            <MenuFlyout FlyoutBase.Placement="BottomEdgeAlignedLeft">
+                                <ToggleMenuFlyoutItem x:Name="TextHighlightItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=TextHighlightComment}" Tag="TextHighlight"/>
+                                <ToggleMenuFlyoutItem x:Name="TextUnderlineItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=UnderlineComment}" Tag="TextUnderline"/>
+                                <ToggleMenuFlyoutItem x:Name="StickyNoteItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=StickyNote}" Tag="StickyNote"/>
+                                <ToggleMenuFlyoutItem x:Name="CommentTextBoxItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=CommentTextBox}" Tag="CommentTextBox"/>
+                                <MenuFlyoutSeparator/>
+                                <ToggleMenuFlyoutItem x:Name="SelectAnnotationsItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=SelectAnnotations}" Tag="SelectAnnotations"/>
+                                <MenuFlyoutItem x:Name="ShowCommentSidebarItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=CommentsAndBookmarks}"/>
+                                <MenuFlyoutItem x:Name="DeleteAllCommentsItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=DeleteAllComments}"/>
+                            </MenuFlyout>
+                        </DropDownButton.Flyout>
+                    </DropDownButton>
+                    <Border x:Name="CommentToolIndicator" x:FieldModifier="public" Style="{StaticResource ActiveToolIndicatorStyle}" Visibility="Collapsed"/>
+                </Grid>
                 <DropDownButton x:Name="CommentSettingsButton" x:FieldModifier="public" IsEnabled="False" Padding="6" Height="{Binding ActualHeight, ElementName=CommentButton}" ToolTipService.ToolTip="{loc:LocalizedString Key=CommentSettings}" AutomationProperties.Name="{loc:LocalizedString Key=CommentSettings}">
                     <Border x:Name="CommentColorIndicator" x:FieldModifier="public" Width="14" Height="4" Background="Yellow"/>
                     <DropDownButton.Flyout>
@@ -73,20 +84,23 @@
                 <ToggleButton x:Name="CommentSidebarButton" x:FieldModifier="public" IsEnabled="False" Padding="8,6" Height="{Binding ActualHeight, ElementName=CommentButton}" ToolTipService.ToolTip="{loc:LocalizedString Key=CommentsAndBookmarks}" AutomationProperties.Name="{loc:LocalizedString Key=CommentsAndBookmarks}">
                     <FontIcon Glyph="&#xE8F2;" FontSize="16"/>
                 </ToggleButton>
-                <DropDownButton x:Name="DrawingButton" x:FieldModifier="public" Content="{loc:LocalizedString Key=Drawing}" IsEnabled="False" Padding="8,6" AutomationProperties.Name="{loc:LocalizedString Key=DrawingTools}" ToolTipService.ToolTip="{loc:LocalizedString Key=FreehandRectangleEllipseArrowPolygon}">
-                    <DropDownButton.Flyout>
-                        <MenuFlyout FlyoutBase.Placement="BottomEdgeAlignedRight">
-                            <ToggleMenuFlyoutItem x:Name="DrawFreehandItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Freehand}" Tag="DrawFreehand"/>
-                            <ToggleMenuFlyoutItem x:Name="DrawLineItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Line}" Tag="DrawLine"/>
-                            <ToggleMenuFlyoutItem x:Name="DrawArrowItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Arrow}" Tag="DrawArrow"/>
-                            <ToggleMenuFlyoutItem x:Name="DrawTriangleArrowItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=TriangleArrow}" Tag="DrawTriangleArrow"/>
-                            <ToggleMenuFlyoutItem x:Name="DrawOutlineArrowItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=OutlineArrow}" Tag="DrawOutlineArrow"/>
-                            <ToggleMenuFlyoutItem x:Name="DrawRectangleItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Rectangle}" Tag="DrawRectangle"/>
-                            <ToggleMenuFlyoutItem x:Name="DrawEllipseItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Ellipse}" Tag="DrawEllipse"/>
-                            <ToggleMenuFlyoutItem x:Name="DrawPolygonItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Polygon}" Tag="DrawPolygon"/>
-                        </MenuFlyout>
-                    </DropDownButton.Flyout>
-                </DropDownButton>
+                <Grid VerticalAlignment="Center">
+                    <DropDownButton x:Name="DrawingButton" x:FieldModifier="public" Content="{loc:LocalizedString Key=Drawing}" IsEnabled="False" Padding="8,6" AutomationProperties.Name="{loc:LocalizedString Key=DrawingTools}" ToolTipService.ToolTip="{loc:LocalizedString Key=FreehandRectangleEllipseArrowPolygon}">
+                        <DropDownButton.Flyout>
+                            <MenuFlyout FlyoutBase.Placement="BottomEdgeAlignedRight">
+                                <ToggleMenuFlyoutItem x:Name="DrawFreehandItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Freehand}" Tag="DrawFreehand"/>
+                                <ToggleMenuFlyoutItem x:Name="DrawLineItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Line}" Tag="DrawLine"/>
+                                <ToggleMenuFlyoutItem x:Name="DrawArrowItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Arrow}" Tag="DrawArrow"/>
+                                <ToggleMenuFlyoutItem x:Name="DrawTriangleArrowItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=TriangleArrow}" Tag="DrawTriangleArrow"/>
+                                <ToggleMenuFlyoutItem x:Name="DrawOutlineArrowItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=OutlineArrow}" Tag="DrawOutlineArrow"/>
+                                <ToggleMenuFlyoutItem x:Name="DrawRectangleItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Rectangle}" Tag="DrawRectangle"/>
+                                <ToggleMenuFlyoutItem x:Name="DrawEllipseItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Ellipse}" Tag="DrawEllipse"/>
+                                <ToggleMenuFlyoutItem x:Name="DrawPolygonItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Polygon}" Tag="DrawPolygon"/>
+                            </MenuFlyout>
+                        </DropDownButton.Flyout>
+                    </DropDownButton>
+                    <Border x:Name="DrawingToolIndicator" x:FieldModifier="public" Style="{StaticResource ActiveToolIndicatorStyle}" Visibility="Collapsed"/>
+                </Grid>
                 <DropDownButton x:Name="DrawingSettingsButton" x:FieldModifier="public" IsEnabled="False" Padding="6" Height="{Binding ActualHeight, ElementName=DrawingButton}" VerticalAlignment="Center" ToolTipService.ToolTip="{loc:LocalizedString Key=DrawingColorAndLineWidth}" AutomationProperties.Name="{loc:LocalizedString Key=DrawingSettings}">
                     <Border x:Name="DrawingColorIndicator" x:FieldModifier="public" Width="14" Height="4" Background="Red"/>
                     <DropDownButton.Flyout>
