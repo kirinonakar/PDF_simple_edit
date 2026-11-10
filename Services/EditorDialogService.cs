@@ -2,6 +2,7 @@ using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
+using PDF_simple_edit.Controls;
 using PDF_simple_edit.Models;
 using System;
 using System.Linq;
@@ -29,8 +30,21 @@ public sealed class EditorDialogService
         XamlRoot xamlRoot,
         double renderScale,
         TextFontSettings fontSettings,
-        string languagePreference)
+        string languagePreference,
+        EditorTheme themePreference,
+        Action<EditorTheme> changeTheme)
     {
+        var theme = new ComboBox { Header = Loc.Get("Theme"), MinWidth = 240 };
+        theme.Items.Add(new ComboBoxItem { Content = Loc.Get("FollowWindowsTheme"), Tag = EditorTheme.System });
+        theme.Items.Add(new ComboBoxItem { Content = Loc.Get("LightTheme"), Tag = EditorTheme.Light });
+        theme.Items.Add(new ComboBoxItem { Content = Loc.Get("DarkTheme"), Tag = EditorTheme.Dark });
+        theme.SelectedIndex = themePreference switch
+        {
+            EditorTheme.Light => 1,
+            EditorTheme.Dark => 2,
+            _ => 0
+        };
+
         var language = new ComboBox { Header = Loc.Get("LanguageLabel"), MinWidth = 240 };
         language.Items.Add(new ComboBoxItem { Content = Loc.Get("FollowWindowsLanguage"), Tag = Loc.SystemLanguage });
         language.Items.Add(new ComboBoxItem { Content = Loc.Get("LanguageKorean"), Tag = Loc.Korean });
@@ -74,6 +88,7 @@ public sealed class EditorDialogService
             Opacity = 0.7,
             TextWrapping = TextWrapping.Wrap
         });
+        panel.Children.Add(theme);
         panel.Children.Add(renderQuality);
         panel.Children.Add(fontFamily);
         panel.Children.Add(fontSize);
@@ -86,7 +101,7 @@ public sealed class EditorDialogService
             Margin = new Thickness(0, 8, 0, 0)
         });
 
-        var dialog = new ContentDialog
+        var dialog = new EditorContentDialog(xamlRoot)
         {
             Title = Loc.Get("Preferences"),
             Content = new ScrollViewer
@@ -95,8 +110,15 @@ public sealed class EditorDialogService
                 MaxHeight = Math.Max(180, Math.Min(580, xamlRoot.Size.Height - 220)),
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto
             },
-            CloseButtonText = Loc.Get("Close"),
-            XamlRoot = xamlRoot
+            CloseButtonText = Loc.Get("Close")
+        };
+        theme.SelectionChanged += (_, _) =>
+        {
+            if (theme.SelectedItem is ComboBoxItem { Tag: EditorTheme selectedTheme })
+            {
+                changeTheme(selectedTheme);
+                dialog.ApplyWindowTheme();
+            }
         };
         await dialog.ShowAsync();
 
@@ -156,22 +178,20 @@ public sealed class EditorDialogService
             Opacity = 0.7
         });
 
-        await new ContentDialog
+        await new EditorContentDialog(xamlRoot)
         {
             Title = Loc.Get("AboutPDFSimpleEditor"),
             Content = panel,
-            CloseButtonText = Loc.Get("Close"),
-            XamlRoot = xamlRoot
+            CloseButtonText = Loc.Get("Close")
         }.ShowAsync();
     }
 
     public Task ShowErrorAsync(XamlRoot xamlRoot, string title, string message) =>
-        new ContentDialog
+        new EditorContentDialog(xamlRoot)
         {
             Title = title,
             Content = message,
-            CloseButtonText = Loc.Get("OK"),
-            XamlRoot = xamlRoot
+            CloseButtonText = Loc.Get("OK")
         }.ShowAsync().AsTask();
 
     /// <summary>
@@ -197,14 +217,13 @@ public sealed class EditorDialogService
         });
         panel.Children.Add(passwordBox);
 
-        var dialog = new ContentDialog
+        var dialog = new EditorContentDialog(xamlRoot)
         {
             Title = Loc.Get("EnterPassword"),
             Content = panel,
             PrimaryButtonText = Loc.Get("Open"),
             CloseButtonText = Loc.Get("Cancel"),
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = xamlRoot
+            DefaultButton = ContentDialogButton.Primary
         };
         dialog.Opened += (_, _) => passwordBox.Focus(FocusState.Programmatic);
 

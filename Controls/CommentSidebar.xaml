@@ -19,7 +19,8 @@
             <PivotItem Header="{loc:LocalizedString Key=Comments}" Margin="0">
                 <Grid Margin="8,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                     <TextBlock x:Name="CommentCount" Margin="4,0,4,8" Text="{loc:LocalizedString Key=NoCommentsOnThisPage}" TextWrapping="Wrap"/>
-                    <ListView x:Name="CommentsList" Grid.Row="1" Padding="0" SelectionMode="Single" SelectionChanged="Comments_SelectionChanged">
+                    <ListView x:Name="CommentsList" Grid.Row="1" Padding="0" SelectionMode="Single" SelectionChanged="Comments_SelectionChanged"
+                              IsItemClickEnabled="True" ItemClick="Comment_Click">
                         <ListView.ItemContainerStyle>
                             <Style TargetType="ListViewItem">
                                 <Setter Property="Padding" Value="0"/>

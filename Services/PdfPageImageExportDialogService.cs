@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using PDF_simple_edit.Controls;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -37,13 +38,13 @@ public sealed class PdfPageImageExportDialogService
         panel.Children.Add(resolution);
         panel.Children.Add(new TextBlock { Text = Loc.Get("ImageExportDescription"), TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(error);
-        var dialog = new ContentDialog
+        var dialog = new EditorContentDialog(xamlRoot)
         {
             Title = Loc.Get("PdfToImage"),
             Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 MaxHeight = Math.Max(180, xamlRoot.Size.Height - 220) },
             PrimaryButtonText = Loc.Get("Save"), CloseButtonText = Loc.Get("Cancel"),
-            DefaultButton = ContentDialogButton.Primary, XamlRoot = xamlRoot
+            DefaultButton = ContentDialogButton.Primary
         };
         IReadOnlyList<int>? indices = null;
         dialog.PrimaryButtonClick += (_, args) =>

@@ -5,7 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:loc="using:PDF_simple_edit.Localization"
     xmlns:local="using:PDF_simple_edit">
-    <Grid Background="#0A000000" BorderBrush="#20000000" BorderThickness="0,0,1,0">
+    <Grid Background="{ThemeResource SubtleFillColorSecondaryBrush}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,1,0">
         <Grid.RowDefinitions>
             <RowDefinition Height="40"/>
             <RowDefinition Height="*"/>
@@ -30,7 +30,8 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
-                        <Border Background="#FFE0E0E0" BorderBrush="#40000000" BorderThickness="1"
+                        <Border Background="{ThemeResource SolidBackgroundFillColorSecondaryBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
                                 CornerRadius="4" Width="{x:Bind ThumbnailWidth, Mode=OneWay}" Height="{x:Bind ThumbnailHeight, Mode=OneWay}"
                                 HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Image Source="{x:Bind Thumbnail, Mode=OneWay}" Stretch="Uniform"

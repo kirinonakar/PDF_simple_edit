@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using PDF_simple_edit.Controls;
 using System;
 using System.Threading.Tasks;
 using Windows.ApplicationModel.DataTransfer;
@@ -30,9 +31,9 @@ internal static class McpConfigurationDialog
         });
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
         panel.Children.Add(status);
-        var dialog = new ContentDialog
+        var dialog = new EditorContentDialog(root)
         {
-            Title = Loc.Get("McpSettings"), XamlRoot = root, Content = panel,
+            Title = Loc.Get("McpSettings"), Content = panel,
             PrimaryButtonText = Loc.Get("McpCopyConfiguration"), CloseButtonText = Loc.Get("Close")
         };
         dialog.PrimaryButtonClick += (_, args) =>

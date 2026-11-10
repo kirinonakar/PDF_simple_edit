@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using PDF_simple_edit.Controls;
 using PDF_simple_edit.Helpers;
 using PDF_simple_edit.Services;
 using Windows.Storage;
@@ -309,13 +310,12 @@ public sealed class PdfPageOperationsController(
             ? Loc.Format("Page2", pageIndices[0] + 1)
             : Loc.Format("SelectedPages", pageIndices.Count);
 
-        var dialog = new ContentDialog
+        var dialog = new EditorContentDialog(getXamlRoot())
         {
             Title = Loc.Get("DeletePages"),
             Content = Loc.Format("Delete", pageDescription),
             PrimaryButtonText = Loc.Get("Delete2"),
-            CloseButtonText = Loc.Get("Cancel"),
-            XamlRoot = getXamlRoot()
+            CloseButtonText = Loc.Get("Cancel")
         };
 
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)

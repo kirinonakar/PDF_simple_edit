@@ -5,6 +5,7 @@ using System.IO;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using PDF_simple_edit.Controls;
 using PDF_simple_edit.Helpers;
 using PDF_simple_edit.Models;
 using PDF_simple_edit.Services;
@@ -172,11 +173,11 @@ public sealed class DocumentFileController(
             long version = manager.EditVersion;
             if (manager.IsModified)
             {
-                var dialog = new ContentDialog
+                var dialog = new EditorContentDialog(getXamlRoot())
                 {
                     Title = Loc.Get("SaveChanges"), Content = Loc.Format("HasChangedSaveYourChanges", tab.Header),
                     PrimaryButtonText = Loc.Get("Save"), SecondaryButtonText = Loc.Get("DonTSave"),
-                    CloseButtonText = Loc.Get("Cancel"), XamlRoot = getXamlRoot()
+                    CloseButtonText = Loc.Get("Cancel")
                 };
                 var result = await dialog.ShowAsync();
                 if (!ReferenceEquals(manager, getManager()) || manager.EditVersion != version || result == ContentDialogResult.None) return;

@@ -18,6 +18,7 @@ public sealed partial class MainWindow
     private byte[]? _commentSource;
     private byte[]? _bookmarkSource;
     private long _commentReadSequence;
+    private long _commentNavigationSequence;
     private bool _commentPanelVisible;
     private double _pageSidebarWidth = 200, _commentSidebarWidth = 300, _findSidebarWidth = 300;
     private EditToolMode _commentSettingsMode = EditToolMode.TextHighlight;
@@ -82,11 +83,11 @@ public sealed partial class MainWindow
             if (_annotationCanvasController.PrimarySelection is { } annotation) await EditCommentAsync(annotation);
         };
         CommentPanel.CloseRequested += ToggleCommentSidebar;
-        CommentPanel.CommentSelected += SelectSidebarComment;
+        CommentPanel.CommentInvoked += async annotation => await NavigateToSidebarCommentAsync(annotation);
         CommentPanel.DeleteRequested += async annotation =>
         {
-            SelectSidebarComment(annotation);
-            await DeleteSelectedAnnotationsAsync();
+            if (SelectSidebarComment(annotation) != null)
+                await DeleteSelectedAnnotationsAsync();
         };
         CommentPanel.ToggleNoteRequested += note => _ = ToggleNoteAsync(note);
         CommentPanel.EditRequested += annotation => _ = EditCommentAsync(annotation);
@@ -122,7 +123,7 @@ public sealed partial class MainWindow
     {
         var text = new TextBox { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinWidth = 340,
             Height = 180, PlaceholderText = Loc.Get("CommentContents"), MaxLength = 20000, Text = initialText };
-        var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = Loc.Get(sticky ? "StickyNote" : "CommentTextBox"),
+        var dialog = new EditorContentDialog(Content.XamlRoot) { Title = Loc.Get(sticky ? "StickyNote" : "CommentTextBox"),
             Content = text, PrimaryButtonText = Loc.Get("AddComment"), CloseButtonText = Loc.Get("Cancel"),
             DefaultButton = ContentDialogButton.Primary, IsPrimaryButtonEnabled = !string.IsNullOrWhiteSpace(initialText) };
         text.TextChanged += (_, _) => dialog.IsPrimaryButtonEnabled = !string.IsNullOrWhiteSpace(text.Text);
@@ -161,7 +162,7 @@ public sealed partial class MainWindow
         if (!manager.IsLoaded) return;
         int page = _currentPageIndex; long version = manager.EditVersion;
         var title = new TextBox { Text = Loc.Format("BookmarkPageTitle", page + 1), MinWidth = 300, MaxLength = 1000 };
-        var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = Loc.Get("AddCurrentPageBookmark"), Content = title,
+        var dialog = new EditorContentDialog(Content.XamlRoot) { Title = Loc.Get("AddCurrentPageBookmark"), Content = title,
             PrimaryButtonText = Loc.Get("AddBookmark"), CloseButtonText = Loc.Get("Cancel"), DefaultButton = ContentDialogButton.Primary };
         title.TextChanged += (_, _) => dialog.IsPrimaryButtonEnabled = !string.IsNullOrWhiteSpace(title.Text);
         dialog.Opened += (_, _) => { title.Focus(FocusState.Programmatic); title.SelectAll(); };
@@ -188,15 +189,46 @@ public sealed partial class MainWindow
         catch (Exception error) { if (manager == _pdfManager) TxtStatus.Text = error.Message; }
     }
 
-    private void SelectSidebarComment(PdfAnnotation annotation)
+    private async Task NavigateToSidebarCommentAsync(PdfAnnotation annotation)
     {
-        if (!_pdfManager.IsLoaded) return;
+        var manager = _pdfManager;
+        int page = annotation.PageIndex;
+        if (!manager.IsLoaded || !ReferenceEquals(_commentSource, manager.GetPdfBytes()) ||
+            page < 0 || page >= manager.PageCount)
+            return;
+
+        long sequence = ++_commentNavigationSequence;
+        await _annotationCanvasController.FinishActiveInlineEditAsync();
+        if (sequence != _commentNavigationSequence || manager != _pdfManager || page >= manager.PageCount)
+            return;
+
+        _currentPageIndex = page;
+        if (!_pageViewController.IsCurrentPageDisplayed())
+            await RenderCurrentPageAsync();
+        if (manager == _pdfManager && !ReferenceEquals(_commentSource, manager.GetPdfBytes()))
+            await RefreshCommentsAsync();
+
+        if (sequence != _commentNavigationSequence || manager != _pdfManager || page != _currentPageIndex ||
+            !_pageViewController.IsCurrentPageDisplayed() || SelectSidebarComment(annotation) is not { } current)
+            return;
+
+        var bounds = current.PdfCommentHitBounds.Count > 0 ? current.PdfCommentHitBounds[0]
+            : new PdfTextBox(current.X, current.Y, current.Width, current.Height);
+        _pageViewController.BringPageRegionIntoView(bounds);
+    }
+
+    private PdfAnnotation? SelectSidebarComment(PdfAnnotation annotation)
+    {
+        var manager = _pdfManager;
+        if (!manager.IsLoaded || !ReferenceEquals(_commentSource, manager.GetPdfBytes())) return null;
+        var current = _annotations.FirstOrDefault(a => a.Type == AnnotationType.PdfComment && a.Id == annotation.Id);
+        if (current == null) return null;
+
         SetToolMode(EditToolMode.SelectAnnotations);
-        var current = _annotations.FirstOrDefault(a => a.Type == AnnotationType.PdfComment && a.PageIndex == annotation.PageIndex && a.PdfCommentKey == annotation.PdfCommentKey);
-        if (current == null) return;
         _annotationCanvasController.SelectOnly(current);
         _annotationCanvasController.Render();
         TxtStatus.Text = Loc.Get("AnnotationSelectedDeleteToRemove");
+        return current;
     }
 
     private async Task ToggleNoteAsync(PdfAnnotation annotation)

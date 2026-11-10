@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using PDF_simple_edit.Controls;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -77,13 +78,13 @@ public sealed class PdfPageGeometryDialogService
         else panel.Children.Add(rotation);
         var error = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Microsoft.UI.Colors.Red) };
         panel.Children.Add(error);
-        var dialog = new ContentDialog
+        var dialog = new EditorContentDialog(root)
         {
             Title = Loc.Get(resize ? "PageSizeSettings" : "PageRotation"),
             Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 MaxHeight = Math.Max(180, root.Size.Height - 220) },
             PrimaryButtonText = Loc.Get("ApplyPageGeometry"), CloseButtonText = Loc.Get("Cancel"),
-            DefaultButton = ContentDialogButton.Primary, XamlRoot = root
+            DefaultButton = ContentDialogButton.Primary
         };
         PdfPageGeometryOptions? options = null;
         dialog.PrimaryButtonClick += (_, args) =>

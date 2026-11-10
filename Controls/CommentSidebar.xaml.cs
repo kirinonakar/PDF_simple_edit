@@ -16,7 +16,7 @@ public sealed partial class CommentSidebar : UserControl
     private bool _updating;
     private PdfBookmark? _selectedBookmark;
     public event Action? CloseRequested;
-    public event Action<PdfAnnotation>? CommentSelected;
+    public event Action<PdfAnnotation>? CommentInvoked;
     public event Action<PdfAnnotation>? DeleteRequested;
     public event Action<PdfAnnotation>? ToggleNoteRequested;
     public event Action<PdfAnnotation>? EditRequested;
@@ -60,7 +60,14 @@ public sealed partial class CommentSidebar : UserControl
                 Grid.SetColumn(delete, 1);
                 header.Children.Add(delete);
                 panel.Children.Add(header);
-                panel.Children.Add(new TextBlock { Text = annotation.Content, TextWrapping = TextWrapping.Wrap, MaxLines = 3, TextTrimming = TextTrimming.CharacterEllipsis });
+                var preview = new TextBlock
+                {
+                    Text = annotation.Content, TextWrapping = TextWrapping.Wrap,
+                    MaxLines = 3, TextTrimming = TextTrimming.CharacterEllipsis
+                };
+                preview.IsTextTrimmedChanged += (text, _) => ToolTipService.SetToolTip(text,
+                    text.IsTextTrimmed ? new TextBlock { Text = text.Text, TextWrapping = TextWrapping.Wrap, MaxWidth = 360 } : null);
+                panel.Children.Add(preview);
                 var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
                 if (annotation.PdfCommentSubtype is "Text" or "FreeText")
                 {
@@ -86,7 +93,8 @@ public sealed partial class CommentSidebar : UserControl
     public void SelectComment(string? key)
     {
         _updating = true;
-        CommentsList.SelectedItem = CommentsList.Items.OfType<ListViewItem>().FirstOrDefault(item => (item.Tag as PdfAnnotation)?.Id == key);
+        CommentsList.SelectedItem = key == null ? null : CommentsList.Items.OfType<ListViewItem>()
+            .FirstOrDefault(item => item.Tag is PdfAnnotation annotation && annotation.Id == key);
         _updating = false;
     }
 
@@ -132,7 +140,13 @@ public sealed partial class CommentSidebar : UserControl
     private void Close_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke();
     private void Comments_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!_updating && CommentsList.SelectedItem is ListViewItem { Tag: PdfAnnotation annotation }) CommentSelected?.Invoke(annotation);
+        if (!_updating && CommentsList.SelectedItem is ListViewItem { Tag: PdfAnnotation annotation }) CommentInvoked?.Invoke(annotation);
+    }
+    private void Comment_Click(object sender, ItemClickEventArgs e)
+    {
+        // A click on the selected row does not raise SelectionChanged.
+        if (e.ClickedItem is ListViewItem { Tag: PdfAnnotation annotation } item && Equals(item, CommentsList.SelectedItem))
+            CommentInvoked?.Invoke(annotation);
     }
     private void Bookmark_Invoked(TreeView sender, TreeViewItemInvokedEventArgs args)
     {

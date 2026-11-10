@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using PDF_simple_edit.Controls;
 using PDF_simple_edit.Helpers;
 using PDF_simple_edit.Services;
 using System;
@@ -33,7 +34,7 @@ public sealed class PdfOcrController(Func<PdfDocumentManager> getManager, Func<i
             var panel = new StackPanel { Spacing = 16, MinWidth = 300 };
             panel.Children.Add(text);
             panel.Children.Add(bar);
-            var dialog = new ContentDialog { Title = Loc.Get("OcrTitle"), XamlRoot = getRoot(), Content = panel,
+            var dialog = new EditorContentDialog(getRoot()) { Title = Loc.Get("OcrTitle"), Content = panel,
                 CloseButtonText = Loc.Get("Cancel") };
             bool allowClose = false;
             dialog.Closing += (_, args) =>

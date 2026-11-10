@@ -60,7 +60,29 @@ public sealed class EditorSettingsService
         return LocalizationService.SystemLanguage;
     }
 
-    public void SaveLanguage(string language)
+    public EditorTheme LoadTheme()
+    {
+        try
+        {
+            if (File.Exists(_settingsPath) &&
+                ReadValues(File.ReadAllLines(_settingsPath)).TryGetValue("Theme", out string? value) &&
+                Enum.TryParse(value, ignoreCase: true, out EditorTheme theme) &&
+                Enum.IsDefined(theme))
+                return theme;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Theme settings load error: {ex.Message}");
+        }
+        return EditorTheme.System;
+    }
+
+    public void SaveLanguage(string language) =>
+        SavePreference("Language", LocalizationService.NormalizePreference(language));
+
+    public void SaveTheme(EditorTheme theme) => SavePreference("Theme", theme.ToString());
+
+    private void SavePreference(string key, string value)
     {
         try
         {
@@ -68,12 +90,12 @@ public sealed class EditorSettingsService
             var lines = File.Exists(_settingsPath) ? File.ReadAllLines(_settingsPath).ToList() : new List<string>();
             MigrateLegacyPlacement(lines);
             lines = lines.Where(line => line.IndexOf('=') > 0).ToList();
-            SetValue(lines, "Language", LocalizationService.NormalizePreference(language));
+            SetValue(lines, key, value);
             File.WriteAllLines(_settingsPath, lines);
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Language settings save error: {ex.Message}");
+            Debug.WriteLine($"{key} settings save error: {ex.Message}");
         }
     }
 

@@ -1312,6 +1312,10 @@ To remove passwords individually, use Encryption and password settings.</value>
   <data name="LanguageLabel" xml:space="preserve">
     <value>Language</value>
   </data>
+  <data name="Theme" xml:space="preserve"><value>Theme</value></data>
+  <data name="FollowWindowsTheme" xml:space="preserve"><value>Follow Windows settings</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Light mode</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Dark mode</value></data>
   <data name="LanguageKorean" xml:space="preserve">
     <value>한국어</value>
   </data>

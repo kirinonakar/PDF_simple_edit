@@ -138,7 +138,7 @@ public sealed class AnnotationOverlayController
 
     private static void AddNotePopup(Canvas canvas, PdfAnnotation annotation, Action<PdfAnnotation> toggleNote)
     {
-        var layout = new Grid { Padding = new Thickness(10), RowSpacing = 8 };
+        var layout = new Grid { Padding = new Thickness(10), RowSpacing = 8, RequestedTheme = ElementTheme.Light };
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         var title = new TextBlock { Text = Loc.Get("StickyNote"), Foreground = new SolidColorBrush(Microsoft.UI.Colors.Black), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 0, 28, 0) };

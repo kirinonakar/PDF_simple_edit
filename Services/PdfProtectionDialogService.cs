@@ -6,6 +6,7 @@ using iText.Kernel.Pdf;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using PDF_simple_edit.Controls;
 using PDF_simple_edit.Models;
 
 namespace PDF_simple_edit.Services;
@@ -101,7 +102,7 @@ public sealed class PdfProtectionDialogService
         Refresh();
 
         PdfProtectionSettings? selected = null;
-        var dialog = new ContentDialog
+        var dialog = new EditorContentDialog(root)
         {
             Title = Loc.Get("EncryptionAndPasswordSettings"),
             Content = new ScrollViewer
@@ -110,7 +111,7 @@ public sealed class PdfProtectionDialogService
                 MaxHeight = Math.Max(180, Math.Min(580, root.Size.Height - 220)),
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto
             },
-            PrimaryButtonText = Loc.Get("Apply"), CloseButtonText = Loc.Get("Cancel"), XamlRoot = root,
+            PrimaryButtonText = Loc.Get("Apply"), CloseButtonText = Loc.Get("Cancel"),
             DefaultButton = ContentDialogButton.Primary
         };
         dialog.PrimaryButtonClick += (_, args) =>
@@ -162,11 +163,11 @@ public sealed class PdfProtectionDialogService
     }
 
     public async Task<bool> ConfirmRemoveAsync(XamlRoot root) =>
-        await new ContentDialog
+        await new EditorContentDialog(root)
         {
             Title = Loc.Get("RemoveAllPasswordsRemoveProtection"),
             Content = Loc.Get("RemoveAllOpenAndPermissionsPasswordsEncryptionAndUsage"),
-            PrimaryButtonText = Loc.Get("RemoveProtection"), CloseButtonText = Loc.Get("Cancel"), XamlRoot = root
+            PrimaryButtonText = Loc.Get("RemoveProtection"), CloseButtonText = Loc.Get("Cancel")
         }.ShowAsync() == ContentDialogResult.Primary;
 
     private static PasswordBox MakePasswordBox(string label, string? known) => new()

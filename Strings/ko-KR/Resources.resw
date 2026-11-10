@@ -1312,6 +1312,10 @@
   <data name="LanguageLabel" xml:space="preserve">
     <value>언어</value>
   </data>
+  <data name="Theme" xml:space="preserve"><value>테마</value></data>
+  <data name="FollowWindowsTheme" xml:space="preserve"><value>Windows 설정 따르기</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>라이트 모드</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>다크 모드</value></data>
   <data name="LanguageKorean" xml:space="preserve">
     <value>한국어</value>
   </data>

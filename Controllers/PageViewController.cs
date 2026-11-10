@@ -24,6 +24,8 @@ namespace PDF_simple_edit.Controllers;
 /// </summary>
 public sealed class PageViewController
 {
+    private const double PdfToPixels = 96.0 / 72.0;
+
     private readonly PdfPageRenderService _renderService;
     private readonly ListView _pageListView;
     private readonly Image _pageImage;
@@ -53,6 +55,7 @@ public sealed class PageViewController
     private PageThumbnailData? _liveThumbnail;
     private readonly PdfSaveService _thumbnailSaveService = new(new PdfAnnotationDocumentService());
     private int _renderVersion;
+    private (PdfDocumentManager Manager, byte[]? Source, int PageIndex)? _displayedPage;
     private CancellationTokenSource? _detailCts;
     private Image? _detailImage;
     private PageThumbnailData? _draggedThumbnail;
@@ -160,6 +163,7 @@ public sealed class PageViewController
             _formCanvas.Width = page.LogicalWidth;
             _formCanvas.Height = page.LogicalHeight;
             _pageImage.Stretch = Stretch.Fill;
+            _displayedPage = (manager, snapshot, pageIndex);
             _renderAnnotationOverlays();
             _renderFormOverlays();
             ScheduleViewportRender();
@@ -182,6 +186,7 @@ public sealed class PageViewController
     public void CancelPendingOperations()
     {
         ++_renderVersion;
+        _displayedPage = null;
         _dirtyThumbnailPages.Clear();
         _allThumbnailsDirty = false;
         _thumbnailCts?.Cancel();
@@ -532,6 +537,29 @@ public sealed class PageViewController
     {
         _setZoomLevel(Math.Max(_getZoomLevel() - 0.25, _scrollViewer.MinZoomFactor));
         ApplyZoom();
+    }
+
+    public bool IsCurrentPageDisplayed()
+    {
+        var manager = _getManager();
+        return _displayedPage == (manager, manager.GetPdfBytes(), _getCurrentPageIndex());
+    }
+
+    public void BringPageRegionIntoView(PdfTextBox bounds)
+    {
+        if (!double.IsFinite(bounds.X) || !double.IsFinite(bounds.Y) ||
+            !double.IsFinite(bounds.Width) || !double.IsFinite(bounds.Height))
+            return;
+
+        _scrollViewer.UpdateLayout();
+        _overlayCanvas.StartBringIntoView(new BringIntoViewOptions
+        {
+            TargetRect = new Rect(bounds.X * PdfToPixels, bounds.Y * PdfToPixels,
+                Math.Max(1, bounds.Width * PdfToPixels), Math.Max(1, bounds.Height * PdfToPixels)),
+            HorizontalAlignmentRatio = 0.5,
+            VerticalAlignmentRatio = 0.5,
+            AnimationDesired = false
+        });
     }
 
     public void FitToPage() => FitToViewport(fitHeight: true);

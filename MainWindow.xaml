@@ -17,7 +17,7 @@
     </Window.SystemBackdrop>
     -->
 
-    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    <Grid x:Name="RootGrid" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
           AllowDrop="True" DragOver="Grid_DragOver" Drop="Grid_Drop"
           KeyDown="MainWindow_KeyDown"
           KeyUp="MainWindow_KeyUp">

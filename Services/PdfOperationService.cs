@@ -1,6 +1,7 @@
 using Loc = PDF_simple_edit.Services.LocalizationService;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using PDF_simple_edit.Controls;
 using PDF_simple_edit.Helpers;
 using System;
 using System.Collections.Generic;
@@ -47,14 +48,13 @@ public sealed class PdfOperationService
         PdfMergeTarget target = PdfMergeTarget.NewFile;
         if (hasCurrentDocument)
         {
-            var dialog = new ContentDialog
+            var dialog = new EditorContentDialog(xamlRoot)
             {
                 Title = Loc.Get("MergePDFs"),
                 Content = Loc.Format("MergeTheSelectedFilesIntoTheCurrentDocument", files.Count),
                 PrimaryButtonText = Loc.Get("MergeIntoCurrentDocument"),
                 SecondaryButtonText = Loc.Get("SaveAsANewFile"),
-                CloseButtonText = Loc.Get("Cancel"),
-                XamlRoot = xamlRoot
+                CloseButtonText = Loc.Get("Cancel")
             };
             ContentDialogResult result = await dialog.ShowAsync();
             if (result == ContentDialogResult.None)
@@ -129,14 +129,13 @@ public sealed class PdfOperationService
         panel.Children.Add(byRange);
         panel.Children.Add(rangesText);
 
-        var dialog = new ContentDialog
+        var dialog = new EditorContentDialog(xamlRoot)
         {
             Title = Loc.Get("SplitPDF"),
             Content = panel,
             PrimaryButtonText = Loc.Get("Split"),
             CloseButtonText = Loc.Get("Cancel"),
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = xamlRoot
+            DefaultButton = ContentDialogButton.Primary
         };
         var errorText = new TextBlock { Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Red), TextWrapping = TextWrapping.Wrap };
         panel.Children.Add(errorText);

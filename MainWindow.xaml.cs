@@ -70,6 +70,8 @@ namespace PDF_simple_edit
         private readonly DocumentSearchController _documentSearchController = new(new PdfSearchService());
         private readonly PdfPageRenderService _pageRenderService = new();
         private readonly EditorDialogService _dialogService = new();
+        private readonly EditorSettingsService _settingsService = new();
+        private EditorTheme _theme;
         private DocumentFileController _fileController = null!;
         private bool _controlKeyIsDown;
         private readonly TextFontSettings _fontSettings = new();
@@ -146,6 +148,8 @@ namespace PDF_simple_edit
                 _fontSettings.Color = "#000000";
 
                 InitializeComponent();
+                ApplyTheme(_settingsService.LoadTheme());
+
                 _annotationCanvasController = new AnnotationCanvasController(
                     OverlayCanvas,
                     PdfScrollViewer,
@@ -249,7 +253,7 @@ namespace PDF_simple_edit
                     }, TxtStatus, ShowErrorDialogAsync);
                 _windowSettingsController = new WindowSettingsController(
                     this,
-                    new EditorSettingsService(),
+                    _settingsService,
                     _fontSettings,
                     _fontController.ApplySettings);
                 _fileController = new DocumentFileController(
@@ -373,14 +377,13 @@ namespace PDF_simple_edit
         {
             if (tab.IsModified)
             {
-                var dialog = new ContentDialog
+                var dialog = new EditorContentDialog(Content.XamlRoot)
                 {
                     Title = Loc.Get("SaveChanges"),
                     Content = Loc.Format("HasChangedSaveYourChanges", tab.Header),
                     PrimaryButtonText = Loc.Get("Save"),
                     SecondaryButtonText = Loc.Get("DonTSave"),
-                    CloseButtonText = Loc.Get("Cancel"),
-                    XamlRoot = this.Content.XamlRoot
+                    CloseButtonText = Loc.Get("Cancel")
                 };
 
                 var result = await dialog.ShowAsync();
@@ -825,14 +828,13 @@ namespace PDF_simple_edit
             {
                 args.Cancel = true; // Stop closing initially
 
-                var dialog = new ContentDialog
+                var dialog = new EditorContentDialog(Content.XamlRoot)
                 {
                     Title = Loc.Get("ConfirmExit"),
                     Content = Loc.Format("TabsHaveUnsavedChangesDoYouWantToExit", modifiedTabs.Count),
                     PrimaryButtonText = Loc.Get("SaveAllAndExit"),
                     SecondaryButtonText = Loc.Get("ExitWithoutSaving"),
-                    CloseButtonText = Loc.Get("Cancel"),
-                    XamlRoot = this.Content.XamlRoot
+                    CloseButtonText = Loc.Get("Cancel")
                 };
 
                 var result = await dialog.ShowAsync();
@@ -1617,11 +1619,37 @@ namespace PDF_simple_edit
 
         #region Settings & About
 
+        private void ApplyTheme(EditorTheme theme)
+        {
+            _theme = theme;
+            RootGrid.RequestedTheme = theme switch
+            {
+                EditorTheme.Light => ElementTheme.Light,
+                EditorTheme.Dark => ElementTheme.Dark,
+                _ => ElementTheme.Default
+            };
+            if (AppWindowTitleBar.IsCustomizationSupported())
+            {
+                AppWindow.TitleBar.PreferredTheme = theme switch
+                {
+                    EditorTheme.Light => TitleBarTheme.Light,
+                    EditorTheme.Dark => TitleBarTheme.Dark,
+                    _ => TitleBarTheme.UseDefaultAppMode
+                };
+            }
+        }
+
+        private void ChangeTheme(EditorTheme theme)
+        {
+            ApplyTheme(theme);
+            _settingsService.SaveTheme(theme);
+        }
+
         private async void Settings_Click(object sender, RoutedEventArgs e)
         {
             EditorPreferences preferences = await _dialogService.ShowSettingsAsync(
-                Content.XamlRoot, _renderScale, _fontSettings, new EditorSettingsService().LoadLanguage());
-            new EditorSettingsService().SaveLanguage(preferences.Language);
+                Content.XamlRoot, _renderScale, _fontSettings, _settingsService.LoadLanguage(), _theme, ChangeTheme);
+            _settingsService.SaveLanguage(preferences.Language);
             _renderScale = preferences.RenderScale;
             _fontSettings.FontFamily = preferences.FontFamily;
             _fontSettings.FontSize = preferences.FontSize;

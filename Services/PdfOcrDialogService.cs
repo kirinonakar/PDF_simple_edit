@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using PDF_simple_edit.Controls;
 using System;
 using System.Globalization;
 using System.Linq;
@@ -35,9 +36,9 @@ public sealed class PdfOcrDialogService
         panel.Children.Add(skip);
         panel.Children.Add(new TextBlock { Text = Loc.Get("OcrDescription"), TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(new TextBlock { Text = Loc.Get("OcrLanguageHelp"), TextWrapping = TextWrapping.Wrap });
-        var dialog = new ContentDialog
+        var dialog = new EditorContentDialog(root)
         {
-            Title = Loc.Get("OcrTitle"), XamlRoot = root,
+            Title = Loc.Get("OcrTitle"),
             Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 MaxHeight = Math.Max(180, root.Size.Height - 220) },
             PrimaryButtonText = Loc.Get("OcrStart"), CloseButtonText = Loc.Get("Cancel"),
