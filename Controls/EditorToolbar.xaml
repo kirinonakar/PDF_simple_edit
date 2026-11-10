@@ -158,6 +158,9 @@
         </StackPanel>
 
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
+            <ToggleButton x:Name="CursorButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=ClearToolSelectionD}" AutomationProperties.Name="{loc:LocalizedString Key=ClearToolSelection}" IsEnabled="False" IsChecked="True" Padding="8,6">
+                <PathIcon Width="16" Height="16" Data="M3,1 L13,9.5 H8.5 L11,14 L9,15 L6.5,10.5 L3,14 Z"/>
+            </ToggleButton>
             <ToggleButton x:Name="SelectButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=SelectTextS}" AutomationProperties.Name="{loc:LocalizedString Key=SelectText}" IsEnabled="False" Padding="8,6">
                 <FontIcon Glyph="&#xEF20;" FontSize="16"/>
             </ToggleButton>

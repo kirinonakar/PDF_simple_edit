@@ -1087,6 +1087,9 @@ To remove passwords individually, use Encryption and password settings.</value>
   <data name="Tools" xml:space="preserve">
     <value>Tools</value>
   </data>
+  <data name="ClearToolSelection" xml:space="preserve">
+    <value>Clear tool selection</value>
+  </data>
   <data name="SelectText" xml:space="preserve">
     <value>Select text</value>
   </data>
@@ -1212,6 +1215,9 @@ To remove passwords individually, use Encryption and password settings.</value>
   </data>
   <data name="RedoCtrlY" xml:space="preserve">
     <value>Redo (Ctrl+Y)</value>
+  </data>
+  <data name="ClearToolSelectionD" xml:space="preserve">
+    <value>Clear tool selection (D)</value>
   </data>
   <data name="SelectTextS" xml:space="preserve">
     <value>Select text (S)</value>

@@ -1087,6 +1087,9 @@
   <data name="Tools" xml:space="preserve">
     <value>도구</value>
   </data>
+  <data name="ClearToolSelection" xml:space="preserve">
+    <value>도구 선택 해제</value>
+  </data>
   <data name="SelectText" xml:space="preserve">
     <value>텍스트 선택</value>
   </data>
@@ -1212,6 +1215,9 @@
   </data>
   <data name="RedoCtrlY" xml:space="preserve">
     <value>다시 실행 (Ctrl+Y)</value>
+  </data>
+  <data name="ClearToolSelectionD" xml:space="preserve">
+    <value>도구 선택 해제 (D)</value>
   </data>
   <data name="SelectTextS" xml:space="preserve">
     <value>텍스트 선택 (S)</value>

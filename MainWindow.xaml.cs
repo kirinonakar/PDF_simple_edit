@@ -95,6 +95,7 @@ namespace PDF_simple_edit
         private Button BtnPrint => EditorToolbar.PrintButton;
         private Button BtnUndo => EditorToolbar.UndoButton;
         private Button BtnRedo => EditorToolbar.RedoButton;
+        private ToggleButton BtnCursor => EditorToolbar.CursorButton;
         private ToggleButton BtnSelect => EditorToolbar.SelectButton;
         private ToggleButton BtnSelectGraphics => EditorToolbar.SelectGraphicsButton;
         private ToggleButton BtnAddText => EditorToolbar.AddTextButton;
@@ -494,6 +495,7 @@ namespace PDF_simple_edit
                 case EditorMenuCommand.FitToPage: FitToPage_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.FitToWidth: FitToWidth_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.TogglePagePanel: TogglePagePanel_Click(EditorMenu, new RoutedEventArgs()); break;
+                case EditorMenuCommand.ClearToolSelection: SetToolMode(EditToolMode.None); break;
                 case EditorMenuCommand.SelectTool: SelectTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.SelectGraphicsTool: SelectGraphicsTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.TextHighlightTool: SetToolMode(EditToolMode.TextHighlight); break;
@@ -543,6 +545,7 @@ namespace PDF_simple_edit
             BtnPrint.Click += Print_Click;
             BtnUndo.Click += Undo_Click;
             BtnRedo.Click += Redo_Click;
+            BtnCursor.Click += (_, _) => SetToolMode(EditToolMode.None);
             BtnSelect.Click += SelectTool_Click;
             BtnSelectGraphics.Click += SelectGraphicsTool_Click;
             BtnAddText.Click += AddTextTool_Click;
@@ -763,6 +766,7 @@ namespace PDF_simple_edit
             BtnPrint.IsEnabled = hasDoc;
             BtnUndo.IsEnabled = hasDoc && _pdfManager.CanUndo;
             BtnRedo.IsEnabled = hasDoc && _pdfManager.CanRedo;
+            BtnCursor.IsEnabled = hasDoc;
             BtnSelect.IsEnabled = hasDoc;
             BtnSelectGraphics.IsEnabled = hasDoc;
             EditorToolbar.CommentButton.IsEnabled = hasDoc;
@@ -1043,6 +1047,7 @@ namespace PDF_simple_edit
             _currentTool = mode;
             EditorMenu.SetToolMode(mode);
 
+            BtnCursor.IsChecked = mode == EditToolMode.None;
             BtnSelect.IsChecked = mode == EditToolMode.Select;
             BtnSelectGraphics.IsChecked = mode == EditToolMode.SelectGraphics;
             foreach (var item in CommentToolItems) item.IsChecked = item.Tag is string commentTag && commentTag == mode.ToString();

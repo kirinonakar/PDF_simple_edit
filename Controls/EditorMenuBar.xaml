@@ -88,6 +88,12 @@
         </MenuBarItem>
 
         <MenuBarItem Title="{loc:LocalizedString Key=Tools}">
+            <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=ClearToolSelection}" x:Name="MenuClearToolSelection" Tag="ClearToolSelection" Click="Command_Click" IsEnabled="False" IsChecked="True">
+                <ToggleMenuFlyoutItem.Icon><PathIcon Data="M3,1 L13,9.5 H8.5 L11,14 L9,15 L6.5,10.5 L3,14 Z"/></ToggleMenuFlyoutItem.Icon>
+                <ToggleMenuFlyoutItem.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="D" Invoked="ToolAccelerator_Invoked"/>
+                </ToggleMenuFlyoutItem.KeyboardAccelerators>
+            </ToggleMenuFlyoutItem>
             <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=SelectText}" x:Name="MenuSelect" Tag="SelectTool" Click="Command_Click" IsEnabled="False">
                 <ToggleMenuFlyoutItem.Icon><FontIcon Glyph="&#xEF20;"/></ToggleMenuFlyoutItem.Icon>
                 <ToggleMenuFlyoutItem.KeyboardAccelerators>

@@ -33,7 +33,8 @@
         <!-- Custom Title Bar -->
         <Grid x:Name="AppTitleBar" Grid.Row="0" Background="Transparent">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
-                <FontIcon Glyph="&#xEA90;" FontSize="16" Foreground="#0078D4"/>
+                <Image Source="ms-appx:///Assets/pdf_edit.png" Width="16" Height="16"
+                       Stretch="Uniform" VerticalAlignment="Center"/>
                 <TextBlock x:Name="TitleText" Text="PDF Simple Editor" Margin="12,0,0,0"
                            Style="{StaticResource CaptionTextBlockStyle}"
                            VerticalAlignment="Center"/>

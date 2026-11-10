@@ -55,6 +55,7 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
   - `Ctrl` + drag: Pan the page when no tool is selected
   - `↑` / `Page Up`: Previous page
   - `↓` / `Page Down`: Next page
+  - `D`: Clear the active tool
   - `S`: Switch to **Text Selection**
   - `G`: Switch to **Graphic Selection**
   - `A`: Switch to **Add Text Tool**
