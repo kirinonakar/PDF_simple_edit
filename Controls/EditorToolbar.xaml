@@ -5,12 +5,41 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:loc="using:PDF_simple_edit.Localization">
     <UserControl.Resources>
-        <Style x:Key="ActiveToolIndicatorStyle" TargetType="Border">
-            <Setter Property="BorderBrush" Value="{ThemeResource ToggleButtonBackgroundChecked}"/>
-            <Setter Property="BorderThickness" Value="2"/>
-            <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}"/>
-            <Setter Property="IsHitTestVisible" Value="False"/>
-        </Style>
+        <ResourceDictionary>
+            <!-- Use the flat WinUI brushes with the stock button templates, including the drop-down chevron. -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <StaticResource x:Key="ButtonBackground" ResourceKey="SubtleButtonBackground"/>
+                    <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="SubtleButtonBackgroundPointerOver"/>
+                    <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="SubtleButtonBackgroundPressed"/>
+                    <StaticResource x:Key="ButtonBackgroundDisabled" ResourceKey="SubtleButtonBackgroundDisabled"/>
+                    <Thickness x:Key="ButtonBorderThemeThickness">0</Thickness>
+                    <StaticResource x:Key="ToggleButtonBackground" ResourceKey="SubtleButtonBackground"/>
+                    <StaticResource x:Key="ToggleButtonBackgroundPointerOver" ResourceKey="SubtleButtonBackgroundPointerOver"/>
+                    <StaticResource x:Key="ToggleButtonBackgroundPressed" ResourceKey="SubtleButtonBackgroundPressed"/>
+                    <StaticResource x:Key="ToggleButtonBackgroundDisabled" ResourceKey="SubtleButtonBackgroundDisabled"/>
+                    <Thickness x:Key="ToggleButtonBorderThemeThickness">0</Thickness>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <StaticResource x:Key="ButtonBackground" ResourceKey="SubtleButtonBackground"/>
+                    <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="SubtleButtonBackgroundPointerOver"/>
+                    <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="SubtleButtonBackgroundPressed"/>
+                    <StaticResource x:Key="ButtonBackgroundDisabled" ResourceKey="SubtleButtonBackgroundDisabled"/>
+                    <Thickness x:Key="ButtonBorderThemeThickness">0</Thickness>
+                    <StaticResource x:Key="ToggleButtonBackground" ResourceKey="SubtleButtonBackground"/>
+                    <StaticResource x:Key="ToggleButtonBackgroundPointerOver" ResourceKey="SubtleButtonBackgroundPointerOver"/>
+                    <StaticResource x:Key="ToggleButtonBackgroundPressed" ResourceKey="SubtleButtonBackgroundPressed"/>
+                    <StaticResource x:Key="ToggleButtonBackgroundDisabled" ResourceKey="SubtleButtonBackgroundDisabled"/>
+                    <Thickness x:Key="ToggleButtonBorderThemeThickness">0</Thickness>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+            <Style x:Key="ActiveToolIndicatorStyle" TargetType="Border">
+                <Setter Property="BorderBrush" Value="{ThemeResource ToggleButtonBackgroundChecked}"/>
+                <Setter Property="BorderThickness" Value="2"/>
+                <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}"/>
+                <Setter Property="IsHitTestVisible" Value="False"/>
+            </Style>
+        </ResourceDictionary>
     </UserControl.Resources>
     <Grid Padding="8,4" BorderBrush="#30000000" BorderThickness="0,0,0,1">
         <Grid.RowDefinitions>
@@ -143,29 +172,29 @@
                     </FlyoutBase.AttachedFlyout>
                 </ToggleButton>
                 <Button x:Name="SignatureSettingsButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=SignatureSettings}"
-                        Padding="4,6" Height="{Binding ActualHeight, ElementName=DrawingButton}" VerticalAlignment="Center" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                        Padding="4,6" Height="{Binding ActualHeight, ElementName=DrawingButton}" VerticalAlignment="Center" IsEnabled="False">
                     <FontIcon Glyph="&#xE713;" FontSize="12"/>
                 </Button>
             </StackPanel>
         </Grid>
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2">
-            <Button x:Name="OpenButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=OpenCtrlO}" Padding="8,6" Background="Transparent" BorderThickness="0">
+            <Button x:Name="OpenButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=OpenCtrlO}" Padding="8,6">
                 <FontIcon Glyph="&#xE8E5;" FontSize="16"/>
             </Button>
-            <Button x:Name="SaveButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=SaveCtrlS}" Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+            <Button x:Name="SaveButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=SaveCtrlS}" Padding="8,6" IsEnabled="False">
                 <FontIcon Glyph="&#xE74E;" FontSize="16"/>
             </Button>
-            <Button x:Name="SaveAsButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=SaveAsCtrlShiftS}" Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+            <Button x:Name="SaveAsButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=SaveAsCtrlShiftS}" Padding="8,6" IsEnabled="False">
                 <FontIcon Glyph="&#xE792;" FontSize="16"/>
             </Button>
-            <Button x:Name="PrintButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=PrintCtrlP}" Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+            <Button x:Name="PrintButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=PrintCtrlP}" Padding="8,6" IsEnabled="False">
                 <FontIcon Glyph="&#xE749;" FontSize="16"/>
             </Button>
             <AppBarSeparator/>
-            <Button x:Name="UndoButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=UndoCtrlZ}" Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+            <Button x:Name="UndoButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=UndoCtrlZ}" Padding="8,6" IsEnabled="False">
                 <FontIcon Glyph="&#xE7A7;" FontSize="16"/>
             </Button>
-            <Button x:Name="RedoButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=RedoCtrlY}" Padding="8,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+            <Button x:Name="RedoButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=RedoCtrlY}" Padding="8,6" IsEnabled="False">
                 <FontIcon Glyph="&#xE7A6;" FontSize="16"/>
             </Button>
             <AppBarSeparator/>
@@ -211,14 +240,14 @@
                 </FlyoutBase.AttachedFlyout>
             </ToggleButton>
             <Button x:Name="HighlightSettingsButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=HighlightSettings}"
-                    Padding="4,6" IsEnabled="False" Background="Transparent" BorderThickness="0">
+                    Padding="4,6" IsEnabled="False">
                 <FontIcon Glyph="&#xE713;" FontSize="12"/>
             </Button>
             <ToggleButton x:Name="ColorPickerButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=ColorPickerEyedropper}" IsEnabled="False" Padding="8,6">
                 <FontIcon Glyph="&#xEF3C;" FontSize="16"/>
             </ToggleButton>
             <Button x:Name="AddImageButton" x:FieldModifier="public" ToolTipService.ToolTip="{loc:LocalizedString Key=AddImage}" Padding="8,6"
-                    IsEnabled="False" Background="Transparent" BorderThickness="0">
+                    IsEnabled="False">
                 <FontIcon Glyph="&#xE8B9;" FontSize="16"/>
             </Button>
             <AppBarSeparator/>
@@ -281,18 +310,18 @@
         </StackPanel>
 
         <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="2">
-            <Button x:Name="ZoomOutButton" x:FieldModifier="public" Padding="8,6" ToolTipService.ToolTip="{loc:LocalizedString Key=ZoomOut}" Background="Transparent" BorderThickness="0">
+            <Button x:Name="ZoomOutButton" x:FieldModifier="public" Padding="8,6" ToolTipService.ToolTip="{loc:LocalizedString Key=ZoomOut}">
                 <FontIcon Glyph="&#xE71F;" FontSize="14"/>
             </Button>
             <TextBlock x:Name="ZoomText" x:FieldModifier="public" Text="100%" VerticalAlignment="Center" MinWidth="40" TextAlignment="Center" Margin="4,0"/>
-            <Button x:Name="ZoomInButton" x:FieldModifier="public" Padding="8,6" ToolTipService.ToolTip="{loc:LocalizedString Key=ZoomIn}" Background="Transparent" BorderThickness="0">
+            <Button x:Name="ZoomInButton" x:FieldModifier="public" Padding="8,6" ToolTipService.ToolTip="{loc:LocalizedString Key=ZoomIn}">
                 <FontIcon Glyph="&#xE8A3;" FontSize="14"/>
             </Button>
             <AppBarSeparator/>
-            <Button x:Name="FitToPageButton" x:FieldModifier="public" Padding="8,6" ToolTipService.ToolTip="{loc:LocalizedString Key=FitToPage}" Background="Transparent" BorderThickness="0">
+            <Button x:Name="FitToPageButton" x:FieldModifier="public" Padding="8,6" ToolTipService.ToolTip="{loc:LocalizedString Key=FitToPage}">
                 <FontIcon Glyph="&#xE9A6;" FontSize="14"/>
             </Button>
-            <Button x:Name="FitToWidthButton" x:FieldModifier="public" Padding="8,6" ToolTipService.ToolTip="{loc:LocalizedString Key=FitToWidth}" AutomationProperties.Name="{loc:LocalizedString Key=FitToWidth}" IsEnabled="False" Background="Transparent" BorderThickness="0">
+            <Button x:Name="FitToWidthButton" x:FieldModifier="public" Padding="8,6" ToolTipService.ToolTip="{loc:LocalizedString Key=FitToWidth}" AutomationProperties.Name="{loc:LocalizedString Key=FitToWidth}" IsEnabled="False">
                 <Viewbox Width="14" Height="14">
                     <PathIcon Width="16" Height="16" Data="M0,2 H1.5 V14 H0 Z M14.5,2 H16 V14 H14.5 Z M2,8 L5.5,4.5 L6.5,5.5 L4.75,7.25 H11.25 L9.5,5.5 L10.5,4.5 L14,8 L10.5,11.5 L9.5,10.5 L11.25,8.75 H4.75 L6.5,10.5 L5.5,11.5 Z"/>
                 </Viewbox>
