@@ -169,7 +169,7 @@ public sealed partial class NativePdfTextService
             g.TextIndex + g.Text.Length > start).ToList();
         var slices = data.Runs.Select(run => run with { Glyphs = run.Glyphs.Where(g => wanted.Any(w =>
             w.Text == g.Text && Math.Abs(w.Origin.X - g.Origin.X) < .01 && Math.Abs(w.Origin.Y - g.Origin.Y) < .01)).ToList() })
-            .Where(r => r.Glyphs.Count > 0).OrderBy(r => Math.Round(r.Glyphs[0].Origin.Y, 1)).ThenBy(r => r.Glyphs[0].Origin.X).ToList();
+            .Where(r => r.Glyphs.Count > 0).ToList();
         if (slices.Count == 0) return null;
         NativePdfTextBlock selected;
         if (layout.Glyphs.Any(g => g.ShapeTransform.HasValue))
@@ -186,7 +186,11 @@ public sealed partial class NativePdfTextService
                 Runs = ordered.Where(g => !g.IsVirtual).Select(g => data.Runs.Single(r => r.Id == g.RunId)).DistinctBy(r => r.Id).ToList()
             };
         }
-        else selected = BuildBlock(slices) with { Runs = slices.Select(s => data.Runs.Single(r => r.Id == s.Id)).ToList() };
+        else
+        {
+            slices = NativePdfParagraphLayout.OrderRunsByLine(slices);
+            selected = BuildBlock(slices) with { Runs = slices.Select(s => data.Runs.Single(r => r.Id == s.Id)).ToList() };
+        }
         return ApplyInkBounds(doc.GetPage(pageIndex + 1), new() { selected }, data.Map)[0];
     }
 

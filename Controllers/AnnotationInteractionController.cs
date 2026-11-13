@@ -57,6 +57,16 @@ public sealed class AnnotationInteractionController
 
     public bool IsDrawingHighlight => _highlightRectangle != null;
 
+    public bool UpdateReflowPreviewHeight(PdfTextBox bounds)
+    {
+        if (!IsResizing || !IsReflowingTextResize || _resizeHandle is not ("W" or "E") || _resizeAnnotation == null)
+            return false;
+        double height = Math.Max(1, bounds.Bottom - _resizeAnnotation.Y);
+        if (Math.Abs(_resizeAnnotation.Height - height) < .01) return false;
+        _resizeAnnotation.Height = height;
+        return true;
+    }
+
     public void BeginResize(PdfAnnotation annotation, string direction, Point position, bool adjustTextWidth = false)
     {
         IsReflowingTextResize = !adjustTextWidth && direction != "Rotate" &&

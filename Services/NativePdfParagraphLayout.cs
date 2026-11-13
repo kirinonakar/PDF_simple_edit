@@ -122,15 +122,51 @@ internal static class NativePdfParagraphLayout
 
     private sealed record FlowLine(int Start, int End, double Left, double Baseline, bool HardBreak);
 
+    public static Dictionary<double, double> MapPhysicalBaselines(IEnumerable<NativePdfGlyph> glyphs,
+        IReadOnlyDictionary<string, NativePdfRun> runs)
+    {
+        var baselines = new Dictionary<double, double>();
+        var rows = new List<List<NativePdfGlyph>>();
+        foreach (var glyph in glyphs.Where(g => !g.IsVirtual).OrderBy(g => g.Origin.Y))
+        {
+            var row = rows.LastOrDefault();
+            if (row == null || glyph.Origin.Y - row[0].Origin.Y > Math.Max(.5,
+                Math.Min(runs[glyph.RunId].DisplayFontSize, runs[row[0].RunId].DisplayFontSize) * .22))
+            {
+                row = new();
+                rows.Add(row);
+            }
+            row.Add(glyph);
+        }
+        foreach (var row in rows)
+        {
+            // Use the baseline with the most glyphs, so raised bullets and
+            // superscripts retain their vertical offset from the body text.
+            double baseline = row.GroupBy(g => Math.Round(g.Origin.Y, 1)).MaxBy(group => group.Count())!.First().Origin.Y;
+            foreach (var glyph in row)
+                baselines[glyph.Origin.Y] = baseline;
+        }
+        return baselines;
+    }
+
+    public static List<NativePdfRun> OrderRunsByLine(List<NativePdfRun> runs)
+    {
+        var baselines = MapPhysicalBaselines(runs.SelectMany(r => r.Glyphs), runs.ToDictionary(r => r.Id));
+        return runs.OrderBy(r => baselines[r.Glyphs[0].Origin.Y]).ThenBy(r => r.Glyphs[0].Origin.X).ToList();
+    }
+
     public static NativePdfTextBlock Place(NativePdfTextBlock block, string text, List<NativePdfGlyph> tokens,
         Func<NativePdfGlyph, double> width, Func<NativePdfGlyph, NativePdfGlyph, double> kerning,
         Func<NativePdfGlyph, double> trailingSpacing, double deltaX, double deltaY, bool preservePlacement = true,
         double minimumLeading = 0, PdfTextBox? reflowBounds = null)
     {
+        var runs = block.Runs.ToDictionary(run => run.Id);
+        var baselines = MapPhysicalBaselines(block.Glyphs, runs);
+        double PhysicalBaseline(NativePdfGlyph glyph) => baselines.GetValueOrDefault(glyph.Origin.Y, glyph.Origin.Y);
         var originalLines = block.Glyphs.Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text))
-            .GroupBy(g => Math.Round(g.Origin.Y, 1)).Select(g => g.ToList()).OrderBy(g => g[0].Origin.Y).ToList();
-        var anchors = originalLines.Select(line => line[0].Origin).ToList();
-        var originalTokensByLine = block.Glyphs.GroupBy(g => Math.Round(g.Origin.Y, 1))
+            .GroupBy(PhysicalBaseline).OrderBy(line => line.Key).ToList();
+        var anchors = originalLines.Select(line => new PdfTextPoint(line.First().Origin.X, line.Key)).ToList();
+        var originalTokensByLine = block.Glyphs.GroupBy(PhysicalBaseline)
             .ToDictionary(line => line.Key, line => line.ToList());
         double left = anchors.Min(p => p.X), firstLeft = anchors[0].X;
         double right = Math.Max(block.Bounds.Right, block.Glyphs.Max(g => g.End.X));
@@ -188,6 +224,7 @@ internal static class NativePdfParagraphLayout
             start = end; lineLeft = hard ? firstLeft : left;
         }
         var placed = new List<NativePdfGlyph>();
+        var boxes = new List<PdfTextBox>();
         for (int lineIndex = 0; lineIndex < lines.Count; lineIndex++)
         {
             var line = lines[lineIndex];
@@ -207,8 +244,10 @@ internal static class NativePdfParagraphLayout
                     continue;
                 }
                 if (i > line.Start) x += kerning(tokens[i - 1], token);
-                double dx = x + deltaX - token.Origin.X, dy = line.Baseline + deltaY - token.Origin.Y;
-                placed.Add(token with { Origin = new(x + deltaX, line.Baseline + deltaY), End = new(x + widths[i] + deltaX, line.Baseline + deltaY),
+                // Bullets and other raised glyphs stay offset within their line.
+                double y = line.Baseline + deltaY + token.Origin.Y - PhysicalBaseline(token);
+                double dx = x + deltaX - token.Origin.X, dy = y - token.Origin.Y;
+                placed.Add(token with { Origin = new(x + deltaX, y), End = new(x + widths[i] + deltaX, y),
                     Bounds = token.Bounds with { X = token.Bounds.X + dx, Y = token.Bounds.Y + dy }, IsSoftBreak = false });
                 x += widths[i];
             }
@@ -218,7 +257,7 @@ internal static class NativePdfParagraphLayout
             // the following letters to their old positions.
             if (preservePlacement && lineIndex < originalLines.Count)
             {
-                var source = originalTokensByLine[Math.Round(anchors[lineIndex].Y, 1)];
+                var source = originalTokensByLine[anchors[lineIndex].Y];
                 int sourceCount = source.FindLastIndex(g => !White(g)) + 1;
                 int targetCount = lastInk - line.Start + 1;
                 if (sourceCount == targetCount && Enumerable.Range(0, sourceCount).All(i =>
@@ -251,8 +290,10 @@ internal static class NativePdfParagraphLayout
                     }
                 }
             }
+            if (lastInk >= line.Start)
+                boxes.Add(PdfTextBox.Union(placed.Skip(placedStart).Take(lastInk - line.Start + 1)
+                    .Where(g => !White(g)).Select(g => g.Bounds)));
         }
-        var boxes = placed.Where(g => !White(g)).GroupBy(g => Math.Round(g.Origin.Y, 1)).Select(g => PdfTextBox.Union(g.Select(c => c.Bounds))).ToList();
         return block with { Text = text, Glyphs = placed, Lines = boxes, Bounds = PdfTextBox.Union(boxes) };
     }
 }

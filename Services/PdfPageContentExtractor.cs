@@ -1053,7 +1053,7 @@ namespace PDF_simple_edit.Services
                 PdfLiteral operatorLiteral,
                 IList<PdfObject> operands)
             {
-                _listener.AddShading(_tracker.Next());
+                _listener.AddShading(_tracker.Next(), processor.GetGraphicsState().GetCtm());
                 InnerOperator?.Invoke(processor, operatorLiteral, operands);
             }
         }
@@ -1315,10 +1315,10 @@ namespace PDF_simple_edit.Services
                 if (isClippingPath)
                 {
                     _pendingClipBounds = (
-                        left,
-                        _pageHeight - top,
-                        right - left,
-                        top - bottom);
+                        left + padding,
+                        _pageHeight - top + padding,
+                        right - left - 2 * padding,
+                        top - bottom - 2 * padding);
                     if (pathInfo.GetOperation() == PathRenderInfo.NO_OP) return;
                 }
 
@@ -1388,12 +1388,15 @@ namespace PDF_simple_edit.Services
                 });
             }
 
-            public void AddShading(ShadingOperationDescriptor? target)
+            public void AddShading(ShadingOperationDescriptor? target, Matrix matrix)
             {
                 if (target == null || _pendingClipBounds is not { } bounds)
                     return;
                 VectorPaths.Add(new VectorPathFragment
                 {
+                    Ctm = new(matrix.Get(Matrix.I11), matrix.Get(Matrix.I12),
+                        matrix.Get(Matrix.I21), matrix.Get(Matrix.I22),
+                        matrix.Get(Matrix.I31), matrix.Get(Matrix.I32)),
                     X = bounds.X,
                     Y = bounds.Y,
                     Width = bounds.Width,

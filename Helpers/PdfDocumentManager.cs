@@ -869,8 +869,11 @@ namespace PDF_simple_edit.Helpers
             CommitNativeTextEdit(snapshot, transformed, pageIndex);
             for (int i = 0; i < texts.Count; i++)
             {
-                NativePdfTextService.UpdateAnnotation(texts[i].Target, refreshedText[i]);
-                texts[i].Target.Rotation = 0;
+                var target = texts[i].Target;
+                double right = target.X + target.Width;
+                NativePdfTextService.UpdateAnnotation(target, refreshedText[i]);
+                if (reflowText) target.Width = Math.Max(target.Width, right - target.X);
+                target.Rotation = 0;
             }
             if (refreshedGraphics != null)
             {

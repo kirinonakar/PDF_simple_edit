@@ -266,9 +266,8 @@ public sealed partial class NativePdfTextService
         {
             var codes = column.SelectMany(b => b.Glyphs).Where(g => !g.IsVirtual).Select(g => g.Code).ToHashSet();
             var runs = column.SelectMany(b => b.Runs).DistinctBy(r => r.Id).ToList();
-            var slices = runs.Select(r => r with { Glyphs = r.Glyphs.Where(g => codes.Contains(g.Code)).ToList() })
-                .OrderBy(r => r.Glyphs[0].Origin.Y).ThenBy(r => r.Glyphs[0].Origin.X).ToList();
-            return BuildBlock(slices) with { Runs = runs };
+            var slices = runs.Select(r => r with { Glyphs = r.Glyphs.Where(g => codes.Contains(g.Code)).ToList() }).ToList();
+            return BuildBlock(NativePdfParagraphLayout.OrderRunsByLine(slices)) with { Runs = runs };
         }).ToList();
     }
 
@@ -544,11 +543,17 @@ public sealed partial class NativePdfTextService
         return blocks.Select(block =>
         {
             var glyphs = block.Glyphs.Select(Resolve).ToList();
-            var lines = glyphs.Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text))
-                .GroupBy(g => Math.Round(g.Origin.Y, 1)).Select(g => PdfTextBox.Union(g.Select(c => c.Bounds))).ToList();
+            var ink = glyphs.Where(g => !g.IsVirtual && !string.IsNullOrWhiteSpace(g.Text)).ToList();
             // For angled text keep the complete transformed object outline.
+            List<PdfTextBox> lines;
             if (block.Runs.SelectMany(r => r.Glyphs).Any(g => Math.Abs(g.End.Y - g.Origin.Y) > .1))
                 lines = glyphs.Count == 0 ? new() : new() { PdfTextBox.Union(glyphs.Select(g => g.Bounds)) };
+            else
+            {
+                var baselines = NativePdfParagraphLayout.MapPhysicalBaselines(ink, block.Runs.ToDictionary(r => r.Id));
+                lines = ink.GroupBy(g => baselines[g.Origin.Y]).OrderBy(line => line.Key)
+                    .Select(line => PdfTextBox.Union(line.Select(g => g.Bounds))).ToList();
+            }
             return block with { Glyphs = glyphs, Runs = block.Runs.Select(r => r with { Glyphs = r.Glyphs.Select(Resolve).ToList() }).ToList(),
                 Bounds = PdfTextBox.Union(lines), Lines = lines };
         }).ToList();

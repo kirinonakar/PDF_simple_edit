@@ -55,8 +55,8 @@ internal static class PdfGraphicTransformService
                 for (int i = 0; i < operations.Count; i++)
                 {
                     string name = operations[i][^1].ToString()!;
-                    if (name is "m" or "l" or "c" or "v" or "y" or "re" or "h") pathCommands.Add(i);
-                    bool paint = name is "S" or "s" or "f" or "F" or "f*" or "B" or "B*" or "b" or "b*" or "n";
+                    if (IsPathCommand(name)) pathCommands.Add(i);
+                    bool paint = IsPathEnd(name);
                     if (paint) pathIndex++;
                     if (name == "Do") imageIndex++;
                     if (name == "sh") shadingIndex++;
@@ -71,9 +71,19 @@ internal static class PdfGraphicTransformService
                         if (style != null && target.Operation.IsImageOperation &&
                             (style.StrokeColor != null || style.FillColor != null || style.LineWidth != null))
                             throw new ArgumentException("Raster images cannot be recolored as vector paths; supply imagePath to replace the image.");
-                        if (target.Operation.IsClipping || target.Operation.IsShadingOperation)
+                        if (target.Operation.IsClipping)
                             throw new InvalidOperationException(Loc.Get("GraphicsWithSharedClippingRegionsCannotBeTransformed"));
-                        if (paint)
+                        if (target.Operation.IsShadingOperation)
+                        {
+                            if (style is { } shadingStyle &&
+                                (shadingStyle.StrokeColor != null || shadingStyle.FillColor != null || shadingStyle.LineWidth != null))
+                                throw new ArgumentException("A PDF shading's colors are defined by its shading resource.");
+                            var (start, shadingMatrix) = FindPrivateShadingClip(operations, i);
+                            var clipTransform = shadingMatrix.After(target.Transform).After(shadingMatrix.Inverse());
+                            // The owning Q restores both the CTM and the clip.
+                            before[start] = clipTransform.Command;
+                        }
+                        else if (paint)
                         {
                             if (pathCommands.Count == 0) throw new InvalidOperationException(Loc.Get("CannotFindTheGraphicPath"));
                             // Path operands are local user coordinates. Conjugation
@@ -89,7 +99,8 @@ internal static class PdfGraphicTransformService
                             before[i] = target.Transform.Command;
                             after[i] = target.Transform.Inverse().Command;
                         }
-                        if (style != null)
+                        if (style is { StrokeColor: not null } or { FillColor: not null } or
+                            { LineWidth: not null } or { Opacity: not null })
                         {
                             string paintStyle = "q\n";
                             if (style.StrokeColor is { } stroke) paintStyle += ColorCommand(stroke, "RG");
@@ -127,6 +138,71 @@ internal static class PdfGraphicTransformService
         }
         return output.ToArray();
     }
+
+    private static (int Start, PdfAffineTransform ShadingMatrix) FindPrivateShadingClip(
+        List<List<PdfObject>> operations, int shading)
+    {
+        string Name(int index) => operations[index][^1].ToString()!;
+        static bool IsState(string name) => name is "cm" or "gs" or "i" or "BMC" or "BDC" or "EMC" or "MP" or "DP";
+        static InvalidOperationException SharedClip() =>
+            new(Loc.Get("GraphicsWithSharedClippingRegionsCannotBeTransformed"));
+
+        // Follow the CTM from the clip to the shading. The clip may be outside
+        // an inner q/cm/sh/Q block, as in gradients exported by InDesign.
+        int end = shading - 1;
+        var shadingMatrix = PdfAffineTransform.Identity;
+        while (end >= 0 && (Name(end) == "q" || IsState(Name(end))))
+        {
+            if (Name(end) == "cm")
+            {
+                var matrix = operations[end].Take(6).Cast<PdfNumber>().Select(n => n.DoubleValue()).ToArray();
+                shadingMatrix = new PdfAffineTransform(matrix[0], matrix[1], matrix[2],
+                    matrix[3], matrix[4], matrix[5]).After(shadingMatrix);
+            }
+            end--;
+        }
+        if (end < 2 || Name(end) != "n" || Name(end - 1) is not ("W" or "W*"))
+            throw SharedClip();
+        int start = end - 1;
+        while (start > 0 && IsPathCommand(Name(start - 1))) start--;
+        if (start == end - 1) throw SharedClip();
+        for (int i = start - 1; i >= 0 && !IsPathEnd(Name(i)); i--)
+            if (IsPathCommand(Name(i)) || Name(i) is "W" or "W*") throw SharedClip();
+
+        int depth = 0;
+        int scope = start - 1;
+        for (; scope >= 0; scope--)
+        {
+            if (Name(scope) == "Q") depth++;
+            else if (Name(scope) == "q")
+            {
+                if (depth == 0) break;
+                depth--;
+            }
+        }
+        if (scope < 0) throw SharedClip();
+
+        // The changed clip must be restored before any other paint operation.
+        // Only the selected sh may consume this clip within its owning scope.
+        depth = 1;
+        for (int i = end + 1; i < operations.Count; i++)
+        {
+            string name = Name(i);
+            if (i == shading || IsState(name)) continue;
+            if (name == "q") depth++;
+            else if (name == "Q")
+            {
+                if (--depth == 0) return (start, shadingMatrix);
+            }
+            else throw SharedClip();
+        }
+        throw SharedClip();
+    }
+
+    private static bool IsPathCommand(string name) => name is "m" or "l" or "c" or "v" or "y" or "re" or "h";
+
+    private static bool IsPathEnd(string name) =>
+        name is "S" or "s" or "f" or "F" or "f*" or "B" or "B*" or "b" or "b*" or "n";
 
     private static string Number(double value) => value.ToString("0.##########", System.Globalization.CultureInfo.InvariantCulture);
     private static string ColorCommand(string color, string operation) => string.Join(" ", new[] { 1, 3, 5 }

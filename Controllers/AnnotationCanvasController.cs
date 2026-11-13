@@ -1087,21 +1087,25 @@ public sealed class AnnotationCanvasController
             var graphicEdits = requests.Where(e => e.Source.IsOriginalImageReplacement).Select(e =>
                 (e.Source, PdfAffineTransform.Between(new(e.Source.X, e.Source.Y, e.Source.Width, e.Source.Height),
                     new(e.Target.X, e.Target.Y, e.Target.Width, e.Target.Height), e.Target.Rotation - e.Source.Rotation))).ToList();
-            byte[] previewBytes = await Task.Run(() =>
+            var (previewBytes, textLayout) = await Task.Run(() =>
             {
                 var service = new NativePdfTextService();
                 var blocks = textRequests.Any(e => e.Source.NativeText == null) ? service.Extract(bytes, pageIndex) : new();
                 var nativeEdits = textRequests.Select(e => TextResizeService.CreateEdit(
                     TextResizeService.ResolveBlock(e.Source, blocks), e.Source, e.Target, reflow)).ToList();
-                byte[] result = nativeEdits.Count > 0 ? service.EditMany(bytes, pageIndex, nativeEdits).Bytes : bytes;
-                return graphicEdits.Count > 0 ? PdfGraphicTransformService.Transform(result, pageIndex, graphicEdits) : result;
+                var textResult = nativeEdits.Count > 0 ? service.EditMany(bytes, pageIndex, nativeEdits) : null;
+                byte[] result = textResult?.Bytes ?? bytes;
+                if (graphicEdits.Count > 0) result = PdfGraphicTransformService.Transform(result, pageIndex, graphicEdits);
+                return (result, reflow ? textResult?.Layout : null);
             });
             if (version != _movePreviewVersion) return;
             using var input = new MemoryStream(previewBytes);
             using var rendered = await PdfRenderHelper.RenderPageWithWindowsPdfStreamAsync(input.AsRandomAccessStream(), pageIndex, 2);
             if (rendered == null || version != _movePreviewVersion) return;
             var bitmap = new BitmapImage(); await bitmap.SetSourceAsync(rendered.AsRandomAccessStream());
-            if (version == _movePreviewVersion && (_interactionController.IsMoving || _interactionController.IsResizing)) _pageImage.Source = bitmap;
+            if (version != _movePreviewVersion || (!_interactionController.IsMoving && !_interactionController.IsResizing)) return;
+            _pageImage.Source = bitmap;
+            if (textLayout != null && _interactionController.UpdateReflowPreviewHeight(textLayout.Bounds)) Render();
         }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
         finally { _movePreviewGate.Release(); }
