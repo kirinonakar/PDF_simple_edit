@@ -1280,11 +1280,14 @@ namespace PDF_simple_edit
         private void AnnotationContextMenu_Opening(object? sender, object e)
         {
             bool isComment = _annotationCanvasController.PrimarySelection?.Type == AnnotationType.PdfComment;
+            bool hasActiveTool = _currentTool != EditToolMode.None;
+            bool canAlign = hasActiveTool && !isComment;
             PdfSurface.EditCommentItem.Visibility = _annotationCanvasController.PrimarySelection?.PdfCommentSubtype is "Text" or "FreeText" ? Visibility.Visible : Visibility.Collapsed;
-            PdfSurface.AlignLeftItem.IsEnabled = !isComment;
-            PdfSurface.AlignRightItem.IsEnabled = !isComment;
-            PdfSurface.AlignTopItem.IsEnabled = !isComment;
-            PdfSurface.AlignBottomItem.IsEnabled = !isComment;
+            PdfSurface.AlignLeftItem.IsEnabled = canAlign;
+            PdfSurface.AlignRightItem.IsEnabled = canAlign;
+            PdfSurface.AlignTopItem.IsEnabled = canAlign;
+            PdfSurface.AlignBottomItem.IsEnabled = canAlign;
+            PdfSurface.DeleteItem.IsEnabled = hasActiveTool;
             int selectedCount = _annotationCanvasController.SelectedAnnotations.Count;
             int copyableCount = _clipboardController.GetCopyableSelection().Count;
             bool hasCopyableSelection = copyableCount > 0;
