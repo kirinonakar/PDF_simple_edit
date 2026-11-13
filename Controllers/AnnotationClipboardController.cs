@@ -9,7 +9,6 @@ using Microsoft.UI.Xaml.Controls;
 using PDF_simple_edit.Helpers;
 using PDF_simple_edit.Models;
 using PDF_simple_edit.Services;
-using System.Text.Json;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Graphics.Imaging;
 using Windows.Storage;
@@ -29,9 +28,13 @@ public sealed class AnnotationClipboardController(
     Action<EditToolMode> setToolMode)
 {
     private const string AnnotationClipboardFormat = "PDFSimpleEditor.Annotations.v1";
+    private const string GraphicClipboardFormat = "PDFSimpleEditor.Graphics.v1";
 
     public async Task<bool> CutSelectedObjectsAsync()
     {
+        var manager = getManager();
+        int pageIndex = getCurrentPageIndex();
+        long version = manager.EditVersion;
         List<PdfAnnotation> selectedObjects = GetCopyableSelection();
         if (selectedObjects.Count == 0 ||
             selectedObjects.Count != canvasController.SelectedAnnotations.Count)
@@ -44,18 +47,22 @@ public sealed class AnnotationClipboardController(
 
         // Copy can yield while another process holds the clipboard. Do not cut a
         // different selection if the user changed it during that wait.
-        if (!selectedObjects.SequenceEqual(GetCopyableSelection()) ||
+        if (manager != getManager() || pageIndex != getCurrentPageIndex() || version != manager.EditVersion ||
+            !selectedObjects.SequenceEqual(GetCopyableSelection()) ||
             selectedObjects.Count != canvasController.SelectedAnnotations.Count)
             return false;
 
         if (!await deleteSelectionAsync())
             return false;
 
-        statusText.Text = selectedObjects.Count > 1
-            ? Loc.Format("CutObjects", selectedObjects.Count)
-            : selectedObjects[0].Type == AnnotationType.Image
-                ? Loc.Get("CutImage")
-                : selectedObjects[0].Type == AnnotationType.Drawing ? Loc.Get("CutDrawing") : Loc.Get("CutText");
+        statusText.Text = selectedObjects.Count > 1 ? Loc.Format("CutObjects", selectedObjects.Count) : Loc.Get(
+            selectedObjects[0] switch
+            {
+                { IsOriginalVectorGraphic: true } => "CutGraphics",
+                { Type: AnnotationType.Image } => "CutImage",
+                { IsEditablePath: true } => "CutDrawing",
+                _ => "CutText"
+            });
         return true;
     }
 
@@ -89,9 +96,25 @@ public sealed class AnnotationClipboardController(
             {
                 RequestedOperation = DataPackageOperation.Copy
             };
-            dataPackage.SetData(
-                AnnotationClipboardFormat,
-                JsonSerializer.Serialize(selectedObjects.Select(annotation => annotation.Clone())));
+            var nativeGraphics = selectedObjects.Where(CanCopyNativeGraphic).Select(a => a.Clone()).ToList();
+            var overlayObjects = selectedObjects.Where(a => !CanCopyNativeGraphic(a)).Select(a => a.Clone()).ToList();
+            if (overlayObjects.Count > 0)
+                ClipboardObjectData.Set(dataPackage, AnnotationClipboardFormat, overlayObjects);
+            if (nativeGraphics.Count > 0)
+            {
+                var manager = getManager();
+                int pageIndex = getCurrentPageIndex();
+                byte[] bytes = manager.GetPdfBytes() ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
+                var contents = await manager.ExtractPageContentsAsync(pageIndex);
+                if (!ReferenceEquals(bytes, manager.GetPdfBytes()))
+                    throw new InvalidOperationException(Loc.Get("TheGraphicsChangedSelectThemAgain"));
+                var targets = new PdfAnnotationTargetResolver().ResolveImages(nativeGraphics, contents)
+                    ?? throw new InvalidOperationException(Loc.Get("TheGraphicsChangedSelectThemAgain"));
+                targets = targets.OrderBy(a => contents.FirstOrDefault(c => AnnotationContentService.IsSameOriginalGraphic(a, c)) is { } content
+                    ? content.GraphicPaintOrder : int.MaxValue).ToList();
+                var graphics = await Task.Run(() => PdfGraphicClipboard.Copy(bytes, pageIndex, targets));
+                ClipboardObjectData.Set(dataPackage, GraphicClipboardFormat, graphics);
+            }
 
             List<PdfAnnotation> selectedText = selectedObjects
                 .Where(IsTextAnnotation)
@@ -114,11 +137,14 @@ public sealed class AnnotationClipboardController(
             }
 
             await ClipboardCopyService.SetContentAsync(dataPackage);
-            statusText.Text = selectedObjects.Count > 1
-                ? Loc.Format("CopiedObjectsToTheClipboard", selectedObjects.Count)
-                : selectedObjects[0].Type == AnnotationType.Image
-                    ? Loc.Get("CopiedImageToTheClipboard")
-                    : selectedObjects[0].Type == AnnotationType.Drawing ? Loc.Get("CopiedDrawingToTheClipboard") : Loc.Get("CopiedTextToTheClipboard");
+            statusText.Text = selectedObjects.Count > 1 ? Loc.Format("CopiedObjectsToTheClipboard", selectedObjects.Count) : Loc.Get(
+                selectedObjects[0] switch
+                {
+                    { IsOriginalVectorGraphic: true } => "CopiedGraphicsToTheClipboard",
+                    { Type: AnnotationType.Image } => "CopiedImageToTheClipboard",
+                    { IsEditablePath: true } => "CopiedDrawingToTheClipboard",
+                    _ => "CopiedTextToTheClipboard"
+                });
             return true;
         }
         catch (Exception ex)
@@ -131,22 +157,49 @@ public sealed class AnnotationClipboardController(
 
     public async Task<bool> PasteClipboardContentAsync()
     {
-        if (!getManager().IsLoaded)
+        var manager = getManager();
+        int pageIndex = getCurrentPageIndex();
+        if (manager.GetPdfBytes() is not { } snapshot)
             return false;
+        bool IsCurrentPage() => manager == getManager() && pageIndex == getCurrentPageIndex();
 
         try
         {
             DataPackageView clipboardContent = Clipboard.GetContent();
+            var pasted = new List<PdfAnnotation>();
             if (clipboardContent.Contains(AnnotationClipboardFormat))
             {
-                object data = await clipboardContent.GetDataAsync(AnnotationClipboardFormat);
-                if (data is string json)
-                {
-                    List<PdfAnnotation>? annotations =
-                        JsonSerializer.Deserialize<List<PdfAnnotation>>(json);
-                    if (annotations != null && PasteAnnotationObjects(annotations))
-                        return true;
-                }
+                var annotations = await ClipboardObjectData.ReadAsync<List<PdfAnnotation>>(clipboardContent, AnnotationClipboardFormat);
+                if (!IsCurrentPage()) return false;
+                if (annotations != null) pasted.AddRange(CreatePastedAnnotations(annotations));
+            }
+            bool hasNativeGraphics = clipboardContent.Contains(GraphicClipboardFormat);
+            if (hasNativeGraphics)
+            {
+                if (await ClipboardObjectData.ReadAsync<PdfGraphicClipboardData>(clipboardContent, GraphicClipboardFormat)
+                    is not { Bounds.Length: > 0, Pdf.Length: > 0 } graphics)
+                    throw new InvalidDataException();
+                if (!IsCurrentPage()) return false;
+                var result = await Task.Run(() => PdfGraphicClipboard.Paste(snapshot, pageIndex, graphics));
+                if (!IsCurrentPage()) return false;
+                manager.CommitNativeTextEdit(snapshot, result.Bytes, pageIndex);
+                // Prepending the graphics-state guard changes existing stream indexes.
+                getAnnotations().RemoveAll(a => a.PageIndex == pageIndex && (a.IsOriginalImageReplacement || a.NativeText != null));
+                var contentService = new AnnotationContentService();
+                pasted.AddRange(result.Contents.Select(c => contentService.ConvertToAnnotation(c, pageIndex)));
+            }
+            if (pasted.Count > 0)
+            {
+                AddPastedAnnotations(pasted, markModified: !hasNativeGraphics);
+                statusText.Text = pasted.Count > 1 ? Loc.Format("PastedObjects", pasted.Count) : Loc.Get(
+                    pasted[0] switch
+                    {
+                        { IsOriginalVectorGraphic: true } => "PastedGraphicsAsANewObject",
+                        { Type: AnnotationType.Image } => "PastedImageAsANewObject",
+                        { IsEditablePath: true } => "PastedDrawingAsANewObject",
+                        _ => "PastedTextAsANewObject"
+                    });
+                return true;
             }
 
             if (clipboardContent.Contains(StandardDataFormats.Bitmap))
@@ -154,6 +207,7 @@ public sealed class AnnotationClipboardController(
                 RandomAccessStreamReference bitmapReference =
                     await clipboardContent.GetBitmapAsync();
                 ClipboardImageData image = await SaveClipboardImageAsync(bitmapReference);
+                if (!IsCurrentPage()) return false;
                 AddPastedAnnotations(new[] { CreateImageAnnotation(image) });
                 statusText.Text = Loc.Get("PastedImageAsANewObject");
                 return true;
@@ -162,6 +216,7 @@ public sealed class AnnotationClipboardController(
             if (clipboardContent.Contains(StandardDataFormats.Text))
             {
                 string text = await clipboardContent.GetTextAsync();
+                if (!IsCurrentPage()) return false;
                 if (!string.IsNullOrWhiteSpace(text))
                 {
                     AddPastedAnnotations(new[] { CreateTextAnnotation(text) });
@@ -186,7 +241,7 @@ public sealed class AnnotationClipboardController(
             .Where(annotation =>
                 IsTextAnnotation(annotation)
                     ? !string.IsNullOrWhiteSpace(annotation.Content)
-                    : annotation.Type == AnnotationType.Drawing || annotation.Type == AnnotationType.Image &&
+                    : CanCopyNativeGraphic(annotation) || annotation.IsEditablePath || annotation.Type == AnnotationType.Image &&
                       !string.IsNullOrWhiteSpace(annotation.ImagePath) &&
                       File.Exists(annotation.ImagePath))
             .OrderBy(annotation => annotation.PageIndex)
@@ -197,12 +252,18 @@ public sealed class AnnotationClipboardController(
     private static bool IsTextAnnotation(PdfAnnotation annotation) =>
         annotation.Type is AnnotationType.Text or AnnotationType.FreeText;
 
+    private static bool CanCopyNativeGraphic(PdfAnnotation annotation) =>
+        annotation.IsOriginalImageReplacement && (annotation.GraphicOperations.Count > 0
+            ? annotation.GraphicOperations.All(op => !op.IsTextOperation)
+            : annotation.OperationIndex >= 0);
+
     public static bool CanPasteClipboardContent()
     {
         try
         {
             DataPackageView content = Clipboard.GetContent();
             return content.Contains(AnnotationClipboardFormat) ||
+                content.Contains(GraphicClipboardFormat) ||
                 content.Contains(StandardDataFormats.Text) ||
                 content.Contains(StandardDataFormats.Bitmap);
         }
@@ -212,12 +273,12 @@ public sealed class AnnotationClipboardController(
         }
     }
 
-    private bool PasteAnnotationObjects(IEnumerable<PdfAnnotation> sourceAnnotations)
+    private List<PdfAnnotation> CreatePastedAnnotations(IEnumerable<PdfAnnotation> sourceAnnotations)
     {
         (double pageWidth, double pageHeight) = getManager().GetPageSize(getCurrentPageIndex());
         var pasted = new List<PdfAnnotation>();
         foreach (PdfAnnotation source in sourceAnnotations.Where(annotation =>
-            IsTextAnnotation(annotation) || annotation.Type is AnnotationType.Image or AnnotationType.Drawing))
+            IsTextAnnotation(annotation) || annotation.IsEditablePath || annotation.Type == AnnotationType.Image))
         {
             if (source.Type == AnnotationType.Image &&
                 (string.IsNullOrWhiteSpace(source.ImagePath) || !File.Exists(source.ImagePath)))
@@ -235,19 +296,15 @@ public sealed class AnnotationClipboardController(
                 source.Y + 12,
                 0,
                 Math.Max(pageHeight - Math.Max(annotation.Height, 1), 0));
+            foreach (var point in annotation.SignaturePoints)
+            {
+                point.X += annotation.X - source.X;
+                point.Y += annotation.Y - source.Y;
+            }
             pasted.Add(annotation);
         }
 
-        if (pasted.Count == 0)
-            return false;
-
-        AddPastedAnnotations(pasted);
-        statusText.Text = pasted.Count > 1
-            ? Loc.Format("PastedObjects", pasted.Count)
-            : pasted[0].Type == AnnotationType.Image
-                ? Loc.Get("PastedImageAsANewObject")
-                : pasted[0].Type == AnnotationType.Drawing ? Loc.Get("PastedDrawingAsANewObject") : Loc.Get("PastedTextAsANewObject");
-        return true;
+        return pasted;
     }
 
     private void PreparePastedAnnotation(PdfAnnotation annotation)
@@ -348,7 +405,7 @@ public sealed class AnnotationClipboardController(
         return new ClipboardImageData(imageFile.Path, decoder.PixelWidth, decoder.PixelHeight);
     }
 
-    private void AddPastedAnnotations(IEnumerable<PdfAnnotation> annotations)
+    private void AddPastedAnnotations(IEnumerable<PdfAnnotation> annotations, bool markModified = true)
     {
         List<PdfAnnotation> pasted = annotations.ToList();
         if (pasted.Count == 0)
@@ -361,7 +418,7 @@ public sealed class AnnotationClipboardController(
         foreach (PdfAnnotation annotation in pasted.Where(a => IsTextAnnotation(a) != graphics))
             canvasController.SelectedAnnotations.Add(annotation);
         canvasController.PrimarySelection = pasted[^1];
-        getManager().MarkModified(pageIndex: getCurrentPageIndex());
+        if (markModified) getManager().MarkModified(pageIndex: getCurrentPageIndex());
         canvasController.Render();
     }
 

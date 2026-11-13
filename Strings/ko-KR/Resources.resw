@@ -213,6 +213,9 @@
   <data name="CutImage" xml:space="preserve">
     <value>이미지를 잘라냈습니다.</value>
   </data>
+  <data name="CutGraphics" xml:space="preserve">
+    <value>그래픽을 잘라냈습니다.</value>
+  </data>
   <data name="CutDrawing" xml:space="preserve">
     <value>그리기를 잘라냈습니다.</value>
   </data>
@@ -225,6 +228,9 @@
   <data name="CopiedImageToTheClipboard" xml:space="preserve">
     <value>이미지를 클립보드에 복사했습니다.</value>
   </data>
+  <data name="CopiedGraphicsToTheClipboard" xml:space="preserve">
+    <value>그래픽을 클립보드에 복사했습니다.</value>
+  </data>
   <data name="CopiedDrawingToTheClipboard" xml:space="preserve">
     <value>그리기를 클립보드에 복사했습니다.</value>
   </data>
@@ -236,6 +242,9 @@
   </data>
   <data name="PastedImageAsANewObject" xml:space="preserve">
     <value>이미지를 새 객체로 붙여넣었습니다.</value>
+  </data>
+  <data name="PastedGraphicsAsANewObject" xml:space="preserve">
+    <value>그래픽을 새 객체로 붙여넣었습니다.</value>
   </data>
   <data name="PastedTextAsANewObject" xml:space="preserve">
     <value>텍스트를 새 객체로 붙여넣었습니다.</value>

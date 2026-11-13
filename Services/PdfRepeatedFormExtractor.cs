@@ -9,8 +9,7 @@ using System.Linq;
 namespace PDF_simple_edit.Services;
 
 /// <summary>
-/// Shared forms cannot be edited through their internal paths: that would change
-/// every placement. Expose each page-level Do instead, with its own placement bounds.
+/// Expose shared and pasted forms through their page-level placements.
 /// </summary>
 internal static class PdfRepeatedFormExtractor
 {
@@ -95,7 +94,8 @@ internal static class PdfRepeatedFormExtractor
             }
             return false;
         }
-        var shared = occurrences.Keys.Where(form => occurrences[form] > 1 || SharedOnAnotherPage(form)).ToHashSet();
+        var selectableForms = occurrences.Keys.Where(form => PdfBoolean.TRUE.Equals(form.GetAsBoolean(PdfGraphicClipboard.PastedGraphic)) ||
+            occurrences[form] > 1 || SharedOnAnotherPage(form)).ToHashSet();
         var sharedStreams = new HashSet<int>();
         void AddStreams(PdfStream form)
         {
@@ -107,8 +107,8 @@ internal static class PdfRepeatedFormExtractor
                 if (children.GetAsStream(name) is { } child && PdfName.Form.Equals(child.GetAsName(PdfName.Subtype)))
                     AddStreams(child);
         }
-        foreach (var form in shared) AddStreams(form);
-        return new(placements.Where(p => shared.Contains(p.Form)).Select(p => p.Content).ToList(), sharedStreams);
+        foreach (var form in selectableForms) AddStreams(form);
+        return new(placements.Where(p => selectableForms.Contains(p.Form)).Select(p => p.Content).ToList(), sharedStreams);
     }
 
     private static double Number(PdfObject value) => ((PdfNumber)value).DoubleValue();

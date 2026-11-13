@@ -213,6 +213,9 @@
   <data name="CutImage" xml:space="preserve">
     <value>Cut image.</value>
   </data>
+  <data name="CutGraphics" xml:space="preserve">
+    <value>Cut graphic.</value>
+  </data>
   <data name="CutDrawing" xml:space="preserve">
     <value>Cut drawing.</value>
   </data>
@@ -225,6 +228,9 @@
   <data name="CopiedImageToTheClipboard" xml:space="preserve">
     <value>Copied image to the clipboard.</value>
   </data>
+  <data name="CopiedGraphicsToTheClipboard" xml:space="preserve">
+    <value>Copied graphic to the clipboard.</value>
+  </data>
   <data name="CopiedDrawingToTheClipboard" xml:space="preserve">
     <value>Copied drawing to the clipboard.</value>
   </data>
@@ -236,6 +242,9 @@
   </data>
   <data name="PastedImageAsANewObject" xml:space="preserve">
     <value>Pasted image as a new object.</value>
+  </data>
+  <data name="PastedGraphicsAsANewObject" xml:space="preserve">
+    <value>Pasted graphic as a new object.</value>
   </data>
   <data name="PastedTextAsANewObject" xml:space="preserve">
     <value>Pasted text as a new object.</value>
