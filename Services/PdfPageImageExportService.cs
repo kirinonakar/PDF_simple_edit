@@ -17,6 +17,9 @@ public sealed class PdfPageImageExportService
     public static IReadOnlyList<int> ParsePageIndices(string text, int pageCount)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(pageCount, 1);
+        if (string.Equals(text?.Trim(), "all", StringComparison.OrdinalIgnoreCase))
+            return Enumerable.Range(0, pageCount).ToArray();
+
         var pages = new SortedSet<int>();
         foreach (string part in (text ?? string.Empty).Split(','))
         {

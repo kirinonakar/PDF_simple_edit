@@ -236,12 +236,12 @@ internal static partial class PdfMcpTools
             {
                 if (name == "pdf_to_images")
                 {
-                    Directory.CreateDirectory(folder);
                     using var pdf = Open(bytes);
-                    var pages = a.Has("pages") ? PdfPageImageExportService.ParsePageIndices(a.Text("pages"), pdf.GetNumberOfPages())
-                        : Enumerable.Range(0, pdf.GetNumberOfPages()).ToArray();
+                    var pages = PdfPageImageExportService.ParsePageIndices(a.Text("pages", "all"), pdf.GetNumberOfPages());
+                    int dpi = a.Integer("dpi", 150, 72, 600);
                     cancellation.ThrowIfCancellationRequested();
-                    await new PdfPageImageExportService().ExportPagesAsync(bytes, pages, folder, "page", a.Integer("dpi", 150, 72, 600));
+                    Directory.CreateDirectory(folder);
+                    await new PdfPageImageExportService().ExportPagesAsync(bytes, pages, folder, "page", dpi);
                     return new { outputFolder = folder, files = Directory.GetFiles(folder).Order().ToArray(), pageCount = pages.Count };
                 }
                 string? selection = a.Has("pages") ? a.Text("pages") : null;
