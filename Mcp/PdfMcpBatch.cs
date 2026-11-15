@@ -52,7 +52,7 @@ internal static partial class PdfMcpTools
     private sealed record BatchTarget(int Page, string Kind, int Index, string Signature);
 
     private static async Task<byte[]> ExecuteBatchAsync(string name, PdfMcpArguments batch, byte[] source,
-        string sourceRevision, CancellationToken cancellation)
+        string sourceRevision, CancellationToken cancellation, List<LineHeightAdjustment> lineHeightAdjustments)
     {
         var steps = new List<BatchStep>();
         var seenIds = new HashSet<string>(StringComparer.Ordinal);
@@ -233,7 +233,7 @@ internal static partial class PdfMcpTools
                 }
                 else
                 {
-                    bytes = await EditDocumentAsync(step.Tool, bound.Arguments, bytes, revision, cancellation);
+                    bytes = await EditDocumentAsync(step.Tool, bound.Arguments, bytes, revision, cancellation, lineHeightAdjustments, operation: first + 1);
                     position++;
                 }
             }

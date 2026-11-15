@@ -118,7 +118,8 @@ Images require `imagePath`; they support rotation and `opacity`, not stroke/fill
 colors. Shapes support `color` (stroke), `fillColor`, `lineWidth`, `opacity` and
 rotation. Opacity ranges from 0 to 1. `polygon`/`freehand` require absolute page
 `points: [{"x": 10, "y": 20}, ...]`; polygons need at least three points. Lines
-default to the diagonal of their specified box.
+default to the diagonal of their specified box. A line with `height: 0` uses
+`0.01` pt. `lineHeightAdjustments` reports `page`, `element`, `before` and `after`.
 
 Arrows take exactly two distinct `points` from the displayed page's top-left,
 tail first and tip second. They also default to the box diagonal. `arrow` has

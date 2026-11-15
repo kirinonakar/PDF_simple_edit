@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using iText.Forms;
@@ -22,7 +23,16 @@ namespace PDF_simple_edit.Mcp;
 internal static partial class PdfMcpTools
 {
     private sealed record Tool(string name, string description, object inputSchema, object annotations);
-    private sealed record SavedPdf(string outputPath, string revision, int pageCount);
+    internal sealed record LineHeightAdjustment(int page, double before, double after,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? element = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? operation = null);
+    private sealed record SavedPdf(string outputPath, string revision, int pageCount)
+    {
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IEnumerable<object>? textBoxAdjustments { get; init; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<LineHeightAdjustment>? lineHeightAdjustments { get; init; }
+    }
     private static object Field(string type, string description) => new { type, description };
     private static readonly object Text = new { type = "string" };
     private static readonly object Boolean = new { type = "boolean" };
@@ -123,7 +133,7 @@ internal static partial class PdfMcpTools
             Input, Output, TextStyle, Fields(("page", Page), ("text", Text), ("x", Number), ("y", Number)));
         Add("pdf_edit_text", "Edit an entire text block. Omit fields to preserve them; empty text deletes the block.", new[] { "inputPath", "outputPath", "objectId" }, false,
             Input, Output, Geometry, TextStyle, objectId, Fields(("page", Page), ("text", Text), ("rotation", Field("number", "Clockwise degrees about center.")), ("reflow", Field("boolean", "Wrap within width/height instead of scaling."))));
-        Add("pdf_add_graphic", "Add an editable graphic. Arrows: arrow (open), triangleArrow (solid), outlineArrow (hollow).", new[] { "inputPath", "outputPath", "kind" }, false,
+        Add("pdf_add_graphic", "Add an editable graphic. Arrows: arrow (open), triangleArrow (solid), outlineArrow (hollow). Line height 0 adjusts to 0.01 pt.", new[] { "inputPath", "outputPath", "kind" }, false,
             Input, Output, Geometry, Graphic, Fields(("page", Page)));
         Add("pdf_edit_graphic", "Transform graphics or restyle vectors. kind/imagePath replaces artwork. Annotations support move/resize or replacement.", new[] { "inputPath", "outputPath", "objectId" }, false,
             Input, Output, Geometry, Graphic, objectId, Fields(("page", Page)));
@@ -170,11 +180,10 @@ internal static partial class PdfMcpTools
         {
             var created = await Task.Run(() => PdfMcpCreationService.Create(a, cancellation), cancellation);
             var saved = await Save(a, created.Bytes, cancellation, expected: destinationVersion);
-            if (created.TextBoxAdjustments.Count == 0) return saved;
-            return new
+            return saved with
             {
-                saved.outputPath, saved.revision, saved.pageCount,
-                textBoxAdjustments = created.TextBoxAdjustments.Select(change => new
+                lineHeightAdjustments = created.LineHeightAdjustments.Count == 0 ? null : created.LineHeightAdjustments,
+                textBoxAdjustments = created.TextBoxAdjustments.Count == 0 ? null : created.TextBoxAdjustments.Select(change => new
                 {
                     page = change.Page, element = change.Element,
                     before = new { width = change.Before.Width, height = change.Before.Height },
@@ -243,19 +252,27 @@ internal static partial class PdfMcpTools
             { throw new IOException($"Export failed; any completed images are in {folder}. {error.Message}", error); }
         }
 
+        var lineHeightAdjustments = new List<LineHeightAdjustment>();
         byte[] edited = name is "pdf_batch" or "pdf_delete_objects"
-            ? await ExecuteBatchAsync(name, a, bytes, revision, cancellation)
-            : await EditDocumentAsync(name, a, bytes, revision, cancellation);
-        return await Save(a, edited, cancellation, inputPath, revision, destinationVersion);
+            ? await ExecuteBatchAsync(name, a, bytes, revision, cancellation, lineHeightAdjustments)
+            : await EditDocumentAsync(name, a, bytes, revision, cancellation, lineHeightAdjustments);
+        var savedEdit = await Save(a, edited, cancellation, inputPath, revision, destinationVersion);
+        return savedEdit with { lineHeightAdjustments = lineHeightAdjustments.Count == 0 ? null : lineHeightAdjustments };
     }
 
     private static async Task<byte[]> EditDocumentAsync(string name, PdfMcpArguments a, byte[] bytes,
-        string revision, CancellationToken cancellation)
+        string revision, CancellationToken cancellation, List<LineHeightAdjustment> lineHeightAdjustments, int? operation = null)
     {
         cancellation.ThrowIfCancellationRequested();
         int pageIndex;
         using (var pdf = Open(bytes)) pageIndex = a.Integer("page", 1, 1,
             pdf.GetNumberOfPages() + (name == "pdf_manage_pages" && a.Text("action") == "insert" ? 1 : 0)) - 1;
+        void WriteGraphic(PdfDocument pdf, PdfTextBox? original = null)
+        {
+            if (AddGraphic(pdf, pageIndex, a, original) is { } adjustment)
+                lineHeightAdjustments.Add(adjustment with { operation = operation });
+        }
+
         byte[] edited;
         if (name is "pdf_edit_text" or "pdf_edit_graphic" or "pdf_delete_object")
         {
@@ -276,7 +293,7 @@ internal static partial class PdfMcpTools
                     var original = PdfPageCoordinates.ToDisplay(page).Map(new PdfTextBox(rectangle.GetX(), rectangle.GetY(), rectangle.GetWidth(), rectangle.GetHeight()));
                     if (name == "pdf_delete_object") RemoveAnnotation(pdf, page, annotation);
                     else if (a.Has("kind") || a.Has("imagePath"))
-                    { RemoveAnnotation(pdf, page, annotation); AddGraphic(pdf, pageIndex, a, original); }
+                    { RemoveAnnotation(pdf, page, annotation); WriteGraphic(pdf, original); }
                     else
                     {
                         if (a.Has("rotation") || a.Has("color") || a.Has("fillColor") || a.Has("lineWidth") || a.Has("opacity") || a.Has("points"))
@@ -307,7 +324,7 @@ internal static partial class PdfMcpTools
                         {
                             if (!new PdfContentStreamEditor().RemoveGraphics(pdf, pageIndex, new[] { annotation }))
                                 throw new InvalidOperationException("The original graphic could not be removed safely.");
-                            if (name != "pdf_delete_object") AddGraphic(pdf, pageIndex, a, original);
+                            if (name != "pdf_delete_object") WriteGraphic(pdf, original);
                         });
                     else
                     {
@@ -331,7 +348,7 @@ internal static partial class PdfMcpTools
                         a.Text("fontFamily", "Malgun Gothic"), a.Number("fontSize", 12, .1, 10000), PdfMcpArguments.PdfColor(a.Color()), a.Flag("bold"), a.Flag("italic"),
                         isUnderline: a.Flag("underline"));
                     break;
-                case "pdf_add_graphic": AddGraphic(pdf, pageIndex, a); break;
+                case "pdf_add_graphic": WriteGraphic(pdf); break;
                 case "pdf_redact_region": PdfRegionRedactionService.Apply(pdf, pageIndex, a.Bounds()); break;
                 case "pdf_manage_pages": ManagePages(pdf, a); break;
                 case "pdf_set_form_fields": SetFormFields(pdf, a); break;
@@ -342,16 +359,18 @@ internal static partial class PdfMcpTools
         return edited;
     }
 
-    internal static void AddGraphic(PdfDocument pdf, int pageIndex, PdfMcpArguments a, PdfTextBox? original = null)
+    internal static LineHeightAdjustment? AddGraphic(PdfDocument pdf, int pageIndex, PdfMcpArguments a, PdfTextBox? original = null)
     {
-        var bounds = a.Bounds(original);
         string kind = a.Has("imagePath") && !a.Has("kind") ? "image" : a.Text("kind");
+        bool adjustHeight = kind == "line" && a.Has("height") && a.Number("height") == 0;
+        var bounds = a.Bounds(original, heightOverride: adjustHeight ? .01 : null);
         if (kind == "image")
         {
             if (a.Has("color") || a.Has("fillColor") || a.Has("lineWidth") || a.Has("points"))
                 throw new ArgumentException("Image artwork is controlled by imagePath; color, fillColor, lineWidth and points do not apply.");
             new PdfContentWriter().AddImage(pdf, pageIndex, a.Path("imagePath"), bounds.X, bounds.Y, bounds.Width, bounds.Height,
-                rotation: a.Number("rotation"), opacity: a.Number("opacity", 1, 0, 1)); return;
+                rotation: a.Number("rotation"), opacity: a.Number("opacity", 1, 0, 1));
+            return null;
         }
         PdfPathPoint[] BoundsDiagonal() => new[]
         {
@@ -423,6 +442,7 @@ internal static partial class PdfMcpTools
         else if (a.Has("fillColor") && kind is "rectangle" or "ellipse" or "polygon") canvas.FillStroke();
         else canvas.Stroke();
         canvas.RestoreState(); canvas.Release();
+        return adjustHeight ? new(pageIndex + 1, 0, bounds.Height) : null;
     }
 
     private static void ManagePages(PdfDocument pdf, PdfMcpArguments a)

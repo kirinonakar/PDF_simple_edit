@@ -34,7 +34,7 @@ internal static class PdfMcpCreationGuide
                 "Text requires text. Boxes grow within the available page area at the original font size. The result reports before/after sizes in textBoxAdjustments. Use flow for text that needs multiple pages.",
                 "Text styles: fontFamily, fontSize, color, bold, italic, alignment. Optional rotation rotates around the box center.",
                 "Images require absolute imagePath and support x/y/width/height/rotation/opacity. Image color/fillColor/lineWidth do not apply.",
-                "Shapes support color (stroke), fillColor, lineWidth, opacity, rotation. polygon/freehand require points [{x,y},...]; a polygon needs 3 or more points. Line defaults to the box diagonal.",
+                "Shapes support color, fillColor, lineWidth, opacity, rotation. Supply points [{x,y},...] for polygon (3+) and freehand (2+). Lines default to the box diagonal; height 0 becomes 0.01 pt (see lineHeightAdjustments).",
                 "Arrows use two distinct points [tail, tip] or the box diagonal. arrow is open, triangleArrow is solid, outlineArrow is hollow. triangleArrow uses color unless fillColor is set.",
                 "No pageCount with pages. Do not put content/text beside pages. Choose document-specific text, colors, dimensions and positions in the JSON rather than inventing preset fields."
             },

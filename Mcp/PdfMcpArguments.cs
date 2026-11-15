@@ -41,9 +41,9 @@ internal readonly struct PdfMcpArguments(JsonElement value)
         if (item.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw new ArgumentException($"{key} must be boolean.");
         return item.GetBoolean();
     }
-    public PdfTextBox Bounds(PdfTextBox? fallback = null) => new(
+    public PdfTextBox Bounds(PdfTextBox? fallback = null, double? heightOverride = null) => new(
         Number("x", fallback?.X ?? 0), Number("y", fallback?.Y ?? 0),
-        Number("width", fallback?.Width ?? 100, .001), Number("height", fallback?.Height ?? 100, .001));
+        Number("width", fallback?.Width ?? 100, .001), heightOverride ?? Number("height", fallback?.Height ?? 100, .001));
     public string Color(string key = "color", string fallback = "#000000")
     {
         string color = Text(key, fallback);

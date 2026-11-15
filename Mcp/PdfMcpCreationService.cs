@@ -28,6 +28,7 @@ internal sealed partial class PdfMcpCreationService
     private readonly FontProvider _fonts = new();
     private readonly Dictionary<string, string> _families = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<TextBoxAdjustment> _textBoxAdjustments = new();
+    private readonly List<PdfMcpTools.LineHeightAdjustment> _lineHeightAdjustments = new();
     private readonly PdfMcpArguments _defaults;
 
     private PdfMcpCreationService(PdfMcpArguments defaults) => _defaults = defaults;
@@ -73,7 +74,8 @@ internal sealed partial class PdfMcpCreationService
         };
     }
 
-    internal static (byte[] Bytes, IReadOnlyList<TextBoxAdjustment> TextBoxAdjustments) Create(
+    internal static (byte[] Bytes, IReadOnlyList<TextBoxAdjustment> TextBoxAdjustments,
+        IReadOnlyList<PdfMcpTools.LineHeightAdjustment> LineHeightAdjustments) Create(
         PdfMcpArguments arguments, CancellationToken cancellation)
     {
         int modes = new[] { "text", "content", "pages" }.Count(arguments.Has);
@@ -91,7 +93,7 @@ internal sealed partial class PdfMcpCreationService
             { cancellation.ThrowIfCancellationRequested(); pdf.AddNewPage(size); }
         }
         cancellation.ThrowIfCancellationRequested();
-        return (buffer.ToArray(), creator._textBoxAdjustments);
+        return (buffer.ToArray(), creator._textBoxAdjustments, creator._lineHeightAdjustments);
     }
 
     private PageSize Size(PdfMcpArguments page) => new(
@@ -220,7 +222,9 @@ internal sealed partial class PdfMcpCreationService
                     foreach (string key in new[] { "text", "fontFamily", "fontSize", "bold", "italic", "alignment" })
                         if (graphic.ContainsKey(key)) throw new ArgumentException($"{key} is not a graphic property.");
                     graphic["kind"] = type;
-                    PdfMcpTools.AddGraphic(pdf, pdf.GetNumberOfPages() - 1, new(JsonSerializer.SerializeToElement(graphic)));
+                    var arguments = new PdfMcpArguments(JsonSerializer.SerializeToElement(graphic));
+                    if (PdfMcpTools.AddGraphic(pdf, pdf.GetNumberOfPages() - 1, arguments) is { } adjustment)
+                        _lineHeightAdjustments.Add(adjustment with { element = elementNumber });
                 }
             }
         }
