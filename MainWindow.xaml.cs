@@ -34,13 +34,12 @@ namespace PDF_simple_edit
             get => _activeTab?.CurrentPageIndex ?? 0;
             set
             {
-                if (_activeTab == null) return;
-                if (_activeTab.CurrentPageIndex != value)
-                {
-                    _annotationCanvasController?.CancelDrawing();
-                    _annotationCanvasController?.TextSelection.Clear();
-                }
+                if (_activeTab == null || _activeTab.CurrentPageIndex == value) return;
+                _annotationCanvasController?.CancelDrawing();
+                _annotationCanvasController?.TextSelection.Clear();
                 _activeTab.CurrentPageIndex = value;
+                if (_documentPropertiesRequest is { } request && ReferenceEquals(request.Source, _activeTab.PdfManager.GetPdfBytes()))
+                    CommentPanel.UpdateCurrentPageSize(value);
             }
         }
         private double _zoomLevel
@@ -713,8 +712,13 @@ namespace PDF_simple_edit
             DispatcherQueue.TryEnqueue(() => {
                 UpdateTitleBar();
                 UpdateTabHeader();
-                if (ReferenceEquals(sender, _activeTab?.PdfManager) && e is PdfDocumentChange change)
-                    _pageViewController.ScheduleThumbnailRefresh(change.Pages);
+                if (ReferenceEquals(sender, _activeTab?.PdfManager))
+                {
+                    if (e is PdfDocumentChange change)
+                        _pageViewController.ScheduleThumbnailRefresh(change.Pages);
+                    if (_documentPropertiesRequest is { } request && request.Protected != _pdfManager.IsPasswordProtected)
+                        _ = RefreshDocumentPropertiesAsync();
+                }
             });
         }
 
@@ -790,15 +794,16 @@ namespace PDF_simple_edit
             BtnPrevPage.IsEnabled = hasDoc && _currentPageIndex > 0;
             BtnNextPage.IsEnabled = hasDoc && _currentPageIndex < _pdfManager.PageCount - 1;
 
+            _documentFileSize = null;
             if (hasDoc)
             {
                 TxtPageInfo.Text = Loc.Format("Page", _currentPageIndex + 1, _pdfManager.PageCount);
                 TxtStatus.Text = Loc.Get("Ready");
 
-                if (_pdfManager.FilePath != null && File.Exists(_pdfManager.FilePath))
+                if (_pdfManager.FilePath is { } path && new FileInfo(path) is { Exists: true } file)
                 {
-                    var fi = new FileInfo(_pdfManager.FilePath);
-                    TxtFileInfo.Text = $"{fi.Name} ({FormatFileSize(fi.Length)})";
+                    _documentFileSize = file.Length;
+                    TxtFileInfo.Text = $"{file.Name} ({FormatFileSize(file.Length)})";
                 }
                 else
                 {
@@ -813,6 +818,7 @@ namespace PDF_simple_edit
             }
 
             TxtZoom.Text = $"{(int)(_zoomLevel * 100)}%";
+            _ = RefreshDocumentPropertiesAsync();
         }
 
         private async void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
@@ -1453,7 +1459,8 @@ namespace PDF_simple_edit
             for (var focused = FocusManager.GetFocusedElement(root) as DependencyObject; focused != null;
                 focused = VisualTreeHelper.GetParent(focused))
             {
-                if (focused is TextBox or RichEditBox or NumberBox or ComboBox or Slider or ContentDialog)
+                if (focused is TextBox or RichEditBox or NumberBox or ComboBox or Slider or ContentDialog or
+                    TextBlock { IsTextSelectionEnabled: true })
                     return false;
             }
             return true;
@@ -1512,8 +1519,8 @@ namespace PDF_simple_edit
             object? focusedElement = Content.XamlRoot == null
                 ? null
                 : FocusManager.GetFocusedElement(Content.XamlRoot);
-            bool textInputFocused = focusedElement is TextBox or RichEditBox or
-                NumberBox or ComboBox;
+            bool textInputFocused = focusedElement is TextBox or RichEditBox or NumberBox or ComboBox or
+                TextBlock { IsTextSelectionEnabled: true };
             if (!textInputFocused && !_annotationCanvasController.IsInlineEditing &&
                 _annotationCanvasController.HandleDrawingKey(e.Key))
             {

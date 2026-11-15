@@ -1439,7 +1439,7 @@ To remove passwords individually, use Encryption and password settings.</value>
   <data name="CommentPageHeader" xml:space="preserve"><value>Page {0}</value></data>
   <data name="ResizePageSidebar" xml:space="preserve"><value>Resize page sidebar</value></data>
   <data name="ResizeSearchSidebar" xml:space="preserve"><value>Resize search sidebar</value></data>
-  <data name="ResizeCommentSidebar" xml:space="preserve"><value>Resize annotations and bookmarks sidebar</value></data>
+  <data name="ResizeCommentSidebar" xml:space="preserve"><value>Resize document sidebar</value></data>
   <data name="EditComment" xml:space="preserve"><value>Edit</value></data>
   <data name="AddCurrentPageBookmark" xml:space="preserve"><value>Add current page</value></data>
   <data name="AddBookmark" xml:space="preserve"><value>Add bookmark</value></data>
@@ -1484,7 +1484,27 @@ To remove passwords individually, use Encryption and password settings.</value>
   <data name="PagesRotated" xml:space="preserve"><value>Rotated {0} page(s). Ctrl+S: save · Ctrl+Z: undo.</value></data>
   <data name="PageSizesChanged" xml:space="preserve"><value>Resized {0} page(s). Ctrl+S: save · Ctrl+Z: undo.</value></data>
   <data name="PageGeometryFailed" xml:space="preserve"><value>Could not update page geometry</value></data>
-  <data name="ViewCommentsBookmarks" xml:space="preserve"><value>Annotations/Bookmarks</value></data>
+  <data name="DocumentSidebar" xml:space="preserve"><value>Document sidebar</value></data>
+  <data name="DocumentPropertiesTab" xml:space="preserve"><value>Properties</value></data>
+  <data name="ReadingDocumentProperties" xml:space="preserve"><value>Reading document properties…</value></data>
+  <data name="CouldNotReadDocumentProperties" xml:space="preserve"><value>Could not read document properties.</value></data>
+  <data name="DocumentFileName" xml:space="preserve"><value>File name</value></data>
+  <data name="DocumentFilePath" xml:space="preserve"><value>File path</value></data>
+  <data name="DocumentFileSize" xml:space="preserve"><value>File size</value></data>
+  <data name="DocumentPageCount" xml:space="preserve"><value>Page count</value></data>
+  <data name="DocumentCurrentPageSize" xml:space="preserve"><value>Current page size</value></data>
+  <data name="DocumentPageDimensions" xml:space="preserve"><value>{0:0.##} × {1:0.##} mm</value></data>
+  <data name="DocumentPdfVersion" xml:space="preserve"><value>PDF version</value></data>
+  <data name="DocumentProtectionEnabled" xml:space="preserve"><value>Enabled</value></data>
+  <data name="DocumentProtectionDisabled" xml:space="preserve"><value>Disabled</value></data>
+  <data name="DocumentTitle" xml:space="preserve"><value>Title</value></data>
+  <data name="DocumentAuthor" xml:space="preserve"><value>Author</value></data>
+  <data name="DocumentSubject" xml:space="preserve"><value>Subject</value></data>
+  <data name="DocumentKeywords" xml:space="preserve"><value>Keywords</value></data>
+  <data name="DocumentCreator" xml:space="preserve"><value>Creator application</value></data>
+  <data name="DocumentProducer" xml:space="preserve"><value>PDF producer</value></data>
+  <data name="DocumentCreationDate" xml:space="preserve"><value>Created</value></data>
+  <data name="DocumentModificationDate" xml:space="preserve"><value>Modified</value></data>
   <data name="ReopenFile" xml:space="preserve"><value>Reopen</value></data>
   <data name="ReopeningFile" xml:space="preserve"><value>Reopening file…</value></data>
   <data name="FileReopened" xml:space="preserve"><value>Reopened the current tab from disk.</value></data>

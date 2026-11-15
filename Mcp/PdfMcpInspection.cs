@@ -13,7 +13,7 @@ internal static partial class PdfMcpTools
     private static object InspectionRegionSchema() => new
     {
         type = "object",
-        description = "Return objects whose displayed bounding boxes intersect this rectangle (edges included). PDF points from the displayed CropBox's top-left, including page rotation.",
+        description = "Match displayed bounds intersecting this rectangle, including edges.",
         properties = new
         {
             x = Number, y = Number,

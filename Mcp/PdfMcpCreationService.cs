@@ -14,6 +14,7 @@ using iText.Layout.Font;
 using iText.Layout.Borders;
 using iText.Layout.Layout;
 using iText.Layout.Properties;
+using iText.Layout.Renderer;
 using PDF_simple_edit.Models;
 using PDF_simple_edit.Services;
 
@@ -22,13 +23,16 @@ namespace PDF_simple_edit.Mcp;
 /// <summary>Content authoring with automatic layout or explicit page composition.</summary>
 internal sealed partial class PdfMcpCreationService
 {
+    internal sealed record TextBoxAdjustment(int Page, int Element, PdfTextBox Before, PdfTextBox After);
+
     private readonly FontProvider _fonts = new();
     private readonly Dictionary<string, string> _families = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<TextBoxAdjustment> _textBoxAdjustments = new();
     private readonly PdfMcpArguments _defaults;
 
     private PdfMcpCreationService(PdfMcpArguments defaults) => _defaults = defaults;
 
-    internal static Dictionary<string, object> Schema(Dictionary<string, object> graphics)
+    internal static Dictionary<string, object> Schema(Dictionary<string, object> graphics, IEnumerable<string> graphicKinds)
     {
         object String(string description) => new { type = "string", description };
         object Number(string description) => new { type = "number", description };
@@ -38,15 +42,15 @@ internal sealed partial class PdfMcpCreationService
         {
             ["fontFamily"] = String("Installed font family or absolute font-file path; inherits document default (Malgun Gothic)."),
             ["fontSize"] = Number("Font size in points; inherits document default (12), headings default to 24."),
-            ["color"] = String("#RRGGBB text color, default #000000."),
+            ["color"] = String("#RRGGBB color, default #000000."),
             ["bold"] = new { type = "boolean" }, ["italic"] = new { type = "boolean" },
             ["alignment"] = new { type = "string", @enum = new[] { "left", "center", "right", "justify" } }
         };
         var elements = graphics.Where(pair => pair.Key != "kind").ToDictionary(pair => pair.Key, pair => pair.Value);
         foreach (var pair in style) elements[pair.Key] = pair.Value;
-        foreach (string key in new[] { "x", "y", "width", "height" }) elements[key] = Number("Points from displayed page's top-left; text width/height define its wrapping box.");
-        elements["type"] = new { type = "string", @enum = new[] { "text", "image", "rectangle", "ellipse", "line", "polygon", "freehand", "highlight" } };
-        elements["text"] = String("Required for type=text; wraps inside width/height. Overflow is an error rather than silently losing text.");
+        foreach (string key in new[] { "x", "y", "width", "height" }) elements[key] = new { type = "number" };
+        elements["type"] = new { type = "string", @enum = graphicKinds.Prepend("text").ToArray() };
+        elements["text"] = String("Required for type=text. The box grows to fit text at its original font size.");
         var page = new Dictionary<string, object>
         {
             ["width"] = Number("Unrotated page width in points; inherits document width."),
@@ -57,28 +61,29 @@ internal sealed partial class PdfMcpCreationService
         };
         return new()
         {
-            ["jsonPath"] = String("Absolute path to a UTF-8 JSON file containing pdf_create arguments. Only outputPath/overwrite may accompany jsonPath; explicit output arguments override the file."),
-            ["text"] = String("Plain body text, automatically wrapped and paginated. Mutually exclusive with content/pages."),
+            ["jsonPath"] = String("UTF-8 creation JSON path; only outputPath/overwrite can override the file."),
+            ["text"] = String("Plain text with automatic wrapping and pagination."),
             ["content"] = Array(new Dictionary<string, object> { ["$ref"] = "#/$defs/block" }, 1),
             ["pages"] = Array(Object(page), 1),
-            ["pageCount"] = new { type = "integer", minimum = 1, maximum = 10000, description = "Only for legacy blank documents; omit when text/content/pages is supplied." },
+            ["pageCount"] = new { type = "integer", minimum = 1, maximum = 10000, description = "Blank PDF only; default 1." },
             ["width"] = Number("Default page width, 595.276 points (A4)."),
             ["height"] = Number("Default page height, 841.89 points (A4)."),
-            ["margin"] = Number("Flow layout margin on each side, default 36 points."),
-            ["title"] = String("PDF metadata title. Use a heading in content to put a visible title on the page.")
+            ["margin"] = Number("Flow margin on each side; default 36 pt."),
+            ["title"] = String("PDF metadata title.")
         };
     }
 
-    internal static byte[] Create(PdfMcpArguments arguments, CancellationToken cancellation)
+    internal static (byte[] Bytes, IReadOnlyList<TextBoxAdjustment> TextBoxAdjustments) Create(
+        PdfMcpArguments arguments, CancellationToken cancellation)
     {
         int modes = new[] { "text", "content", "pages" }.Count(arguments.Has);
         if (modes > 1) throw new ArgumentException("Supply only one of text, content or pages.");
         if (modes != 0 && arguments.Has("pageCount")) throw new ArgumentException("pageCount is only for blank documents; content determines the page count.");
         using var buffer = new MemoryStream();
+        var creator = new PdfMcpCreationService(arguments);
         using (var pdf = new PdfDocument(new PdfWriter(buffer)))
         {
             if (arguments.Has("title")) pdf.GetDocumentInfo().SetTitle(arguments.Text("title"));
-            var creator = new PdfMcpCreationService(arguments);
             var size = creator.Size(arguments);
             if (arguments.Has("pages")) creator.ComposePages(pdf, cancellation);
             else if (modes != 0) creator.Flow(pdf, size, cancellation);
@@ -86,7 +91,7 @@ internal sealed partial class PdfMcpCreationService
             { cancellation.ThrowIfCancellationRequested(); pdf.AddNewPage(size); }
         }
         cancellation.ThrowIfCancellationRequested();
-        return buffer.ToArray();
+        return (buffer.ToArray(), creator._textBoxAdjustments);
     }
 
     private PageSize Size(PdfMcpArguments page) => new(
@@ -196,15 +201,17 @@ internal sealed partial class PdfMcpCreationService
                 background.Release();
             }
             if (!definition.Has("elements")) continue;
+            int elementNumber = 0;
             foreach (var item in definition.Value.GetProperty("elements").EnumerateArray())
             {
                 cancellation.ThrowIfCancellationRequested();
+                elementNumber++;
                 var element = new PdfMcpArguments(item);
                 string type = element.Text("type");
                 if (type == "text")
                 {
                     Allow(element, "type", "text", "x", "y", "width", "height", "rotation", "fontFamily", "fontSize", "color", "bold", "italic", "alignment");
-                    PositionedText(pdf, page, element);
+                    PositionedText(pdf, page, element, elementNumber, cancellation);
                 }
                 else
                 {
@@ -219,30 +226,89 @@ internal sealed partial class PdfMcpCreationService
         }
     }
 
-    private void PositionedText(PdfDocument pdf, PdfPage page, PdfMcpArguments element)
+    private void PositionedText(PdfDocument pdf, PdfPage page, PdfMcpArguments element, int elementNumber,
+        CancellationToken cancellation)
     {
         var crop = page.GetCropBox();
         var display = PdfPageCoordinates.ToDisplay(page);
         var pageBounds = display.Map(new PdfTextBox(crop.GetX(), crop.GetY(), crop.GetWidth(), crop.GetHeight()));
         double x = element.Number("x"), y = element.Number("y");
-        var bounds = element.Bounds(new(x, y, pageBounds.Width - x, pageBounds.Height - y));
-        if (bounds.X < 0 || bounds.Y < 0 || bounds.Width <= 0 || bounds.Height <= 0 || bounds.Right > pageBounds.Width + .001 || bounds.Bottom > pageBounds.Height + .001)
+        var requested = element.Bounds(new(x, y, pageBounds.Width - x, pageBounds.Height - y));
+        if (requested.X < 0 || requested.Y < 0 || requested.Width <= 0 || requested.Height <= 0 ||
+            requested.Right > pageBounds.Width + .001 || requested.Bottom > pageBounds.Height + .001)
             throw new ArgumentException("Text box must fit inside its displayed page.");
+        int pageNumber = pdf.GetNumberOfPages();
+        var paragraph = Paragraph(element, element.Text("text")).SetMarginBottom(0);
+        var pdfCanvas = new PdfCanvas(page.NewContentStreamAfter(), page.GetResources(), pdf);
+        PdfTextBox bounds;
+        using (var measurement = new Canvas(pdfCanvas, new Rectangle(0, 0, (float)requested.Width, (float)requested.Height)))
+        {
+            measurement.SetFontProvider(_fonts);
+            bounds = FitTextBox(paragraph, measurement.GetRenderer(), requested, pageBounds, pageNumber, elementNumber, cancellation);
+        }
+        if (bounds != requested) _textBoxAdjustments.Add(new(pageNumber, elementNumber, requested, bounds));
+
         var rectangle = new Rectangle(0, 0, (float)bounds.Width, (float)bounds.Height);
         var transform = display.Inverse().After(PdfAffineTransform.Between(bounds, bounds, element.Number("rotation")))
             .After(new(1, 0, 0, -1, bounds.X, bounds.Bottom));
-        var pdfCanvas = new PdfCanvas(page.NewContentStreamAfter(), page.GetResources(), pdf);
         pdfCanvas.SaveState().ConcatMatrix(transform.A, transform.B, transform.C, transform.D, transform.E, transform.F);
         using (var canvas = new Canvas(pdfCanvas, rectangle))
         {
             canvas.SetFontProvider(_fonts);
-            var paragraph = Paragraph(element, element.Text("text")).SetMarginBottom(0);
-            var renderer = paragraph.CreateRendererSubTree().SetParent(canvas.GetRenderer());
-            var layout = renderer.Layout(new LayoutContext(new LayoutArea(pdf.GetNumberOfPages(), rectangle)));
-            if (layout.GetStatus() != LayoutResult.FULL) throw new ArgumentException("Text does not fit its page box. Increase width/height, reduce fontSize, or use text/content mode for automatic pagination.");
             canvas.Add(paragraph);
         }
         pdfCanvas.RestoreState(); pdfCanvas.Release();
+    }
+
+    private static PdfTextBox FitTextBox(Paragraph paragraph, IRenderer parent, PdfTextBox requested,
+        PdfTextBox pageBounds, int pageNumber, int elementNumber, CancellationToken cancellation)
+    {
+        const double tolerance = .01;
+        double? Measure(double width, double height)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            var renderer = (ParagraphRenderer)paragraph.CreateRendererSubTree();
+            renderer.SetParent(parent);
+            var area = new Rectangle(0, 0, (float)width, (float)height);
+            var layout = renderer.Layout(new LayoutContext(new LayoutArea(pageNumber, area)));
+            if (layout.GetStatus() != LayoutResult.FULL) return null;
+            // iText can force an oversized glyph onto a line in a narrow box.
+            if (renderer.GetLines()?.Any(line => line.GetOccupiedArea().GetBBox() is { } lineBox &&
+                    (lineBox.GetLeft() < -tolerance || lineBox.GetRight() > width + tolerance)) == true)
+                return null;
+            return layout.GetOccupiedArea()?.GetBBox().GetHeight() ?? 0;
+        }
+
+        if (Measure(requested.Width, requested.Height) != null) return requested;
+
+        double width = requested.Width;
+        double maxWidth = Math.Max(width, pageBounds.Right - requested.X);
+        double maxHeight = Math.Max(requested.Height, pageBounds.Bottom - requested.Y);
+        double? requiredHeight = Measure(width, maxHeight);
+        if (requiredHeight == null)
+        {
+            requiredHeight = Measure(maxWidth, maxHeight);
+            if (requiredHeight == null)
+                throw new ArgumentException($"Page {pageNumber}, element {elementNumber}: text cannot fit at its current font size in the remaining page area ({maxWidth:0.##} × {maxHeight:0.##} pt). Use text/content for pagination.");
+
+            // Widen only as much as needed after using all available height.
+            double lower = width;
+            width = maxWidth;
+            while (width - lower > .25)
+            {
+                double candidate = (lower + width) / 2;
+                if (Measure(candidate, maxHeight) is { } measured)
+                {
+                    width = candidate;
+                    requiredHeight = measured;
+                }
+                else lower = candidate;
+            }
+        }
+
+        double height = Math.Clamp(requiredHeight.Value + tolerance, requested.Height, maxHeight);
+        if (Measure(width, height) == null) height = maxHeight;
+        return requested with { Width = width, Height = height };
     }
 
     private static void Allow(PdfMcpArguments arguments, params string[] names)

@@ -2,15 +2,16 @@
 <UserControl x:Class="PDF_simple_edit.Controls.CommentSidebar"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:PDF_simple_edit.Controls"
     xmlns:services="using:PDF_simple_edit.Services"
     xmlns:loc="using:PDF_simple_edit.Localization">
     <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="1,0,0,0" Padding="8">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
         <Grid>
-            <TextBlock Text="{loc:LocalizedString Key=CommentsAndBookmarks}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,32,0"/>
+            <TextBlock Text="{loc:LocalizedString Key=Document}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,32,0"/>
             <Button x:Name="CloseButton" HorizontalAlignment="Right" Content="&#xE711;" FontFamily="Segoe Fluent Icons" Padding="6" AutomationProperties.Name="{loc:LocalizedString Key=Close}" Click="Close_Click"/>
         </Grid>
-        <Pivot Grid.Row="1" Margin="-8,0">
+        <Pivot x:Name="SidebarTabs" Grid.Row="1" Margin="-8,0" SelectionChanged="SidebarTabs_SelectionChanged">
             <Pivot.HeaderTemplate>
                 <DataTemplate>
                     <TextBlock Text="{Binding}" FontSize="14"/>
@@ -47,6 +48,33 @@
                             </DataTemplate>
                         </TreeView.ItemTemplate>
                     </TreeView>
+                </Grid>
+            </PivotItem>
+            <PivotItem x:Name="PropertiesTab" Header="{loc:LocalizedString Key=DocumentPropertiesTab}" Margin="0">
+                <Grid Margin="12,0,8,0">
+                    <ScrollViewer x:Name="PropertiesScrollViewer" HorizontalScrollMode="Disabled"
+                                  HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="DocumentPropertiesContent" Padding="0,0,8,0" Visibility="Collapsed">
+                            <StackPanel Margin="0,0,0,12" Spacing="2">
+                                <TextBlock Text="{loc:LocalizedString Key=DocumentCurrentPageSize}" Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="CurrentPageSize" TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
+                            </StackPanel>
+                            <ItemsControl x:Name="DocumentPropertiesList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="controls:DocumentPropertyRow">
+                                        <StackPanel Margin="0,0,0,12" Spacing="2">
+                                            <TextBlock Text="{x:Bind Label}" Style="{StaticResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                                            <TextBlock Text="{x:Bind Value}" TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+                    <TextBlock x:Name="DocumentPropertiesStatus" Margin="0,4,8,0" TextWrapping="Wrap"
+                               Text="{loc:LocalizedString Key=NoPDFDocumentIsOpen}"/>
                 </Grid>
             </PivotItem>
         </Pivot>

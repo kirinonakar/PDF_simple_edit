@@ -83,7 +83,7 @@
             <MenuFlyoutSeparator/>
             <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=ShowPagePanel}" x:Name="MenuShowPagePanel"
                                    IsChecked="True" Tag="TogglePagePanel" Click="Command_Click"/>
-            <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=ViewCommentsBookmarks}" x:Name="MenuShowCommentsBookmarks"
+            <ToggleMenuFlyoutItem Text="{loc:LocalizedString Key=DocumentSidebar}" x:Name="MenuShowCommentsBookmarks"
                                    Tag="ToggleCommentSidebar" Click="Command_Click"/>
         </MenuBarItem>
 

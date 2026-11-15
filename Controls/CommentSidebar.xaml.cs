@@ -11,16 +11,23 @@ using Loc = PDF_simple_edit.Services.LocalizationService;
 
 namespace PDF_simple_edit.Controls;
 
+internal sealed record DocumentPropertyRow(string Label, string Value);
+
 public sealed partial class CommentSidebar : UserControl
 {
+    private const double PointsPerMillimeter = 72 / 25.4;
     private bool _updating;
     private PdfBookmark? _selectedBookmark;
+    private IReadOnlyList<(double Width, double Height)> _documentPageSizes = Array.Empty<(double, double)>();
     public event Action? CloseRequested;
     public event Action<PdfAnnotation>? CommentInvoked;
     public event Action<PdfAnnotation>? DeleteRequested;
     public event Action<PdfAnnotation>? ToggleNoteRequested;
     public event Action<PdfAnnotation>? EditRequested;
     public event Action<PdfBookmark>? BookmarkInvoked;
+    public event Action? PropertiesSelectionChanged;
+
+    public bool IsPropertiesSelected => ReferenceEquals(SidebarTabs.SelectedItem, PropertiesTab);
     public event Action? AddBookmarkRequested;
     public event Action<PdfBookmark>? DeleteBookmarkRequested;
 
@@ -105,6 +112,40 @@ public sealed partial class CommentSidebar : UserControl
         BookmarksTree.ItemsSource = bookmarks;
         NoBookmarks.Visibility = bookmarks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         UpdateBookmarkWidths();
+    }
+
+    internal void ShowDocumentPropertiesStatus(string statusKey)
+    {
+        _documentPageSizes = Array.Empty<(double, double)>();
+        DocumentPropertiesContent.Visibility = Visibility.Collapsed;
+        DocumentPropertiesList.ItemsSource = null;
+        DocumentPropertiesStatus.Text = Loc.Get(statusKey);
+        DocumentPropertiesStatus.Visibility = Visibility.Visible;
+    }
+
+    internal void ShowDocumentProperties(IReadOnlyList<DocumentPropertyRow> rows,
+        IReadOnlyList<(double Width, double Height)> pageSizes, int currentPageIndex)
+    {
+        _documentPageSizes = pageSizes;
+        UpdateCurrentPageSize(currentPageIndex);
+        DocumentPropertiesStatus.Visibility = Visibility.Collapsed;
+        DocumentPropertiesList.ItemsSource = rows;
+        DocumentPropertiesContent.Visibility = Visibility.Visible;
+        PropertiesScrollViewer.ChangeView(null, 0, null, disableAnimation: true);
+    }
+
+    internal void UpdateCurrentPageSize(int pageIndex)
+    {
+        var (width, height) = pageIndex >= 0 && pageIndex < _documentPageSizes.Count ? _documentPageSizes[pageIndex] : (0d, 0d);
+        CurrentPageSize.Text = double.IsFinite(width) && double.IsFinite(height) && width > 0 && height > 0
+            ? Loc.Format("DocumentPageDimensions", width / PointsPerMillimeter, height / PointsPerMillimeter)
+            : "—";
+    }
+
+    private void SidebarTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (PropertiesTab != null && (e.AddedItems.Contains(PropertiesTab) || e.RemovedItems.Contains(PropertiesTab)))
+            PropertiesSelectionChanged?.Invoke();
     }
 
     private void UpdateBookmarkWidths()

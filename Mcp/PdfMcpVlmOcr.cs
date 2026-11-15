@@ -31,19 +31,19 @@ internal static partial class PdfMcpTools
                 new { type = "object", properties = fields, required, additionalProperties = false },
                 new { readOnlyHint = readOnly, destructiveHint = !readOnly, openWorldHint = false }));
         }
-        Add("pdf_vlm_ocr", "Return one JPEG page image (longest edge at most 2048 pixels) + revision for your own vision model. Transcribe words/short lines, then pdf_vlm_ocr_apply. Read every target page first. Requires image-capable client; no external model API.",
+        Add("pdf_vlm_ocr", "Return a page JPEG and revision for agent OCR. Read every target page before pdf_vlm_ocr_apply.",
             new[] { "inputPath" }, true, new(Input)
             {
                 ["page"] = Page,
                 ["maxDimension"] = new { type = "integer", minimum = 512, maximum = 2048,
-                    description = "Maximum length of the JPEG's longest edge in pixels, default 2048. Aspect ratio is preserved." }
+                    description = "Longest edge in pixels; default 2048." }
             });
 
         object coordinate = new { type = "number", minimum = 0, maximum = 16384 };
         object extent = new { type = "number", minimum = .001, maximum = 16384 };
         var word = new
         {
-            type = "object", properties = new { text = Field("string", "Exact visible text in a word or short line; no line breaks."),
+            type = "object", properties = new { text = Field("string", "Verbatim word or short line."),
                 x = coordinate, y = coordinate, width = extent, height = extent },
             required = new[] { "text", "x", "y", "width", "height" }, additionalProperties = false
         };
@@ -54,21 +54,21 @@ internal static partial class PdfMcpTools
             {
                 page = Page,
                 imageWidth = new { type = "integer", minimum = 1, maximum = 16384,
-                    description = "Coordinate canvas width. Omit BOTH imageWidth/imageHeight for normalized 0..1000 coordinates; otherwise supply BOTH actual image pixel dimensions." },
-                imageHeight = new { type = "integer", minimum = 1, maximum = 16384, description = "Coordinate canvas height; see imageWidth." },
+                    description = "Supply both image dimensions for pixels; omit both for 0..1000 coordinates." },
+                imageHeight = new { type = "integer", minimum = 1, maximum = 16384 },
                 textAngle = new { type = "number", minimum = -180, maximum = 180,
-                    description = "Default 0. Clockwise text angle about the image center; boxes must be in the deskewed image when nonzero." },
+                    description = "Clockwise angle about image center; use deskewed boxes. Default 0." },
                 lines = new { type = "array", maxItems = 10000,
-                    description = "Reading-order lines; each line is an array of word/short-line boxes. Keep separate rows/columns in separate lines. Empty array explicitly clears this app's old OCR layer on this page.",
+                    description = "Group boxes by visual line in reading order. Empty clears this app's OCR on the page.",
                     items = new { type = "array", minItems = 1, maxItems = 1000, items = word } }
             },
             required = new[] { "page", "lines" }, additionalProperties = false
         };
         var fields = new Dictionary<string, object>(Input);
         foreach (var pair in Output) fields.Add(pair.Key, pair.Value);
-        fields["expectedRevision"] = Field("string", "REQUIRED SHA-256 revision returned by pdf_vlm_ocr; stale results are rejected.");
+        fields["expectedRevision"] = Field("string", "Revision returned by pdf_vlm_ocr.");
         fields["ocrPages"] = new { type = "array", minItems = 1, maxItems = 1000, items = page };
-        Add("pdf_vlm_ocr_apply", "Save your transcriptions as invisible searchable Unicode text. First view each page with pdf_vlm_ocr. Boxes: normalized 0..1000 on both axes, or pixels with both image dimensions. Preserve artwork/native text; transcribe only scanned text on mixed pages. Replaces this app's OCR on supplied pages; empty lines clears it. Atomic save.",
+        Add("pdf_vlm_ocr_apply", "Write invisible searchable OCR for scanned text. Atomically replaces this app's OCR on supplied pages; preserves native text and artwork.",
             new[] { "inputPath", "outputPath", "expectedRevision", "ocrPages" }, false, fields);
     }
 

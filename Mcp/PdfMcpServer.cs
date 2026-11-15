@@ -73,7 +73,7 @@ internal sealed class PdfMcpServer
                 {
                     protocolVersion = protocol, capabilities = new { tools = new { listChanged = false } },
                     serverInfo = new { name = "pdf-simple-editor", version = typeof(PdfMcpServer).Assembly.GetName().Version?.ToString() ?? "1.0.0" },
-                    instructions = "Local saved PDFs only. Paths absolute; pages 1-based; coordinates in PDF points from displayed CropBox top-left (except crop/OCR). IDs are revision-specific: use returned page + ID; never reuse after edits. Use pdf_batch for multiple edits or pdf_delete_objects for multiple deletions with original IDs. Existing destinations require overwrite=true. Creation details/examples: pdf_create_help on demand."
+                    instructions = "Use absolute paths and existing output folders. Set overwrite=true to replace a PDF. Pages are 1-based. Coordinates are PDF points from the displayed CropBox top-left (except crop/OCR). Use the page and ID from pdf_inspect or pdf_find_text for the current revision. Use pdf_batch for multiple edits."
                 });
                 return;
             }

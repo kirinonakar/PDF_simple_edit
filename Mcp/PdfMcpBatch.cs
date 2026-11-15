@@ -29,9 +29,9 @@ internal static partial class PdfMcpTools
                 new { type = "object", properties, required = new[] { "inputPath", "outputPath", key }, additionalProperties = false },
                 new { readOnlyHint = false, destructiveHint = true, openWorldHint = false }));
         }
-        Add("pdf_delete_objects", "Atomically delete original IDs across pages (page inferred; duplicates ignored). Retains surrounding content. Stale/changed/ambiguous targets fail without saving.",
+        Add("pdf_delete_objects", "Atomically delete original IDs across pages; page is inferred and duplicates are ignored.",
             "objectIds", new { type = "array", minItems = 1, maxItems = 10000, items = new { type = "string" } });
-        Add("pdf_batch", "Atomically apply ordered {tool,arguments} operations. Per-tool arguments exclude inputPath/outputPath/overwrite/expectedRevision (batch-level only). IDs must be from original input; target each once, before additions/redactions affecting targets and before page changes. Other page numbers refer to intermediate document. Failure saves nothing.",
+        Add("pdf_batch", "Apply ordered edits atomically. Paths, overwrite and expectedRevision are batch-level. Use each original ID once, before page changes or operations affecting its target. Other page numbers refer to the intermediate PDF.",
             "operations", new
             {
                 type = "array", minItems = 1, maxItems = 10000,

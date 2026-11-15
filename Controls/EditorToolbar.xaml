@@ -110,7 +110,7 @@
                         </Flyout>
                     </DropDownButton.Flyout>
                 </DropDownButton>
-                <ToggleButton x:Name="CommentSidebarButton" x:FieldModifier="public" IsEnabled="False" Padding="8,6" Height="{Binding ActualHeight, ElementName=CommentButton}" ToolTipService.ToolTip="{loc:LocalizedString Key=CommentsAndBookmarks}" AutomationProperties.Name="{loc:LocalizedString Key=CommentsAndBookmarks}">
+                <ToggleButton x:Name="CommentSidebarButton" x:FieldModifier="public" IsEnabled="False" Padding="8,6" Height="{Binding ActualHeight, ElementName=CommentButton}" ToolTipService.ToolTip="{loc:LocalizedString Key=DocumentSidebar}" AutomationProperties.Name="{loc:LocalizedString Key=DocumentSidebar}">
                     <FontIcon Glyph="&#xE8F2;" FontSize="16"/>
                 </ToggleButton>
                 <Grid VerticalAlignment="Center">

@@ -1439,7 +1439,7 @@
   <data name="CommentPageHeader" xml:space="preserve"><value>{0} 페이지</value></data>
   <data name="ResizePageSidebar" xml:space="preserve"><value>페이지 사이드바 너비 조절</value></data>
   <data name="ResizeSearchSidebar" xml:space="preserve"><value>검색 사이드바 너비 조절</value></data>
-  <data name="ResizeCommentSidebar" xml:space="preserve"><value>주석·책갈피 사이드바 너비 조절</value></data>
+  <data name="ResizeCommentSidebar" xml:space="preserve"><value>문서 사이드바 너비 조절</value></data>
   <data name="EditComment" xml:space="preserve"><value>내용 편집</value></data>
   <data name="AddCurrentPageBookmark" xml:space="preserve"><value>현재 페이지 추가</value></data>
   <data name="AddBookmark" xml:space="preserve"><value>책갈피 추가</value></data>
@@ -1484,7 +1484,27 @@
   <data name="PagesRotated" xml:space="preserve"><value>{0}페이지를 회전했습니다. Ctrl+S: 저장 · Ctrl+Z: 실행 취소.</value></data>
   <data name="PageSizesChanged" xml:space="preserve"><value>{0}페이지의 크기를 변경했습니다. Ctrl+S: 저장 · Ctrl+Z: 실행 취소.</value></data>
   <data name="PageGeometryFailed" xml:space="preserve"><value>페이지를 변경하지 못했습니다</value></data>
-  <data name="ViewCommentsBookmarks" xml:space="preserve"><value>주석/북마크</value></data>
+  <data name="DocumentSidebar" xml:space="preserve"><value>문서 사이드바</value></data>
+  <data name="DocumentPropertiesTab" xml:space="preserve"><value>속성</value></data>
+  <data name="ReadingDocumentProperties" xml:space="preserve"><value>문서 속성을 읽는 중…</value></data>
+  <data name="CouldNotReadDocumentProperties" xml:space="preserve"><value>문서 속성을 읽을 수 없습니다.</value></data>
+  <data name="DocumentFileName" xml:space="preserve"><value>파일 이름</value></data>
+  <data name="DocumentFilePath" xml:space="preserve"><value>파일 경로</value></data>
+  <data name="DocumentFileSize" xml:space="preserve"><value>파일 크기</value></data>
+  <data name="DocumentPageCount" xml:space="preserve"><value>페이지 수</value></data>
+  <data name="DocumentCurrentPageSize" xml:space="preserve"><value>현재 페이지 크기</value></data>
+  <data name="DocumentPageDimensions" xml:space="preserve"><value>{0:0.##} × {1:0.##} mm</value></data>
+  <data name="DocumentPdfVersion" xml:space="preserve"><value>PDF 버전</value></data>
+  <data name="DocumentProtectionEnabled" xml:space="preserve"><value>설정됨</value></data>
+  <data name="DocumentProtectionDisabled" xml:space="preserve"><value>없음</value></data>
+  <data name="DocumentTitle" xml:space="preserve"><value>제목</value></data>
+  <data name="DocumentAuthor" xml:space="preserve"><value>작성자</value></data>
+  <data name="DocumentSubject" xml:space="preserve"><value>주제</value></data>
+  <data name="DocumentKeywords" xml:space="preserve"><value>키워드</value></data>
+  <data name="DocumentCreator" xml:space="preserve"><value>작성 프로그램</value></data>
+  <data name="DocumentProducer" xml:space="preserve"><value>PDF 생성 도구</value></data>
+  <data name="DocumentCreationDate" xml:space="preserve"><value>만든 날짜</value></data>
+  <data name="DocumentModificationDate" xml:space="preserve"><value>수정 날짜</value></data>
   <data name="ReopenFile" xml:space="preserve"><value>다시 열기</value></data>
   <data name="ReopeningFile" xml:space="preserve"><value>파일 다시 여는 중…</value></data>
   <data name="FileReopened" xml:space="preserve"><value>현재 탭의 파일을 디스크에서 다시 불러왔습니다.</value></data>

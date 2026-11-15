@@ -7,6 +7,9 @@ using PDF_simple_edit.Models;
 using PDF_simple_edit.Services;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Loc = PDF_simple_edit.Services.LocalizationService;
@@ -20,6 +23,8 @@ public sealed partial class MainWindow
     private long _commentReadSequence;
     private long _commentNavigationSequence;
     private bool _commentPanelVisible;
+    private long? _documentFileSize;
+    private (byte[] Source, string? Path, long? FileSize, bool Protected)? _documentPropertiesRequest;
     private double _pageSidebarWidth = 200, _commentSidebarWidth = 300, _findSidebarWidth = 300;
     private EditToolMode _commentSettingsMode = EditToolMode.TextHighlight;
     private readonly Dictionary<EditToolMode, string> _commentColors = new()
@@ -83,6 +88,7 @@ public sealed partial class MainWindow
             if (_annotationCanvasController.PrimarySelection is { } annotation) await EditCommentAsync(annotation);
         };
         CommentPanel.CloseRequested += ToggleCommentSidebar;
+        CommentPanel.PropertiesSelectionChanged += () => _ = RefreshDocumentPropertiesAsync();
         CommentPanel.CommentInvoked += async annotation => await NavigateToSidebarCommentAsync(annotation);
         CommentPanel.DeleteRequested += async annotation =>
         {
@@ -140,6 +146,66 @@ public sealed partial class MainWindow
         CommentPanelColumn.Width = new GridLength(_commentPanelVisible ? _commentSidebarWidth : 0);
         CommentGripColumn.Width = new GridLength(_commentPanelVisible ? 5 : 0);
         if (_commentPanelVisible) _ = RefreshCommentsAsync(force: true);
+        _ = RefreshDocumentPropertiesAsync();
+    }
+
+    private async Task RefreshDocumentPropertiesAsync()
+    {
+        if (!_commentPanelVisible || !CommentPanel.IsPropertiesSelected)
+        {
+            _documentPropertiesRequest = null;
+            return;
+        }
+
+        var manager = _activeTab?.PdfManager;
+        if (manager?.GetPdfBytes() is not { } source)
+        {
+            _documentPropertiesRequest = null;
+            CommentPanel.ShowDocumentPropertiesStatus("NoPDFDocumentIsOpen");
+            return;
+        }
+
+        var request = (Source: source, Path: manager.FilePath, FileSize: _documentFileSize, Protected: manager.IsPasswordProtected);
+        if (_documentPropertiesRequest == request)
+        {
+            CommentPanel.UpdateCurrentPageSize(_currentPageIndex);
+            return;
+        }
+        _documentPropertiesRequest = request;
+        CommentPanel.ShowDocumentPropertiesStatus("ReadingDocumentProperties");
+
+        try
+        {
+            string language = Loc.CurrentLanguage;
+            var properties = await Task.Run(() => PdfDocumentPropertiesReader.Read(source, language));
+            if (_documentPropertiesRequest != request) return;
+
+            DocumentPropertyRow Row(string label, string? value) => new(Loc.Get(label), string.IsNullOrWhiteSpace(value) ? "—" : value);
+
+            CommentPanel.ShowDocumentProperties(new[]
+            {
+                Row("DocumentFileName", request.Path == null ? Loc.Get("NewDocument") : Path.GetFileName(request.Path)),
+                Row("DocumentFilePath", request.Path),
+                Row("DocumentFileSize", request.FileSize is long size ? FormatFileSize(size) : null),
+                Row("DocumentPageCount", properties.PageSizes.Count.ToString(CultureInfo.GetCultureInfo(language))),
+                Row("DocumentPdfVersion", properties.Version),
+                Row("Protection", Loc.Get(request.Protected ? "DocumentProtectionEnabled" : "DocumentProtectionDisabled")),
+                Row("DocumentTitle", properties.Title),
+                Row("DocumentAuthor", properties.Author),
+                Row("DocumentSubject", properties.Subject),
+                Row("DocumentKeywords", properties.Keywords),
+                Row("DocumentCreator", properties.Creator),
+                Row("DocumentProducer", properties.Producer),
+                Row("DocumentCreationDate", properties.CreationDate),
+                Row("DocumentModificationDate", properties.ModificationDate)
+            }, properties.PageSizes, _currentPageIndex);
+        }
+        catch (Exception error)
+        {
+            Debug.WriteLine($"Error reading PDF properties: {error}");
+            if (_documentPropertiesRequest == request)
+                CommentPanel.ShowDocumentPropertiesStatus("CouldNotReadDocumentProperties");
+        }
     }
 
     private async Task EditCommentAsync(PdfAnnotation annotation)

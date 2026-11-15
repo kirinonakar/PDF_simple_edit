@@ -22,44 +22,54 @@ namespace PDF_simple_edit.Mcp;
 internal static partial class PdfMcpTools
 {
     private sealed record Tool(string name, string description, object inputSchema, object annotations);
+    private sealed record SavedPdf(string outputPath, string revision, int pageCount);
     private static object Field(string type, string description) => new { type, description };
-    private static readonly object Text = Field("string", "Unicode; supports newlines.");
+    private static readonly object Text = new { type = "string" };
+    private static readonly object Boolean = new { type = "boolean" };
     private static readonly object Number = new { type = "number" };
     private static readonly object Page = new { type = "integer", minimum = 1, description = "Default 1." };
     private static readonly object PageArray = new { type = "array", minItems = 1, items = new { type = "integer", minimum = 1 } };
+    private static readonly object PageRange = Field("string", "Range (e.g. 1,3,5-8) or all; default all.");
     private static readonly object Paths = new { type = "array", minItems = 1, items = new { type = "string" } };
     private static readonly Dictionary<string, object> Input = new()
     {
-        ["inputPath"] = Field("string", "Source PDF."),
-        ["expectedRevision"] = Field("string", "Reject if source SHA-256 differs.")
+        ["inputPath"] = Text,
+        ["expectedRevision"] = Field("string", "Source revision (SHA-256).")
     };
     private static readonly Dictionary<string, object> Output = new()
     {
-        ["outputPath"] = Field("string", "Destination PDF; parent must exist."),
-        ["overwrite"] = new { type = "boolean", description = "Allow replacing destination; default false." }
+        ["outputPath"] = Text,
+        ["overwrite"] = Boolean
     };
     private static readonly Dictionary<string, object> Geometry = new()
     { ["x"] = Number, ["y"] = Number, ["width"] = Number, ["height"] = Number };
     private static readonly Dictionary<string, object> Style = new()
     {
         ["color"] = Field("string", "#RRGGBB; default #000000."),
-        ["fontSize"] = Field("number", "Points; default 12."),
+        ["fontSize"] = Field("number", "Default 12 pt."),
         ["fontFamily"] = Field("string", "Installed family or font path; default Malgun Gothic."),
-        ["bold"] = Field("boolean", "Bold text."), ["italic"] = Field("boolean", "Italic text.")
+        ["bold"] = Boolean, ["italic"] = Boolean
     };
     private static readonly Dictionary<string, object> TextStyle = new(Style)
     {
-        ["underline"] = Field("boolean", "Add: default false. Edit: omitted preserves; false removes.")
+        ["underline"] = Field("boolean", "Omit to keep existing underline; false removes it.")
     };
+    private static readonly string[] GraphicKinds =
+        { "rectangle", "ellipse", "line", "arrow", "triangleArrow", "outlineArrow", "polygon", "freehand", "image", "highlight" };
     private static readonly Dictionary<string, object> Graphic = new()
     {
-        ["kind"] = new { type = "string", @enum = new[] { "rectangle", "ellipse", "line", "polygon", "freehand", "image", "highlight" } },
-        ["imagePath"] = Field("string", "Absolute path to image; required for kind=image or to replace an existing graphic with an image."),
-        ["color"] = Style["color"], ["fillColor"] = Field("string", "Optional #RRGGBB fill for closed shapes."),
-        ["lineWidth"] = Field("number", "Stroke width in points (default 2)."),
+        ["kind"] = new { type = "string", @enum = GraphicKinds },
+        ["imagePath"] = Field("string", "Required for kind=image; also replaces existing artwork."),
+        ["color"] = Style["color"], ["fillColor"] = Field("string", "#RRGGBB fill. triangleArrow defaults to color; recolor it with fillColor."),
+        ["lineWidth"] = Field("number", "Stroke or triangleArrow shaft width in points (default 2)."),
         ["opacity"] = Field("number", "Opacity from 0 to 1 (default 1; highlights 0.3)."),
-        ["rotation"] = Field("number", "Clockwise rotation in degrees around the object's center (default 0)."),
-        ["points"] = new { type = "array", minItems = 2, items = new { type = "object", properties = new { x = Number, y = Number }, required = new[] { "x", "y" }, additionalProperties = false }, description = "Absolute top-left page coordinates for line, polygon, or freehand. Line defaults to the bounds diagonal." }
+        ["rotation"] = Field("number", "Clockwise degrees about center; default 0."),
+        ["points"] = new
+        {
+            type = "array", minItems = 2,
+            items = new { type = "object", properties = new { x = Number, y = Number }, required = new[] { "x", "y" }, additionalProperties = false },
+            description = "Page coordinates. Required for polygon (3+) and freehand (2+). Arrows: two distinct points [tail, tip]. Lines/arrows default to the bounds diagonal."
+        }
     };
     private static readonly Dictionary<string, Tool> Catalog = BuildCatalog();
     public static IEnumerable<object> Definitions => Catalog.Values.Select(DiscoveryDefinition);
@@ -76,7 +86,7 @@ internal static partial class PdfMcpTools
         foreach (string key in new[] { "content", "pages" })
             properties[key] = new { type = "array", minItems = 1, maxItems = 10000,
                 items = new { type = "object", additionalProperties = true },
-                description = $"Call pdf_create_help topic={(key == "content" ? "flow" : "positioned")} before authoring; schema for full fields." };
+                description = key == "content" ? "Flow blocks." : "Positioned pages." };
         schema["properties"] = properties;
         return tool with { inputSchema = schema };
     }
@@ -93,47 +103,47 @@ internal static partial class PdfMcpTools
                 new { readOnlyHint = readOnly, destructiveHint = !readOnly, openWorldHint = false }));
         }
         Dictionary<string, object> Fields(params (string key, object field)[] values) => values.ToDictionary(p => p.key, p => p.field);
-        var objectId = Fields(("objectId", Field("string", "Exact object ID returned by pdf_inspect or pdf_find_text for this file revision and page.")));
-        Add("pdf_create", "Create PDF from one mode: text, content, pages or jsonPath. Before complex JSON, call pdf_create_help (flow/positioned; schema for exact fields). title is metadata.", new[] { "outputPath" }, false,
-            Output, Style, PdfMcpCreationService.Schema(Graphic));
-        Add("pdf_create_help", "On-demand creation guide/examples. topic=schema returns the full validated pdf_create schema, including nested fields.", Array.Empty<string>(), true,
+        var objectId = Fields(("objectId", Text));
+        Add("pdf_create", "Create a PDF from text, content, pages or jsonPath. Positioned text boxes auto-fit. See pdf_create_help for structured input.", new[] { "outputPath" }, false,
+            Output, Style, PdfMcpCreationService.Schema(Graphic, GraphicKinds));
+        Add("pdf_create_help", "Creation examples (flow/positioned) or full schema.", Array.Empty<string>(), true,
             Fields(("topic", new { type = "string", @enum = new[] { "overview", "flow", "positioned", "schema" } })));
-        Add("pdf_inspect", "Get revision, page sizes and editable IDs on one page. Filter with kind/region/maxObjects. Form fields: kind=all only, independent of maxObjects. Use pdf_find_text for document-wide text search.", new[] { "inputPath" }, true,
+        Add("pdf_inspect", "Get revision, page sizes and editable objects on one page. kind=all also returns form fields outside maxObjects.", new[] { "inputPath" }, true,
             Input, Fields(("page", Page),
-                ("kind", new { type = "string", @enum = new[] { "all", "text", "graphics" }, description = "Object category; default all. text returns editable body text only." }),
+                ("kind", new { type = "string", @enum = new[] { "all", "text", "graphics" }, description = "Default all; text selects body text." }),
                 ("region", InspectionRegionSchema()),
-                ("maxObjects", new { type = "integer", minimum = 1, maximum = 10000, description = "Maximum objects to return after filtering; omitted means no limit. Counts and truncated report omitted objects." })));
-        Add("pdf_find_text", "Search literal body text on all pages; return editable IDs, pages, bounds, full blocks and first UTF-16 match offsets. No regex, cross-block, annotation/form or image search; existing OCR included. Counts cover all matches even when truncated.", new[] { "inputPath", "query" }, true,
-            Input, Fields(("query", Field("string", "Nonempty literal substring to find within each editable text block.")),
-                ("caseSensitive", new { type = "boolean", description = "Default false; use ordinal case-sensitive comparison when true." }),
-                ("maxResults", new { type = "integer", minimum = 1, maximum = 10000, description = "Maximum matching text blocks to return, default 100." })));
-        Add("pdf_read", "Extract body text per selected page, including existing OCR. page defaults to 1; pages accepts ranges/all (mutually exclusive). Image-only pages need pdf_vlm_ocr. Use pdf_inspect for editable IDs.", new[] { "inputPath" }, true,
-            Input, Fields(("page", Page), ("pages", Field("string", "1-based page range, e.g. 1,3,5-8, or all. Mutually exclusive with page."))));
-        Add("pdf_add_text", "Add Unicode text at x/y (default 0/0), with font/color/bold/italic/underline. Use pdf_edit_text for existing text.", new[] { "inputPath", "outputPath", "text" }, false,
+                ("maxObjects", new { type = "integer", minimum = 1, maximum = 10000, description = "Limit after filtering; omit for all." })));
+        Add("pdf_find_text", "Find literal substrings within body text blocks across pages, including existing OCR. Returns IDs, pages, bounds, blocks and first UTF-16 match offsets.", new[] { "inputPath", "query" }, true,
+            Input, Fields(("query", Field("string", "Nonempty substring.")),
+                ("caseSensitive", Boolean),
+                ("maxResults", new { type = "integer", minimum = 1, maximum = 10000, description = "Default 100 blocks." })));
+        Add("pdf_read", "Read body text by page, including existing OCR. For scans, use pdf_vlm_ocr.", new[] { "inputPath" }, true,
+            Input, Fields(("page", Page), ("pages", Field("string", "Range (e.g. 1,3,5-8) or all; omit page when set."))));
+        Add("pdf_add_text", "Add Unicode text at x/y (default 0/0).", new[] { "inputPath", "outputPath", "text" }, false,
             Input, Output, TextStyle, Fields(("page", Page), ("text", Text), ("x", Number), ("y", Number)));
-        Add("pdf_edit_text", "Replace/delete, move, scale, rotate, reflow or restyle a text block, including underline. Omitted properties retain existing values. Vertical/clipped text may be unsupported.", new[] { "inputPath", "outputPath", "objectId" }, false,
-            Input, Output, Geometry, TextStyle, objectId, Fields(("page", Page), ("text", Text), ("rotation", Field("number", "Clockwise degrees around block center.")), ("reflow", Field("boolean", "Reflow text into supplied width/height instead of scaling."))));
-        Add("pdf_add_graphic", "Add shape, path, image or highlight as editable PDF content.", new[] { "inputPath", "outputPath", "kind" }, false,
+        Add("pdf_edit_text", "Edit an entire text block. Omit fields to preserve them; empty text deletes the block.", new[] { "inputPath", "outputPath", "objectId" }, false,
+            Input, Output, Geometry, TextStyle, objectId, Fields(("page", Page), ("text", Text), ("rotation", Field("number", "Clockwise degrees about center.")), ("reflow", Field("boolean", "Wrap within width/height instead of scaling."))));
+        Add("pdf_add_graphic", "Add an editable graphic. Arrows: arrow (open), triangleArrow (solid), outlineArrow (hollow).", new[] { "inputPath", "outputPath", "kind" }, false,
             Input, Output, Geometry, Graphic, Fields(("page", Page)));
-        Add("pdf_edit_graphic", "Transform/recolor a vector or image; kind/imagePath replaces artwork. Annotations support move/resize or replacement. Shared clipping/shading may be unsupported.", new[] { "inputPath", "outputPath", "objectId" }, false,
+        Add("pdf_edit_graphic", "Transform graphics or restyle vectors. kind/imagePath replaces artwork. Annotations support move/resize or replacement.", new[] { "inputPath", "outputPath", "objectId" }, false,
             Input, Output, Geometry, Graphic, objectId, Fields(("page", Page)));
-        Add("pdf_delete_object", "Delete one inspected object. Use pdf_delete_objects for multiple original IDs; sequential edits invalidate IDs. Use pdf_redact_region to erase a region.", new[] { "inputPath", "outputPath", "objectId" }, false,
+        Add("pdf_delete_object", "Delete one object. For multiple original IDs, use pdf_delete_objects.", new[] { "inputPath", "outputPath", "objectId" }, false,
             Input, Output, objectId, Fields(("page", Page)));
-        Add("pdf_redact_region", "Permanently remove text, graphics, images and form widgets intersecting the rectangle (pdfSweep).", new[] { "inputPath", "outputPath", "x", "y", "width", "height" }, false,
+        Add("pdf_redact_region", "Permanently remove content and form widgets intersecting a rectangle.", new[] { "inputPath", "outputPath", "x", "y", "width", "height" }, false,
             Input, Output, Geometry, Fields(("page", Page)));
         Add("pdf_manage_pages", "Insert/delete/reorder/rotate/crop pages. Reorder needs a full permutation; cannot delete all pages. Crop uses unrotated PDF-space coordinates.", new[] { "inputPath", "outputPath", "action" }, false,
             Input, Output, Fields(("action", new { type = "string", @enum = new[] { "insert", "delete", "reorder", "rotate", "crop" } }),
                 ("pages", PageArray), ("page", Page), ("count", Page), ("width", Number), ("height", Number), ("rotation", Field("number", "Added degrees; multiple of 90, default 90.")), ("x", Number), ("y", Number)));
-        Add("pdf_set_form_fields", "Set interactive AcroForm values by name. Checkboxes: inspected onValue or Off. Supports Unicode.", new[] { "inputPath", "outputPath", "values" }, false,
+        Add("pdf_set_form_fields", "Set AcroForm values by name. Checkboxes use inspected onValue or Off.", new[] { "inputPath", "outputPath", "values" }, false,
             Input, Output, Fields(("values", new { type = "object", additionalProperties = new { type = "string" } })));
         Add("pdf_merge", "Merge inputPaths in order.", new[] { "inputPaths", "outputPath" }, false,
             Output, Fields(("inputPaths", Paths)));
         Add("pdf_extract_pages", "Extract pages in supplied order; duplicates allowed.", new[] { "inputPath", "outputPath", "pages" }, false,
             Input, Output, Fields(("pages", PageArray)));
-        Add("pdf_to_images", "Render selected pages to PNG; omit pages for all. DPI default 150. Returns paths; never overwrites images.", new[] { "inputPath", "outputFolder" }, false,
-            Input, Fields(("outputFolder", Text), ("pages", Field("string", "Optional 1-based page range; omit to render all.")), ("dpi", new { type = "integer", minimum = 72, maximum = 600 })));
-        Add("pdf_extract_images", "Extract embedded raster images, including images in form XObjects, from selected pages. Returns paths and partial failures.", new[] { "inputPath", "outputFolder" }, false,
-            Input, Fields(("outputFolder", Text), ("pages", Field("string", "1-based page range, e.g. 1,3,5-8. Omit or use all for the whole PDF."))));
+        Add("pdf_to_images", "Render pages to PNG at 150 DPI by default.", new[] { "inputPath", "outputFolder" }, false,
+            Input, Fields(("outputFolder", Text), ("pages", PageRange), ("dpi", new { type = "integer", minimum = 72, maximum = 600 })));
+        Add("pdf_extract_images", "Extract embedded raster images from selected pages.", new[] { "inputPath", "outputFolder" }, false,
+            Input, Fields(("outputFolder", Text), ("pages", PageRange)));
         Add("images_to_pdf", "Create PDF from ordered PNG/JPEG/BMP/GIF/TIFF/WebP images; one fitted portrait/landscape A4 page per image.", new[] { "imagePaths", "outputPath" }, false,
             Output, Fields(("imagePaths", Paths)));
         AddBatchTools(result);
@@ -158,8 +168,19 @@ internal static partial class PdfMcpTools
         }
         if (name == "pdf_create")
         {
-            byte[] created = await Task.Run(() => PdfMcpCreationService.Create(a, cancellation), cancellation);
-            return await Save(a, created, cancellation, expected: destinationVersion);
+            var created = await Task.Run(() => PdfMcpCreationService.Create(a, cancellation), cancellation);
+            var saved = await Save(a, created.Bytes, cancellation, expected: destinationVersion);
+            if (created.TextBoxAdjustments.Count == 0) return saved;
+            return new
+            {
+                saved.outputPath, saved.revision, saved.pageCount,
+                textBoxAdjustments = created.TextBoxAdjustments.Select(change => new
+                {
+                    page = change.Page, element = change.Element,
+                    before = new { width = change.Before.Width, height = change.Before.Height },
+                    after = new { width = change.After.Width, height = change.After.Height }
+                })
+            };
         }
         if (name is "images_to_pdf" or "pdf_merge")
         {
@@ -332,33 +353,73 @@ internal static partial class PdfMcpTools
             new PdfContentWriter().AddImage(pdf, pageIndex, a.Path("imagePath"), bounds.X, bounds.Y, bounds.Width, bounds.Height,
                 rotation: a.Number("rotation"), opacity: a.Number("opacity", 1, 0, 1)); return;
         }
+        PdfPathPoint[] BoundsDiagonal() => new[]
+        {
+            new PdfPathPoint { X = bounds.X, Y = bounds.Y },
+            new PdfPathPoint { X = bounds.Right, Y = bounds.Bottom }
+        };
+        PdfPathPoint[]? ReadPoints() => a.Has("points") ? a.Value.GetProperty("points").EnumerateArray().Select(p =>
+        {
+            var point = new PdfMcpArguments(p);
+            return new PdfPathPoint { X = point.Number("x"), Y = point.Number("y") };
+        }).ToArray() : null;
+        DrawingKind? arrowKind = kind switch
+        {
+            "arrow" => DrawingKind.Arrow,
+            "triangleArrow" => DrawingKind.TriangleArrow,
+            "outlineArrow" => DrawingKind.OutlineArrow,
+            _ => null
+        };
+        string colorHex = a.Color();
+        double lineWidth = a.Number("lineWidth", 2, .1, 100);
+        PdfAnnotation? arrow = null;
+        if (arrowKind is { } drawingKind)
+        {
+            var ends = ReadPoints() ?? BoundsDiagonal();
+            if (ends.Length != 2 || (ends[0].X == ends[1].X && ends[0].Y == ends[1].Y))
+                throw new ArgumentException("An arrow needs exactly two distinct points: tail and tip.");
+            arrow = PdfDrawingGeometry.Create(drawingKind, ends, pageIndex, colorHex, lineWidth);
+        }
         var page = pdf.GetPage(pageIndex + 1);
-        var matrix = PdfPageCoordinates.ToDisplay(page).Inverse().After(PdfAffineTransform.Between(bounds, bounds, a.Number("rotation")));
+        var rotationBounds = arrow == null ? bounds : new PdfTextBox(arrow.X, arrow.Y, arrow.Width, arrow.Height);
+        var matrix = PdfPageCoordinates.ToDisplay(page).Inverse().After(PdfAffineTransform.Between(rotationBounds, rotationBounds, a.Number("rotation")));
         var canvas = new PdfCanvas(page.NewContentStreamAfter(), page.GetResources(), pdf);
         canvas.SaveState();
         canvas.ConcatMatrix(matrix.A, matrix.B, matrix.C, matrix.D, matrix.E, matrix.F);
-        var color = PdfMcpArguments.PdfColor(a.Color());
+        var color = PdfMcpArguments.PdfColor(colorHex);
         var fill = a.Has("fillColor") ? PdfMcpArguments.PdfColor(a.Color("fillColor")) : color;
-        canvas.SetStrokeColor(color).SetFillColor(fill).SetLineWidth((float)a.Number("lineWidth", 2, .1, 100));
+        canvas.SetStrokeColor(color).SetFillColor(fill).SetLineWidth((float)lineWidth);
         float opacity = (float)a.Number("opacity", kind == "highlight" ? .3 : 1, 0, 1);
         canvas.SetExtGState(new PdfExtGState().SetFillOpacity(opacity).SetStrokeOpacity(opacity));
-        switch (kind)
+        void AppendPath(IReadOnlyList<PdfPathPoint> path)
         {
-            case "rectangle": case "highlight": canvas.Rectangle(bounds.X, bounds.Y, bounds.Width, bounds.Height); break;
-            case "ellipse": canvas.Ellipse(bounds.X, bounds.Y, bounds.Right, bounds.Bottom); break;
-            case "line": case "polygon": case "freehand":
-                var points = a.Has("points") ? a.Value.GetProperty("points").EnumerateArray().Select(p =>
-                { var point = new PdfMcpArguments(p); return new PdfTextPoint(point.Number("x"), point.Number("y")); }).ToArray()
-                    : kind == "line" ? new[] { new PdfTextPoint(bounds.X, bounds.Y), new PdfTextPoint(bounds.Right, bounds.Bottom) }
-                    : throw new ArgumentException("points are required for polygons and freehand paths.");
-                if (kind == "polygon" && points.Length < 3) throw new ArgumentException("A polygon needs at least 3 points.");
-                canvas.MoveTo(points[0].X, points[0].Y);
-                foreach (var point in points.Skip(1)) canvas.LineTo(point.X, point.Y);
-                if (kind == "polygon") canvas.ClosePath();
-                break;
-            default: throw new ArgumentException("Unsupported graphic kind.");
+            canvas.MoveTo(path[0].X, path[0].Y);
+            foreach (var point in path.Skip(1)) canvas.LineTo(point.X, point.Y);
         }
-        if (kind == "highlight") canvas.Fill();
+        if (arrow != null)
+        {
+            canvas.SetLineCapStyle(1).SetLineJoinStyle(1);
+            // Paint the shaft and head together so the editor sees one vector object.
+            foreach (var stroke in PdfDrawingGeometry.GetStrokes(arrow)) AppendPath(stroke);
+            if (arrow.DrawingKind != DrawingKind.Arrow) canvas.ClosePath();
+        }
+        else
+        {
+            switch (kind)
+            {
+                case "rectangle": case "highlight": canvas.Rectangle(bounds.X, bounds.Y, bounds.Width, bounds.Height); break;
+                case "ellipse": canvas.Ellipse(bounds.X, bounds.Y, bounds.Right, bounds.Bottom); break;
+                case "line": case "polygon": case "freehand":
+                    var path = ReadPoints() ?? (kind == "line" ? BoundsDiagonal()
+                        : throw new ArgumentException("points are required for polygons and freehand paths."));
+                    if (kind == "polygon" && path.Length < 3) throw new ArgumentException("A polygon needs at least 3 points.");
+                    AppendPath(path);
+                    if (kind == "polygon") canvas.ClosePath();
+                    break;
+                default: throw new ArgumentException("Unsupported graphic kind.");
+            }
+        }
+        if (kind == "highlight" || (arrow != null && PdfDrawingGeometry.IsFilledStroke(arrow, 0))) canvas.Fill();
         else if (a.Has("fillColor") && kind is "rectangle" or "ellipse" or "polygon") canvas.FillStroke();
         else canvas.Stroke();
         canvas.RestoreState(); canvas.Release();
@@ -470,7 +531,7 @@ internal static partial class PdfMcpTools
     }
     private static int[] ReadPages(PdfMcpArguments a, int total) => a.Value.GetProperty("pages").EnumerateArray().Select(p =>
         p.TryGetInt32(out int page) && page >= 1 && page <= total ? page : throw new ArgumentException($"Pages must be integers from 1 to {total}.")).ToArray();
-    private static async Task<object> Save(PdfMcpArguments a, byte[] bytes, CancellationToken cancellation, string? inputPath = null, string? inputRevision = null, PdfFileVersion? expected = null)
+    private static async Task<SavedPdf> Save(PdfMcpArguments a, byte[] bytes, CancellationToken cancellation, string? inputPath = null, string? inputRevision = null, PdfFileVersion? expected = null)
     {
         string path = a.Path("outputPath");
         if (!System.IO.Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("outputPath must end in .pdf.");
@@ -483,7 +544,7 @@ internal static partial class PdfMcpTools
         int pages = pdf.GetNumberOfPages();
         cancellation.ThrowIfCancellationRequested();
         await PdfAtomicFile.WriteAsync(path, bytes, expected);
-        return new { outputPath = path, revision = Hash(bytes), pageCount = pages };
+        return new(path, Hash(bytes), pages);
     }
 
     // Enforce the advertised schema before touching files, including nested arrays.

@@ -29,12 +29,13 @@ internal static class PdfMcpCreationGuide
             rules = new[]
             {
                 "Use pages for exact page composition. Each page has width/height in points, optional rotation (multiple of 90), backgroundColor, and elements.",
-                "Each element uses type, not kind. Supported types: text, image, rectangle, ellipse, line, polygon, freehand, highlight. Array order is paint order: backgrounds first, text last.",
+                "Each element uses type. Supported types: text, image, rectangle, ellipse, line, arrow, triangleArrow, outlineArrow, polygon, freehand, highlight. Array order is paint order: backgrounds first, text last.",
                 "x/y are from the displayed page's top-left, after page rotation. width/height are points. A4 defaults to 595.276 by 841.89. One point is 1/72 inch.",
-                "Text requires text; width/height define the wrapping box, defaulting to remaining page space. A text box that does not fit is an error: enlarge it or reduce fontSize. Text content is never silently truncated.",
+                "Text requires text. Boxes grow within the available page area at the original font size. The result reports before/after sizes in textBoxAdjustments. Use flow for text that needs multiple pages.",
                 "Text styles: fontFamily, fontSize, color, bold, italic, alignment. Optional rotation rotates around the box center.",
                 "Images require absolute imagePath and support x/y/width/height/rotation/opacity. Image color/fillColor/lineWidth do not apply.",
                 "Shapes support color (stroke), fillColor, lineWidth, opacity, rotation. polygon/freehand require points [{x,y},...]; a polygon needs 3 or more points. Line defaults to the box diagonal.",
+                "Arrows use two distinct points [tail, tip] or the box diagonal. arrow is open, triangleArrow is solid, outlineArrow is hollow. triangleArrow uses color unless fillColor is set.",
                 "No pageCount with pages. Do not put content/text beside pages. Choose document-specific text, colors, dimensions and positions in the JSON rather than inventing preset fields."
             },
             arguments = JsonSerializer.Deserialize<JsonElement>(PositionedExample)

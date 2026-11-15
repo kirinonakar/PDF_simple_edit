@@ -758,12 +758,9 @@ namespace PDF_simple_edit.Helpers
         {
             lock (_docLock)
             {
-                var size = GetPageSize(pageIndex);
-                if (_pdfBytes == null) return size;
+                if (_pdfBytes == null) return (0, 0);
                 using var document = new PdfDocument(new PdfReader(new MemoryStream(_pdfBytes, writable: false)));
-                double unit = document.GetPage(pageIndex + 1).GetPdfObject().GetAsNumber(PdfName.UserUnit)?.DoubleValue() ?? 1;
-                if (!double.IsFinite(unit) || unit <= 0) unit = 1;
-                return (size.width * unit, size.height * unit);
+                return PdfPageCoordinates.GetPhysicalSize(document.GetPage(pageIndex + 1));
             }
         }
 
@@ -778,9 +775,7 @@ namespace PDF_simple_edit.Helpers
                     _pageSizes.Clear();
                     for (int index = 0; index < document.GetNumberOfPages(); index++)
                     {
-                        var page = document.GetPage(index + 1);
-                        var bounds = PdfPageCoordinates.ToDisplay(page).Map(new PdfTextBox(
-                            page.GetCropBox().GetX(), page.GetCropBox().GetY(), page.GetCropBox().GetWidth(), page.GetCropBox().GetHeight()));
+                        var bounds = PdfPageCoordinates.GetDisplayBounds(document.GetPage(index + 1));
                         _pageSizes[index] = (bounds.Width, bounds.Height);
                     }
                     _geometrySource = _pdfBytes;

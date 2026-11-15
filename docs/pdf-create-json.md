@@ -103,17 +103,28 @@ Page rotation must be a multiple of 90 degrees.
 ```
 
 Elements use `type`, not the editing tool's `kind` field. Supported types are
-`text`, `image`, `rectangle`, `ellipse`, `line`, `polygon`, `freehand`, `highlight`.
+`text`, `image`, `rectangle`, `ellipse`, `line`, `arrow`, `triangleArrow`,
+`outlineArrow`, `polygon`, `freehand`, `highlight`.
 All support x/y/width/height and rotation as applicable. Text requires `text` and
 supports the text styles above. Its width/height define a wrapping box; omitted
-dimensions use the page's remaining space. Overflow produces an error rather
-than dropping text. Enlarge the box, reduce font size or use flow content.
+dimensions use the page's remaining space. If text overflows, the box grows
+in height first, then in width if needed. Position and font size stay fixed.
+The result includes `textBoxAdjustments` for changed boxes, with 1-based `page`
+and `element` numbers and `before`/`after` width and height in points. If the
+text exceeds the remaining page area at its current size, creation reports the
+page and element in the error. Flow content can span multiple pages.
 
 Images require `imagePath`; they support rotation and `opacity`, not stroke/fill
 colors. Shapes support `color` (stroke), `fillColor`, `lineWidth`, `opacity` and
 rotation. Opacity ranges from 0 to 1. `polygon`/`freehand` require absolute page
 `points: [{"x": 10, "y": 20}, ...]`; polygons need at least three points. Lines
 default to the diagonal of their specified box.
+
+Arrows take exactly two distinct `points` from the displayed page's top-left,
+tail first and tip second. They also default to the box diagonal. `arrow` has
+an open head, `triangleArrow` has a solid shaft and triangular head, and
+`outlineArrow` is hollow. For `triangleArrow`, `lineWidth` sets the shaft
+width and `fillColor` overrides `color` when supplied.
 
 ## JSON files and CLI creation
 
