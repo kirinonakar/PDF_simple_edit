@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 using PDF_simple_edit.Models;
 using System;
@@ -45,11 +46,14 @@ public static class AnnotationTextLayoutService
     public static double GetRequiredTextBoxWidth(
         PdfAnnotation annotation,
         string? text,
-        int characterSpacing)
+        int characterSpacing,
+        IReadOnlyList<PdfTextStyleRange>? styles = null)
     {
         try
         {
             double widestLine = 0;
+            int offset = 0;
+            styles ??= annotation.TextStyleRanges;
             foreach (string line in SplitLines(text))
             {
                 double Measure(string value)
@@ -57,10 +61,18 @@ public static class AnnotationTextLayoutService
                     TextBlock sample = CreateTextBlock(value, annotation.FontFamily, annotation.FontSize,
                         annotation.IsBold, annotation.IsItalic, annotation.FontWeight);
                     sample.CharacterSpacing = characterSpacing;
+                    if (styles.Count > 0 && value.StartsWith(line, StringComparison.Ordinal))
+                    {
+                        sample.Text = string.Empty;
+                        AppendFormattedLine(sample, line, offset, styles);
+                        if (value.Length > line.Length)
+                            sample.Inlines.Add(new Run { Text = value[line.Length..] });
+                    }
                     sample.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
                     return sample.DesiredSize.Width;
                 }
                 widestLine = Math.Max(widestLine, TextInputLayoutService.MeasureLineWidth(line, Measure));
+                offset += line.Length;
             }
 
             return Math.Max((widestLine + 2.0) / PdfToPixels, 1.0 / PdfToPixels);
@@ -68,6 +80,37 @@ public static class AnnotationTextLayoutService
         catch
         {
             return Math.Max(annotation.Width, 1.0 / PdfToPixels);
+        }
+    }
+
+    public static void ApplyTextStyles(TextBlock textBlock, PdfAnnotation annotation)
+    {
+        if (annotation.TextStyleRanges.Count == 0) return;
+        textBlock.Text = string.Empty;
+        int offset = 0;
+        string[] lines = SplitLines(annotation.Content);
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (i > 0)
+                textBlock.Inlines.Add(new LineBreak());
+            AppendFormattedLine(textBlock, lines[i], offset, annotation.TextStyleRanges, annotation.IsUnderline);
+            offset += lines[i].Length;
+        }
+    }
+
+    private static void AppendFormattedLine(TextBlock textBlock, string line, int offset,
+        IReadOnlyList<PdfTextStyleRange> styles, bool isUnderline = false)
+    {
+        foreach (var (text, style) in PdfTextStyleRange.SplitLine(line, offset, styles))
+        {
+            var run = new Run { Text = text };
+            if (style.IsBold is bool bold)
+                run.FontWeight = ResolveFontWeight(bold ? 700 : 400, bold);
+            if (style.IsItalic is bool italic)
+                run.FontStyle = italic ? Windows.UI.Text.FontStyle.Italic : Windows.UI.Text.FontStyle.Normal;
+            if (style.IsUnderline ?? isUnderline)
+                run.TextDecorations = Windows.UI.Text.TextDecorations.Underline;
+            textBlock.Inlines.Add(run);
         }
     }
 

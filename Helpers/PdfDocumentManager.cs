@@ -526,7 +526,8 @@ namespace PDF_simple_edit.Helpers
             IReadOnlyList<double>? lineBaselineOffsets = null,
             int characterSpacing = 0,
             int fontWeight = 400,
-            IReadOnlyList<string>? originalLines = null, bool isUnderline = false)
+            IReadOnlyList<string>? originalLines = null, bool isUnderline = false,
+            IReadOnlyList<PdfTextStyleRange>? styleRanges = null)
         {
             _contentWriter.AddText(
                 doc,
@@ -547,7 +548,7 @@ namespace PDF_simple_edit.Helpers
                 lineBaselineOffsets,
                 characterSpacing,
                 fontWeight,
-                originalLines, isUnderline);
+                originalLines, isUnderline, styleRanges);
         }
 
         public void AddHighlight(

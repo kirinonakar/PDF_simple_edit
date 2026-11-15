@@ -38,7 +38,8 @@ public sealed partial class NativePdfTextService
         return new(pageBytes, selection, ApplyInkBounds(page, data.Blocks, data.Map));
     }
 
-    public NativePdfTextResult EditTextPreview(TextPreview preview, string text) =>
-        EditMany(preview.Bytes, 0, new[] { new NativePdfTextEdit(preview.Block, text) },
+    public NativePdfTextResult EditTextPreview(TextPreview preview, string text,
+        IReadOnlyList<PdfTextStyleRange>? styleRanges = null) =>
+        EditMany(preview.Bytes, 0, new[] { new NativePdfTextEdit(preview.Block, text, StyleRanges: styleRanges) },
             preview.OriginalBlocks, preview: true);
 }

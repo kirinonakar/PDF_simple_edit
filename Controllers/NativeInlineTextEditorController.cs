@@ -24,7 +24,7 @@ public sealed class NativeInlineTextSession
 }
 
 /// <summary>
-/// RichEdit supplies Unicode/IME, clipboard and keyboard editing only. PDF-rendered
+/// RichEdit supplies Unicode/IME, clipboard, and character formatting. PDF-rendered
 /// page pixels and the native glyph geometry supply the text, hit testing, selection
 /// and caret. Platform font metrics never enter the saved content or visible text.
 /// </summary>
@@ -44,6 +44,10 @@ public sealed class NativeInlineTextEditorController
     private NativePdfTextResult? _preview;
     private string _previewText = "";
     private string _requestedText = "";
+    private PdfTextStyleRange[] _previewStyles = Array.Empty<PdfTextStyleRange>();
+    private PdfTextStyleRange[] _requestedStyles = Array.Empty<PdfTextStyleRange>();
+    private bool _formattingChanged;
+    private bool _previewHasFormatting;
     private Task<NativePdfTextService.TextPreview>? _previewSource;
     private int _pageIndex;
     private int _version;
@@ -89,11 +93,33 @@ public sealed class NativeInlineTextEditorController
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_input, Loc.Get("EditOriginalPDFText"));
         Canvas.SetLeft(_input, annotation.X * Scale); Canvas.SetTop(_input, annotation.Y * Scale);
         _input.Document.SetText(TextSetOptions.None, _layout.Text);
+        var runs = _layout.Runs.ToDictionary(run => run.Id);
+        var styles = new List<PdfTextStyleRange>();
+        int offset = 0;
+        foreach (var glyph in _layout.Glyphs)
+        {
+            int length = PdfTextStyleRange.CountCharacters(glyph.Text);
+            if (length == 0) continue;
+            var run = runs[glyph.RunId];
+            var style = new PdfTextStyleRange(offset, length, run.IsBold, run.IsItalic, glyph.IsUnderline);
+            if (styles.Count > 0 && styles[^1] with { Start = offset, Length = length } == style)
+                styles[^1] = styles[^1] with { Length = styles[^1].Length + length };
+            else
+                styles.Add(style);
+            offset += length;
+        }
+        InlineTextFormatting.Apply(_input.Document, _layout.Text, styles);
+        _input.Document.ClearUndoRedoHistory();
+        _requestedStyles = _previewStyles = InlineTextFormatting.Read(_input.Document, _layout.Text);
+        _formattingChanged = _previewHasFormatting = false;
         UpdateInputBounds();
         _input.TextChanged += TextChanged;
         _input.SelectionChanged += (_, _) => { _caretVisible = true; DrawSelection(); };
         _input.PreviewKeyDown += KeyDown;
-        _input.LostFocus += async (_, _) => { if (_session?.IsFinishing != true) await FinishAsync(restoreFocus: false); };
+        var input = _input;
+        InlineTextFormatting.ConnectFlyouts(input, () => _input == input && _session?.IsFinishing == false
+            ? FinishAsync(restoreFocus: false) : Task.CompletedTask,
+            () => { if (_input == input && _session?.IsFinishing == false) QueuePreview(); });
         _input.Loaded += (_, _) =>
         {
             _input?.Focus(FocusState.Programmatic);
@@ -129,10 +155,21 @@ public sealed class NativeInlineTextEditorController
     private void TextChanged(object sender, RoutedEventArgs args)
     {
         if (_suppress || _session?.IsFinishing != false) return;
-        _requestedText = Text();
-        // One active preview and one latest text value, rather than a task for
-        // every keystroke. Publish completed frames even during continuous input.
-        if (_pending.IsCompleted && _requestedText != _previewText)
+        QueuePreview();
+    }
+
+    private bool NeedsPreview => _requestedText != _previewText ||
+        (_formattingChanged && !_requestedStyles.SequenceEqual(_previewStyles));
+
+    private void QueuePreview()
+    {
+        string text = Text();
+        var styles = InlineTextFormatting.Read(_input!.Document, text);
+        if (text == _requestedText && !styles.SequenceEqual(_requestedStyles))
+            _formattingChanged = true;
+        _requestedText = text;
+        _requestedStyles = styles;
+        if (_pending.IsCompleted && NeedsPreview)
             _pending = RefreshPreviewsAsync(_version);
         else DrawSelection();
     }
@@ -142,9 +179,11 @@ public sealed class NativeInlineTextEditorController
         // Yield before starting so TextChanged always records the worker task
         // before it can finish, including failures during snapshot preparation.
         await Task.Yield();
-        while (version == _version && _input != null && _requestedText != _previewText)
+        while (version == _version && _input != null && NeedsPreview)
         {
             string text = _requestedText;
+            var styles = _requestedStyles;
+            bool applyFormatting = _formattingChanged;
             try
             {
                 byte[] snapshot = _snapshot!; int pageIndex = _pageIndex;
@@ -154,12 +193,14 @@ public sealed class NativeInlineTextEditorController
                 if (version != _version || _input == null) return;
                 // Include input received while the page-only snapshot was prepared.
                 text = _requestedText;
-                if (text == _previewText) return;
+                styles = _requestedStyles;
+                applyFormatting = _formattingChanged;
+                if (!NeedsPreview) return;
                 // Resolve each IME composition against the original font again, so a
                 // completed syllable never inherits the preceding jamo's fallback.
-                var result = await Task.Run(() => _service.EditTextPreview(previewSource, text));
+                var result = await Task.Run(() => _service.EditTextPreview(previewSource, text, applyFormatting ? styles : null));
                 if (version != _version || _input == null) return;
-                if (_requestedText == _previewText) return;
+                if (!NeedsPreview) return;
                 using var rendered = await Task.Run(async () =>
                 {
                     using var document = await PdfRenderDocument.LoadAsync(result.Bytes);
@@ -169,6 +210,8 @@ public sealed class NativeInlineTextEditorController
                 var bitmap = new BitmapImage(); await bitmap.SetSourceAsync(rendered.AsRandomAccessStream());
                 if (version != _version || _input == null) return;
                 _pageImage!.Source = bitmap; _preview = result; _previewText = text; _layout = result.Layout;
+                _previewStyles = styles;
+                _previewHasFormatting = applyFormatting;
                 UpdateInputBounds();
                 _status?.Invoke(result.FontSubstitutionStatus is string substitution
                     ? substitution + Loc.Get("CtrlEnterFinishEscCancel")
@@ -182,12 +225,19 @@ public sealed class NativeInlineTextEditorController
                 if (version != _version || _input == null) return;
                 // A transient IME syllable may fail font/overlap validation after
                 // newer input has already fixed it. Never replace that newer text.
-                if (text != _requestedText) continue;
+                if (text != _requestedText || !styles.SequenceEqual(_requestedStyles)) continue;
                 int caret = Math.Min(_input.Document.Selection.StartPosition, _previewText.Length);
                 _suppress = true;
-                try { _input.Document.SetText(TextSetOptions.None, _previewText); _input.Document.Selection.SetRange(caret, caret); }
+                try
+                {
+                    _input.Document.SetText(TextSetOptions.None, _previewText);
+                    InlineTextFormatting.Apply(_input.Document, _previewText, _previewStyles);
+                    _input.Document.Selection.SetRange(caret, caret);
+                }
                 finally { _suppress = false; }
                 _requestedText = _previewText;
+                _requestedStyles = _previewStyles;
+                _formattingChanged = _previewHasFormatting;
                 _status?.Invoke(error.Message); DrawSelection();
             }
         }
@@ -303,6 +353,7 @@ public sealed class NativeInlineTextEditorController
     private async Task FinishCoreAsync()
     {
         if (_input == null || _session == null || _session.IsFinishing) return;
+        QueuePreview();
         _session.IsFinishing = true;
         _input.IsReadOnly = true;
         try
@@ -318,7 +369,8 @@ public sealed class NativeInlineTextEditorController
             byte[] snapshot = _snapshot;
             int pageIndex = _pageIndex;
             string text = _previewText;
-            var result = await Task.Run(() => _service.Edit(snapshot, pageIndex, new(source, text)));
+            var styles = _previewHasFormatting ? _previewStyles : null;
+            var result = await Task.Run(() => _service.Edit(snapshot, pageIndex, new(source, text, StyleRanges: styles)));
             // Preserve the highlighted characters for a subsequent toolbar
             // command. A caret alone keeps the entire edited text selected.
             var selection = await Task.Run(() => _service.RefreshSelection(result.Bytes, pageIndex,

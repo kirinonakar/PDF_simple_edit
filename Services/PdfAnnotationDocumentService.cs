@@ -13,7 +13,8 @@ public sealed class PdfAnnotationDocumentService
     public void Apply(PdfDocumentManager manager, PdfDocument document, PdfAnnotation annotation, bool textMetricsPrepared = false)
     {
         if (annotation.NativeText != null || (annotation.IsApplied && annotation.Type is AnnotationType.Image or AnnotationType.Highlight)) return;
-        if (annotation.IsUnderline && annotation.Type is AnnotationType.Text or AnnotationType.FreeText)
+        if ((annotation.IsUnderline || annotation.TextStyleRanges.Any(range => range.IsUnderline == true)) &&
+            annotation.Type is AnnotationType.Text or AnnotationType.FreeText)
             PdfTextUnderlineService.MarkPage(document.GetPage(annotation.PageIndex + 1));
         if (System.Math.Abs(annotation.Rotation) > .0001 && !annotation.IsEditablePath && !annotation.IsOriginalImageReplacement &&
             !annotation.IsOriginalTextReplacement && !(annotation.IsApplied && annotation.Type is AnnotationType.Text or AnnotationType.FreeText))
@@ -95,7 +96,7 @@ public sealed class PdfAnnotationDocumentService
                     null,
                     characterSpacing,
                     annotation.FontWeight,
-                    originalLines, annotation.IsUnderline);
+                    originalLines, annotation.IsUnderline, annotation.TextStyleRanges);
                 break;
             case AnnotationType.Highlight:
                 manager.AddHighlightInternal(

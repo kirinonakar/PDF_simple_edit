@@ -118,6 +118,7 @@ public sealed class InlineTextEditorController
         string color = existingAnnotation?.Color ?? settings.Color;
         bool isBold = existingAnnotation?.IsBold ?? settings.IsBold;
         bool isItalic = existingAnnotation?.IsItalic ?? settings.IsItalic;
+        bool isUnderline = existingAnnotation?.IsUnderline ?? settings.IsUnderline;
         int fontWeight = existingAnnotation?.FontWeight ?? (isBold ? 700 : 400);
         string initialText = existingAnnotation != null
             ? buildEditableText(existingAnnotation)
@@ -190,12 +191,16 @@ public sealed class InlineTextEditorController
             UseLayoutRounding = false,
             IsSpellCheckEnabled = false
         };
-        SetEditorText(editor, initialText);
         var characterFormat = editor.Document.GetDefaultCharacterFormat();
-        characterFormat.Underline = (existingAnnotation?.IsUnderline ?? settings.IsUnderline) ? Microsoft.UI.Text.UnderlineType.Single : Microsoft.UI.Text.UnderlineType.None;
+        bool displayBold = editor.FontWeight.Weight >= 600;
+        InlineTextFormatting.SetFormat(characterFormat, new(0, 0, displayBold, isItalic, isUnderline));
         editor.Document.SetDefaultCharacterFormat(characterFormat);
+        SetEditorText(editor, initialText);
         editor.Document.GetRange(0, initialText.Length).CharacterFormat.Underline = characterFormat.Underline;
+        InlineTextFormatting.Apply(editor.Document, initialText,
+            existingAnnotation?.TextStyleRanges ?? Array.Empty<PdfTextStyleRange>());
         ApplyEditorLineSpacing(editor, displayLineHeight);
+        editor.Document.ClearUndoRedoHistory();
         Canvas.SetLeft(editor, pdfX * PdfToPixels);
         Canvas.SetTop(editor, pdfY * PdfToPixels + topOffset);
 
@@ -229,7 +234,7 @@ public sealed class InlineTextEditorController
                 await CancelAsync(editor);
             }
         };
-        editor.LostFocus += async (_, _) => await StartApplyAsync(editor);
+        InlineTextFormatting.ConnectFlyouts(editor, () => StartApplyAsync(editor));
         bool prepareBackground = existingAnnotation?.IsOriginalTextReplacement == true || existingAnnotation?.IsApplied == true;
         if (prepareBackground) { editor.Opacity = 0; editor.IsReadOnly = true; }
         canvas.Children.Add(editor);
@@ -301,12 +306,16 @@ public sealed class InlineTextEditorController
             return;
 
         string changedText = GetEditorText(editor);
-        // RichEditBox raises TextChanged for document-format updates as well as
-        // character edits. Ignore formatting-only notifications so entering edit
-        // mode cannot recursively reapply paragraph formatting or remove the
-        // original PDF text before the user changes anything.
+        var styles = ReadStyles(editor, changedText, session.Annotation.IsUnderline);
+        // Formatting-only changes can expand the editor's visible text.
+        // The page preview already hides the original until commit.
         if (string.Equals(changedText, session.LastEditorText, StringComparison.Ordinal))
+        {
+            editor.Width = Math.Min(editor.MaxWidth, Math.Max(session.OriginalWidth * PdfToPixels,
+                AnnotationTextLayoutService.GetRequiredTextBoxWidth(session.Annotation, changedText,
+                    session.PreservedCharacterSpacing, styles) * PdfToPixels));
             return;
+        }
 
         session.LastEditorText = changedText;
         long changeVersion = ++session.TextChangeVersion;
@@ -324,7 +333,7 @@ public sealed class InlineTextEditorController
             double requiredWidth = AnnotationTextLayoutService.GetRequiredTextBoxWidth(
                 session.Annotation,
                 changedText,
-                session.PreservedCharacterSpacing) * PdfToPixels;
+                session.PreservedCharacterSpacing, styles) * PdfToPixels;
             editor.Width = Math.Min(
                 editor.MaxWidth,
                 Math.Max(session.OriginalWidth * PdfToPixels, requiredWidth));
@@ -361,6 +370,7 @@ public sealed class InlineTextEditorController
                 session.Annotation.Content = session.OriginalContent;
                 session.LastEditorText = session.OriginalContent;
                 SetEditorText(editor, session.OriginalContent);
+                InlineTextFormatting.Apply(editor.Document, session.OriginalContent, session.Annotation.TextStyleRanges);
                 editor.CharacterSpacing = session.PreservedCharacterSpacing;
                 editor.Width = Math.Max(session.OriginalWidth * PdfToPixels, 1);
                 editor.Height = AnnotationTextLayoutService.GetInlineEditorHeight(
@@ -454,6 +464,10 @@ public sealed class InlineTextEditorController
             .Replace("\n", "\r\n", StringComparison.Ordinal);
     }
 
+    private static PdfTextStyleRange[] ReadStyles(RichEditBox editor, string text, bool underline) =>
+        InlineTextFormatting.Read(editor.Document, text, new(0, 0, editor.FontWeight.Weight >= 600,
+            editor.FontStyle != Windows.UI.Text.FontStyle.Normal, underline));
+
     private void NewTextEditor_TextChanged(object sender, RoutedEventArgs e)
     {
         if (sender is not RichEditBox editor ||
@@ -474,7 +488,8 @@ public sealed class InlineTextEditorController
         // Auto-sized RichEditBox omits trailing spaces from its desired width.
         // Measure them explicitly for Add Text too, leaving room for the caret.
         editor.Width = Math.Clamp(
-            AnnotationTextLayoutService.GetRequiredTextBoxWidth(metrics, text, editor.CharacterSpacing) * PdfToPixels,
+            AnnotationTextLayoutService.GetRequiredTextBoxWidth(metrics, text, editor.CharacterSpacing,
+                ReadStyles(editor, text, _settings.IsUnderline)) * PdfToPixels,
             editor.MinWidth,
             editor.MaxWidth);
         editor.Height = AnnotationTextLayoutService.GetInlineEditorHeight(
@@ -562,6 +577,7 @@ public sealed class InlineTextEditorController
         object tag = editor.Tag;
         bool textWasRemoved = false;
         var editSession = tag as InlineTextEditSession;
+        var styles = ReadStyles(editor, text, editSession?.Annotation.IsUnderline ?? _settings.IsUnderline);
 
         if (editSession != null)
         {
@@ -616,8 +632,15 @@ public sealed class InlineTextEditorController
                     _manager.MarkModified(pageIndex: _pageIndex);
                     _setStatus?.Invoke(Loc.Get("TextDeleted2"));
                 }
-                else if (editSession?.HasLiveChanges == true || existingAnnotation.Content != text)
+                else if (editSession?.HasLiveChanges == true || existingAnnotation.Content != text ||
+                    !existingAnnotation.TextStyleRanges.SequenceEqual(styles))
                 {
+                    if (existingAnnotation.IsApplied && editSession != null &&
+                        !await RemoveAppliedTextForLiveEditAsync(editSession))
+                    {
+                        _setStatus?.Invoke(Loc.Get("TheSavedTextCannotBeEditedSafely"));
+                        return;
+                    }
                     if (existingAnnotation.IsOriginalTextReplacement)
                     {
                         textWasRemoved = await _manager.RemoveOriginalTextAnnotationsAsync(
@@ -631,9 +654,14 @@ public sealed class InlineTextEditorController
                     }
 
                     existingAnnotation.Content = text;
+                    existingAnnotation.TextStyleRanges = styles;
                     existingAnnotation.ReflowText = null;
                     if (double.IsFinite(editedWidth) && editedWidth > 0)
                         existingAnnotation.Width = editedWidth / PdfToPixels;
+                    if (styles.Length > 0)
+                        existingAnnotation.Width = Math.Max(existingAnnotation.Width,
+                            AnnotationTextLayoutService.GetRequiredTextBoxWidth(existingAnnotation, text,
+                                editSession?.PreservedCharacterSpacing ?? 0));
                     if (editSession != null)
                         existingAnnotation.CharacterSpacing = editSession.PreservedCharacterSpacing;
                     if (existingAnnotation.TextFragments.Count == 0)
@@ -688,7 +716,8 @@ public sealed class InlineTextEditorController
                     IsBold = _settings.IsBold,
                     IsItalic = _settings.IsItalic,
                     IsUnderline = _settings.IsUnderline,
-                    Width = size.width,
+                    TextStyleRanges = styles,
+                    Width = styles.Length > 0 ? Math.Max(size.width, editedWidth / PdfToPixels) : size.width,
                     Height = size.height,
                     IsApplied = false
                 });

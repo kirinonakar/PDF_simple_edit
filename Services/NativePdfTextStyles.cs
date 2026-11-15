@@ -32,7 +32,8 @@ public sealed partial class NativePdfTextService
         return stream.GetBytes();
     }
 
-    private static NativePdfTextBlock ApplyStyle(PdfDocument doc, PageData data, NativePdfTextBlock block, NativePdfTextStyle style)
+    private static NativePdfTextBlock ApplyStyle(PdfDocument doc, PageData data, NativePdfTextBlock block,
+        NativePdfTextStyle style, IReadOnlyList<PdfTextStyleRange>? ranges)
     {
         if (style.FontSize is double size && (!double.IsFinite(size) || size <= 0))
             throw new ArgumentOutOfRangeException(nameof(style), Loc.Get("FontSizeMustBeANumberGreaterThanZero"));
@@ -41,11 +42,10 @@ public sealed partial class NativePdfTextService
             throw new ArgumentException(Loc.Get("SelectAValidRGBTextColor"), nameof(style));
 
         var runs = block.Runs.ToDictionary(r => r.Id);
-        var fonts = new Dictionary<string, PdfFont?>();
-        var candidates = new Dictionary<string, IReadOnlyList<string>>();
-        (PdfFont Font, bool Italic) ResolveFont(NativePdfRun run, string text)
+        var fonts = new Dictionary<(string Path, bool Bold, bool Italic), PdfFont?>();
+        var candidates = new Dictionary<(string RunId, bool Bold, bool Italic), IReadOnlyList<string>>();
+        (PdfFont Font, bool Italic) ResolveFont(NativePdfRun run, string text, bool bold, bool italic)
         {
-            bool bold = style.IsBold ?? run.IsBold, italic = style.IsItalic ?? run.IsItalic;
             string family = style.FontFamily ?? run.FontName;
             // PDF's standard faces have metrically compatible Windows families.
             // Prefer those over an arbitrary installed sans-serif/monospace face.
@@ -56,10 +56,11 @@ public sealed partial class NativePdfTextService
                 "courier" or "courier-bold" or "courier-oblique" or "courier-boldoblique" => "Courier New",
                 _ => family
             };
-            if (!candidates.TryGetValue(run.Id, out var paths))
+            var request = (run.Id, bold, italic);
+            if (!candidates.TryGetValue(request, out var paths))
             {
                 string? exact = InstalledFontService.FindFontFile(family, bold ? 700 : 400, italic);
-                candidates[run.Id] = paths = (exact == null ? Array.Empty<string>() : new[] { exact })
+                candidates[request] = paths = (exact == null ? Array.Empty<string>() : new[] { exact })
                     .Concat(InstalledFontService.GetSimilarFontFiles(family, bold ? 700 : 400, italic))
                     .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             }
@@ -68,11 +69,12 @@ public sealed partial class NativePdfTextService
             foreach (bool synthetic in italic ? new[] { false, true } : new[] { false })
             foreach (string path in paths)
             {
-                string key = path + ":" + synthetic;
+                bool faceItalic = italic && !synthetic;
+                var key = (path, bold, faceItalic);
                 if (!fonts.TryGetValue(key, out var font))
                 {
                     var descriptor = FontProgramDescriptorFactory.FetchDescriptor(path);
-                    if (descriptor == null || descriptor.IsItalic() != (italic && !synthetic) || (descriptor.GetFontWeight() >= 600) != bold)
+                    if (descriptor == null || descriptor.IsItalic() != faceItalic || (descriptor.GetFontWeight() >= 600) != bold)
                     { fonts[key] = null; continue; }
                     try { font = PdfFontFactory.CreateFont(path, PdfEncodings.IDENTITY_H, PdfFontFactory.EmbeddingStrategy.FORCE_EMBEDDED); }
                     catch (Exception error) { System.Diagnostics.Debug.WriteLine(error); }
@@ -80,27 +82,39 @@ public sealed partial class NativePdfTextService
                 }
                 if (font == null || !text.EnumerateRunes().All(r => font.ContainsGlyph(r.Value))) continue;
                 font.GetPdfObject().MakeIndirect(doc); doc.AddFont(font);
-                return (font, italic && !synthetic);
+                return (font, faceItalic);
             }
             throw new InvalidOperationException(Loc.Format("NoFontSupportingTheRequestedWeightAndSlantFor", text));
         }
 
         bool metricsChanged = false;
         var tokens = new List<NativePdfGlyph>();
+        int offset = 0, rangeIndex = 0;
         foreach (var glyph in block.Glyphs)
         {
             var run = runs[glyph.RunId];
+            int length = PdfTextStyleRange.CountCharacters(glyph.Text);
+            PdfTextStyleRange range = default;
+            if (ranges != null && length > 0)
+            {
+                while (rangeIndex < ranges.Count && ranges[rangeIndex].End <= offset)
+                    rangeIndex++;
+                if (rangeIndex < ranges.Count && ranges[rangeIndex].Start < offset + length)
+                    range = ranges[rangeIndex];
+            }
+            offset += length;
+            bool bold = range.IsBold ?? style.IsBold ?? run.IsBold;
+            bool italic = range.IsItalic ?? style.IsItalic ?? run.IsItalic;
             double newSize = style.FontSize is double displaySize ? run.FontSize * displaySize / run.DisplayFontSize : run.FontSize;
             double ratio = newSize / run.FontSize;
-            bool replaceFace = style.FontFamily != null || style.IsBold is bool bold && bold != run.IsBold ||
-                style.IsItalic is bool italic && italic != run.IsItalic;
+            bool replaceFace = style.FontFamily != null || bold != run.IsBold || italic != run.IsItalic;
             bool resize = Math.Abs(ratio - 1) > .000001;
             metricsChanged |= resize || replaceFace;
-            var token = glyph with { IsUnderline = style.IsUnderline ?? glyph.IsUnderline, StyleColor = style.Color ?? glyph.StyleColor,
+            var token = glyph with { IsUnderline = range.IsUnderline ?? style.IsUnderline ?? glyph.IsUnderline, StyleColor = style.Color ?? glyph.StyleColor,
                 StyleFontSize = resize ? newSize : glyph.StyleFontSize };
             if (replaceFace && !glyph.IsVirtual)
             {
-                var face = ResolveFont(run, glyph.Text);
+                var face = ResolveFont(run, glyph.Text, bold, italic);
                 var font = face.Font;
                 byte[] code = font.ConvertToBytes(glyph.Text);
                 int glyphCount = font.DecodeIntoGlyphLine(new PdfString(code)).Size();
@@ -109,7 +123,7 @@ public sealed partial class NativePdfTextService
                 token = token with { Code = code, Advance = advance,
                     ReplacementFontObjectNumber = font.GetPdfObject().GetIndirectReference().GetObjNumber(),
                     ReplacementFontName = font.GetFontProgram().GetFontNames().GetFontName(),
-                    StyleSlantDelta = ((style.IsItalic ?? run.IsItalic) && !face.Italic ? .21255656 : 0) - run.Slant };
+                    StyleSlantDelta = (italic && !face.Italic ? .21255656 : 0) - run.Slant };
             }
             else if (resize)
             {
@@ -122,7 +136,7 @@ public sealed partial class NativePdfTextService
                         glyph.Origin.Y + (glyph.Bounds.Y - glyph.Origin.Y) * ratio, glyph.Bounds.Width * ratio, glyph.Bounds.Height * ratio) };
             if (glyph.IsSoftBreak && (resize || replaceFace))
             {
-                var font = replaceFace ? ResolveFont(run, " ").Font : PdfFontFactory.CreateFont((PdfDictionary)doc.GetPdfObject(run.FontObjectNumber));
+                var font = replaceFace ? ResolveFont(run, " ", bold, italic).Font : PdfFontFactory.CreateFont((PdfDictionary)doc.GetPdfObject(run.FontObjectNumber));
                 double space = Math.Max(font.GetWidth(' ') * newSize / 1000, newSize * .2);
                 double width = DisplayAdvance(run, (space + run.CharacterSpacing + run.WordSpacing) * run.HorizontalScale, data.Map);
                 token = token with { End = new(glyph.Origin.X + width, glyph.Origin.Y) };
@@ -199,6 +213,7 @@ public sealed partial class NativePdfTextService
         var content = ToPageContent(block);
         annotation.NativeText = block; annotation.Content = block.Text;
         annotation.ReflowText = null;
+        annotation.TextStyleRanges = Array.Empty<PdfTextStyleRange>();
         annotation.X = content.X; annotation.Y = content.Y; annotation.Width = content.Width; annotation.Height = content.Height;
         annotation.FontFamily = content.FontFamily; annotation.FontSize = content.FontSize;
         annotation.IsBold = content.IsBold; annotation.IsItalic = content.IsItalic; annotation.FontWeight = content.FontWeight;

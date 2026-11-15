@@ -51,6 +51,7 @@ namespace PDF_simple_edit.Models
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
         public bool IsUnderline { get; set; }
+        public IReadOnlyList<PdfTextStyleRange> TextStyleRanges { get; set; } = Array.Empty<PdfTextStyleRange>();
         // Explicit WinUI tracking in 1/1000-em units; null uses natural advances.
         public int? CharacterSpacing { get; set; }
         public double Opacity { get; set; } = 1.0;
@@ -115,6 +116,7 @@ namespace PDF_simple_edit.Models
                 IsBold = this.IsBold,
                 IsItalic = this.IsItalic,
                 IsUnderline = this.IsUnderline,
+                TextStyleRanges = this.TextStyleRanges.ToArray(),
                 CharacterSpacing = this.CharacterSpacing,
                 Opacity = this.Opacity,
                 LineWidth = this.LineWidth,

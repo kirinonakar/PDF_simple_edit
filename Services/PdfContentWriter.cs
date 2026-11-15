@@ -22,7 +22,9 @@ namespace PDF_simple_edit.Services
         private readonly record struct TextFontSegment(
             string Text,
             PdfFont Font,
-            bool IsFallback);
+            bool IsFallback,
+            bool IsUnderline = false,
+            float Slant = 0);
 
         public void AddText(PdfDocument doc, int pageIndex, double x, double y, string text,
             string fontFamily, double fontSize, Color color,
@@ -33,7 +35,8 @@ namespace PDF_simple_edit.Services
             IReadOnlyList<double>? lineBaselineOffsets = null,
             int characterSpacing = 0,
             int fontWeight = 400,
-            IReadOnlyList<string>? originalLines = null, bool isUnderline = false)
+            IReadOnlyList<string>? originalLines = null, bool isUnderline = false,
+            IReadOnlyList<PdfTextStyleRange>? styleRanges = null)
         {
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages()) return;
 
@@ -51,11 +54,15 @@ namespace PDF_simple_edit.Services
 
             var originalFontCache = new Dictionary<int, PdfFont>();
             var embeddedProgramFontCache = new Dictionary<int, PdfFont>();
-            var selectedFamilyFonts = new Dictionary<string, PdfFont>(StringComparer.Ordinal);
+            var selectedFamilyFonts = new Dictionary<(string Script, int Weight, bool Italic), PdfFont>();
             // Cache by writing system. Korean and Japanese are both non-Latin,
             // but they must not share the same fallback font.
-            var fallbackFonts = new Dictionary<string, PdfFont>(StringComparer.Ordinal);
+            var fallbackFonts = new Dictionary<(string Script, int Weight, bool Italic), PdfFont>();
             int resolvedFontWeight = ResolveFontWeight(fontWeight, isBold);
+            bool hasWeightOverrides = styleRanges?.Any(range => range.IsBold.HasValue) == true;
+
+            bool MatchesWeight(PdfFont font, int weight) => !hasWeightOverrides ||
+                (font.GetFontProgram().GetFontNames().GetFontWeight() >= 600) == (weight >= 600);
 
             List<PdfFont> ResolveOriginalFonts(int lineIndex)
             {
@@ -117,9 +124,9 @@ namespace PDF_simple_edit.Services
                 return fonts;
             }
 
-            PdfFont? ResolveSelectedFamilyFont(string sampleText)
+            PdfFont? ResolveSelectedFamilyFont(string sampleText, int weight, bool italic)
             {
-                string cacheKey = GetFallbackScript(sampleText);
+                var cacheKey = (GetFallbackScript(sampleText), weight, italic);
                 if (selectedFamilyFonts.TryGetValue(cacheKey, out PdfFont? cachedFont))
                     return FontSupportsText(cachedFont, sampleText) ? cachedFont : null;
 
@@ -127,9 +134,9 @@ namespace PDF_simple_edit.Services
                 {
                     string? resolvedPath = GetSystemFontPath(
                         fontFamily,
-                        resolvedFontWeight,
+                        weight,
                         sampleText,
-                        isItalic);
+                        italic);
                     if (string.IsNullOrEmpty(resolvedPath))
                         return null;
 
@@ -137,7 +144,7 @@ namespace PDF_simple_edit.Services
                         resolvedPath,
                         PdfEncodings.IDENTITY_H,
                         PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
-                    if (!FontSupportsText(candidate, sampleText))
+                    if (!MatchesWeight(candidate, weight) || !FontSupportsText(candidate, sampleText))
                         return null;
 
                     selectedFamilyFonts[cacheKey] = candidate;
@@ -150,17 +157,18 @@ namespace PDF_simple_edit.Services
                 }
             }
 
-            PdfFont ResolveFallbackFont(string sampleText)
+            PdfFont ResolveFallbackFont(string sampleText, int weight, bool italic)
             {
-                string fallbackKey = GetFallbackScript(sampleText);
+                string script = GetFallbackScript(sampleText);
+                var fallbackKey = (script, weight, italic);
                 if (fallbackFonts.TryGetValue(fallbackKey, out PdfFont? cachedFont))
                     return cachedFont;
 
-                PdfFont? resolvedFallback = ResolveSelectedFamilyFont(sampleText);
+                PdfFont? resolvedFallback = ResolveSelectedFamilyFont(sampleText, weight, italic);
 
                 if (resolvedFallback == null)
                 {
-                    string[] fallbackFamilies = fallbackKey switch
+                    string[] fallbackFamilies = script switch
                     {
                         "Korean" => new[] { "Noto Sans JP", "Noto Sans KR", "맑은 고딕" },
                         "Japanese" => new[] { "Noto Sans JP", "Meiryo" },
@@ -173,9 +181,9 @@ namespace PDF_simple_edit.Services
                         {
                             string? fallbackPath = GetSystemFontPath(
                                 fallbackFamily,
-                                resolvedFontWeight,
+                                weight,
                                 sampleText,
-                                isItalic);
+                                italic);
                             if (string.IsNullOrEmpty(fallbackPath))
                                 continue;
 
@@ -183,7 +191,7 @@ namespace PDF_simple_edit.Services
                                 fallbackPath,
                                 PdfEncodings.IDENTITY_H,
                                 PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED);
-                            if (FontSupportsText(fallbackCandidate, sampleText))
+                            if (MatchesWeight(fallbackCandidate, weight) && FontSupportsText(fallbackCandidate, sampleText))
                             {
                                 resolvedFallback = fallbackCandidate;
                                 break;
@@ -197,7 +205,13 @@ namespace PDF_simple_edit.Services
                     }
                 }
 
-                resolvedFallback ??= PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
+                resolvedFallback ??= PdfFontFactory.CreateFont((weight >= 600, italic) switch
+                {
+                    (true, true) => StandardFonts.HELVETICA_BOLDOBLIQUE,
+                    (true, false) => StandardFonts.HELVETICA_BOLD,
+                    (false, true) => StandardFonts.HELVETICA_OBLIQUE,
+                    _ => StandardFonts.HELVETICA
+                });
                 fallbackFonts[fallbackKey] = resolvedFallback;
                 return resolvedFallback;
             }
@@ -391,9 +405,9 @@ namespace PDF_simple_edit.Services
                 return matchedTargetIndexes;
             }
 
-            List<TextFontSegment> ResolveLineSegments(string line, int lineIndex)
+            List<TextFontSegment> ResolveLineSegments(string line, int lineIndex, int weight, bool italic, bool keepOriginal)
             {
-                List<PdfFont> originalFonts = ResolveOriginalFonts(lineIndex);
+                List<PdfFont> originalFonts = keepOriginal ? ResolveOriginalFonts(lineIndex) : new();
                 PdfFont? preferredOriginalFont = originalFonts.FirstOrDefault();
                 string? originalLine = originalLines != null && lineIndex < originalLines.Count
                     ? originalLines[lineIndex]
@@ -402,7 +416,7 @@ namespace PDF_simple_edit.Services
                     ResolveMatchedTargetCharacters(originalLine, line);
                 if (line.Length == 0)
                 {
-                    PdfFont emptyLineFont = preferredOriginalFont ?? ResolveFallbackFont(line);
+                    PdfFont emptyLineFont = preferredOriginalFont ?? ResolveFallbackFont(line, weight, italic);
                     return new List<TextFontSegment>
                     {
                         new(string.Empty, emptyLineFont, preferredOriginalFont == null)
@@ -423,7 +437,7 @@ namespace PDF_simple_edit.Services
                 // use the installed copy of that same family for the whole line.
                 // This avoids mixing the source face and a fallback face inside one
                 // edited word while retaining the original font family and weight.
-                PdfFont? selectedFamilyFont = ResolveSelectedFamilyFont(line);
+                PdfFont? selectedFamilyFont = ResolveSelectedFamilyFont(line, weight, italic);
                 if (selectedFamilyFont != null)
                 {
                     return new List<TextFontSegment>
@@ -496,12 +510,12 @@ namespace PDF_simple_edit.Services
 
                         if (selectedFont == null)
                         {
-                            selectedFont = ResolveFallbackFont(character.ToString());
+                            selectedFont = ResolveFallbackFont(character.ToString(), weight, italic);
                             isFallback = true;
                         }
                     }
 
-                    selectedFont ??= ResolveFallbackFont(character.ToString());
+                    selectedFont ??= ResolveFallbackFont(character.ToString(), weight, italic);
                     if (segmentFont != null &&
                         (!ReferenceEquals(segmentFont, selectedFont) ||
                          segmentIsFallback != isFallback))
@@ -518,9 +532,34 @@ namespace PDF_simple_edit.Services
                 return segments;
             }
 
-            var resolvedLineSegments = lines
-                .Select((line, index) => ResolveLineSegments(line, index))
-                .ToList();
+            var resolvedLineSegments = new List<List<TextFontSegment>>();
+            int textOffset = 0;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                var segments = new List<TextFontSegment>();
+                if (styleRanges is { Count: > 0 } && line.Length > 0)
+                {
+                    foreach (var (part, style) in PdfTextStyleRange.SplitLine(line, textOffset, styleRanges))
+                    {
+                        int weight = style.IsBold is bool bold ? (bold ? 700 : 400) : resolvedFontWeight;
+                        bool italic = style.IsItalic ?? isItalic;
+                        bool keepOriginal = weight == resolvedFontWeight && italic == isItalic;
+                        foreach (var segment in ResolveLineSegments(part, i, weight, italic, keepOriginal))
+                        {
+                            bool syntheticItalic = !keepOriginal && italic && segment.Font.GetFontProgram().GetFontMetrics().GetItalicAngle() == 0;
+                            segments.Add(segment with { IsUnderline = style.IsUnderline ?? isUnderline, Slant = syntheticItalic ? .21255656f : 0 });
+                        }
+                    }
+                }
+                else
+                {
+                    segments.AddRange(ResolveLineSegments(line, i, resolvedFontWeight, isItalic, keepOriginal: true)
+                        .Select(segment => segment with { IsUnderline = isUnderline }));
+                }
+                resolvedLineSegments.Add(segments);
+                textOffset += line.Length;
+            }
             var fallbackBaselineAdjustments = resolvedLineSegments
                 .Select((segments, index) => segments.Count == 1 && segments[0].IsFallback
                     ? Math.Max(segments[0].Font.GetAscent(
@@ -556,12 +595,10 @@ namespace PDF_simple_edit.Services
             PdfCanvas canvas = new PdfCanvas(page, true);
             
             canvas.SaveState();
-            if (isUnderline)
-            {
+            var underlineProperties = new PdfDictionary();
+            underlineProperties.Put(PdfTextUnderlineService.Underline, PdfBoolean.TRUE);
+            if (resolvedLineSegments.SelectMany(segments => segments).Any(segment => segment.IsUnderline))
                 PdfTextUnderlineService.MarkPage(page);
-                var properties = new PdfDictionary(); properties.Put(PdfTextUnderlineService.Underline, PdfBoolean.TRUE);
-                canvas.BeginMarkedContent(PdfTextUnderlineService.StyleTag, properties);
-            }
             var textTransform = PdfPageCoordinates.ToDisplay(page).Inverse().After(
                 new PdfAffineTransform(1, 0, 0, -1, -rect.GetLeft(), rect.GetTop()));
             canvas.ConcatMatrix(textTransform.A, textTransform.B, textTransform.C, textTransform.D, textTransform.E, textTransform.F);
@@ -569,7 +606,7 @@ namespace PDF_simple_edit.Services
             canvas.SetFillColor(color ?? ColorConstants.BLACK);
 
             // 텍스트 이동 및 쓰기. 줄바꿈은 기존 편집 구역의 줄 간격을 유지합니다.
-            canvas.MoveText(pdfX, pdfY - firstLineFallbackAdjustment);
+            float lineX = pdfX, lineY = pdfY - firstLineFallbackAdjustment;
             float resolvedLineHeight = (float)(lineHeight > 0.1 ? lineHeight : Math.Max(fontSize * 1.2, 1));
             for (int i = 0; i < lines.Length; i++)
             {
@@ -592,10 +629,10 @@ namespace PDF_simple_edit.Services
                         previousBaselineOffset += fallbackBaselineAdjustments[i - 1];
                         currentBaselineOffset += fallbackBaselineAdjustments[i];
                     }
-                    canvas.MoveText(
-                        currentXOffset - previousXOffset,
-                        -(currentBaselineOffset - previousBaselineOffset));
+                    lineX += currentXOffset - previousXOffset;
+                    lineY -= currentBaselineOffset - previousBaselineOffset;
                 }
+                canvas.SetTextMatrix(lineX, lineY);
                 float resolvedFontSize = (float)Math.Max(fontSize, 1);
                 var missingSpaceAdvances = resolvedLineSegments[i]
                     .Select(segment => GetMissingSpaceAdvance(segment.Font, resolvedFontSize))
@@ -604,12 +641,20 @@ namespace PDF_simple_edit.Services
                 // Never derive Tc from a target box width: font substitution or
                 // a longer edit otherwise distributes a negative advance into
                 // every glyph and can reverse the pen for narrow characters.
-                canvas.SetCharacterSpacing(Math.Max(characterSpacing, 0) * resolvedFontSize / 1000f);
+                float tracking = Math.Max(characterSpacing, 0) * resolvedFontSize / 1000f;
+                canvas.SetCharacterSpacing(tracking);
+                bool hasSlantedSegment = resolvedLineSegments[i].Any(segment => segment.Slant != 0);
+                float segmentX = lineX;
                 for (int segmentIndex = 0;
                     segmentIndex < resolvedLineSegments[i].Count;
                     segmentIndex++)
                 {
                     TextFontSegment segment = resolvedLineSegments[i][segmentIndex];
+                    float missingSpaceAdvance = missingSpaceAdvances[segmentIndex];
+                    if (hasSlantedSegment)
+                        canvas.SetTextMatrix(1, 0, segment.Slant, 1, segmentX, lineY);
+                    if (segment.IsUnderline)
+                        canvas.BeginMarkedContent(PdfTextUnderlineService.StyleTag, underlineProperties);
                     canvas.SetFontAndSize(
                         segment.Font,
                         resolvedFontSize);
@@ -617,12 +662,20 @@ namespace PDF_simple_edit.Services
                         canvas,
                         segment,
                         resolvedFontSize,
-                        missingSpaceAdvances[segmentIndex]);
+                        missingSpaceAdvance);
+                    if (segment.IsUnderline)
+                        canvas.EndMarkedContent();
+                    if (hasSlantedSegment)
+                    {
+                        byte[] code = segment.Font.ConvertToBytes(segment.Text);
+                        int glyphCount = segment.Font.DecodeIntoGlyphLine(new PdfString(code)).Size();
+                        segmentX += segment.Font.GetWidth(segment.Text, resolvedFontSize) + tracking * glyphCount +
+                            missingSpaceAdvance * segment.Text.Count(character => character == ' ');
+                    }
                 }
             }
 
             canvas.EndText();
-            if (isUnderline) canvas.EndMarkedContent();
             canvas.RestoreState();
             canvas.Release();
         }

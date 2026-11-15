@@ -301,7 +301,7 @@ public sealed class AnnotationOverlayController
             : annotation.FontSize;
         double displayLineHeight = hasOriginalLineLayout
             ? AnnotationTextLayoutService.GetDisplayLineHeight(annotation, annotation.Content) : 0;
-        return new TextBlock
+        var textBlock = new TextBlock
         {
             Text = annotation.Content,
             TextWrapping = hasOriginalLineLayout || annotation.ReflowText != null
@@ -338,7 +338,8 @@ public sealed class AnnotationOverlayController
             FontStyle = annotation.IsItalic
                 ? Windows.UI.Text.FontStyle.Italic
                 : Windows.UI.Text.FontStyle.Normal,
-            TextDecorations = annotation.IsUnderline ? Windows.UI.Text.TextDecorations.Underline : Windows.UI.Text.TextDecorations.None,
+            TextDecorations = annotation.IsUnderline && annotation.TextStyleRanges.Count == 0
+                ? Windows.UI.Text.TextDecorations.Underline : Windows.UI.Text.TextDecorations.None,
             RenderTransform = hasOriginalLineLayout
                 ? new TranslateTransform
                 {
@@ -354,6 +355,8 @@ public sealed class AnnotationOverlayController
             Margin = new Thickness(0),
             IsHitTestVisible = false
         };
+        AnnotationTextLayoutService.ApplyTextStyles(textBlock, annotation);
+        return textBlock;
     }
 
     private static void AddResizeHandles(

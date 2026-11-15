@@ -194,6 +194,8 @@ public sealed class AnnotationEditController
         annotation.IsBold = isBold;
         annotation.FontWeight = isBold ? 700 : 400;
         annotation.OriginalFontObjectNumber = -1;
+        annotation.TextStyleRanges = annotation.TextStyleRanges.Select(range => range with { IsBold = null })
+            .Where(range => range.IsItalic != null || range.IsUnderline != null).ToArray();
         ResizeTextAnnotation(annotation);
         MarkChanged(annotation);
     }
@@ -208,6 +210,8 @@ public sealed class AnnotationEditController
 
         annotation.IsItalic = isItalic;
         annotation.OriginalFontObjectNumber = -1;
+        annotation.TextStyleRanges = annotation.TextStyleRanges.Select(range => range with { IsItalic = null })
+            .Where(range => range.IsBold != null || range.IsUnderline != null).ToArray();
         ResizeTextAnnotation(annotation);
         MarkChanged(annotation);
     }
@@ -219,6 +223,8 @@ public sealed class AnnotationEditController
         var annotation = GetSelectedTextAnnotation();
         if (annotation == null || !await PrepareTextReplacementAsync(annotation)) return;
         annotation.IsUnderline = isUnderline;
+        annotation.TextStyleRanges = annotation.TextStyleRanges.Select(range => range with { IsUnderline = null })
+            .Where(range => range.IsBold != null || range.IsItalic != null).ToArray();
         MarkChanged(annotation);
     }
 

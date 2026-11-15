@@ -317,7 +317,8 @@ public sealed partial class NativePdfTextService
     {
         ArgumentNullException.ThrowIfNull(bytes);
         if (edits.Count == 0) throw new ArgumentException(Loc.Get("NoTextToEdit"), nameof(edits));
-        if (edits.All(e => e.ReflowBounds == null && e.Transform == null && e.Style == null && e.Text == e.Block.Text && e.DeltaX == 0 && e.DeltaY == 0))
+        if (edits.All(e => e.ReflowBounds == null && e.Transform == null && e.Style == null &&
+            e.StyleRanges is not { Count: > 0 } && e.Text == e.Block.Text && e.DeltaX == 0 && e.DeltaY == 0))
             return new(bytes, edits[0].Block);
         using var input = new MemoryStream(bytes);
         using var output = new MemoryStream();
@@ -344,7 +345,8 @@ public sealed partial class NativePdfTextService
                 if (original.Any(r => r.IsVertical || Math.Abs(r.HorizontalScale * r.FontSize) < 0.0001 || r.RenderMode >= 4))
                     throw new InvalidOperationException(Loc.Get("OriginalPreservingEditingOfVerticalOrClippedTextIs"));
                 layout = Layout(doc, data, edit);
-                if (edit.Style != null) layout = ApplyStyle(doc, data, layout, edit.Style);
+                if (edit.Style != null || edit.StyleRanges is { Count: > 0 })
+                    layout = ApplyStyle(doc, data, layout, edit.Style ?? new(), edit.StyleRanges);
                 if (edit.Transform is { } transform)
                     layout = layout with
                     {
@@ -437,7 +439,11 @@ public sealed partial class NativePdfTextService
         var finalMap = new PageMap(finalBox.GetX(), finalBox.GetY(), finalBox.GetWidth(), finalBox.GetHeight(), ((finalPage.GetRotation() % 360) + 360) % 360);
         layouts = ApplyInkBounds(finalPage, layouts, finalMap);
         layout = layouts[^1];
-        if (edits.Any(e => e.Style is { } style && (style.FontSize != null || style.FontFamily != null || style.IsBold != null || style.IsItalic != null)))
+        bool checkStyleOverlap = edits.Any(e => e.Style is { } style &&
+            (style.FontSize != null || style.FontFamily != null || style.IsBold != null || style.IsItalic != null)) ||
+            (edits.Any(e => e.StyleRanges is { Count: > 0 }) &&
+                layouts.SelectMany(b => b.Glyphs).Any(g => g.ReplacementFontObjectNumber > 0));
+        if (checkStyleOverlap)
         {
             bool SelectedForStyle(NativePdfGlyph glyph) => edits.SelectMany(e => e.Block.Glyphs).Any(s => !s.IsVirtual &&
                 s.RunId == glyph.RunId && s.Code.SequenceEqual(glyph.Code) && Math.Abs(s.Origin.X - glyph.Origin.X) < .001 && Math.Abs(s.Origin.Y - glyph.Origin.Y) < .001);
