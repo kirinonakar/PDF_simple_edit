@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
+using iText.IO.Source;
+using iText.Kernel.Pdf;
 using PDF_simple_edit.Models;
 using PDF_simple_edit.Services;
 
@@ -94,41 +98,47 @@ internal static partial class PdfMcpTools
             matchedObjectCount, returnedCount = objects.Count, truncated = matchedObjectCount > objects.Count, formFields };
     }
 
-    private static async Task<object> FindTextAsync(PdfMcpArguments a, byte[] bytes, string revision, CancellationToken cancellation)
+    private static async Task<object> FindTextAsync(PdfMcpArguments a, CancellationToken cancellation)
     {
         string query = a.Text("query");
         if (query.Length == 0) throw new ArgumentException("query must not be empty.");
-        var comparison = a.Flag("caseSensitive") ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        bool caseSensitive = a.Flag("caseSensitive");
+        var comparison = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         int limit = a.Integer("maxResults", 100, 1, 10000);
-        using var pdf = Open(bytes);
-        var matches = new List<object>();
-        int matchedObjectCount = 0;
-        var extractor = new PdfPageContentExtractor();
-        for (int number = 1; number <= pdf.GetNumberOfPages(); number++)
+        string inputPath = a.Path("inputPath");
+        // Hash and search the same file handle, with writes excluded until the scan ends.
+        using var input = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 64 * 1024, useAsync: true);
+        string revision = Convert.ToHexStringLower(await SHA256.HashDataAsync(input, cancellation).ConfigureAwait(false));
+        CheckExpectedRevision(a, revision);
+        return await Task.Run<object>(() =>
         {
-            cancellation.ThrowIfCancellationRequested();
-            var contents = await extractor.ExtractAsync(bytes, number - 1, textOnly: true, strict: true, includePreviews: false);
-            for (int index = 0; index < contents.Count; index++)
+            input.Position = 0;
+            using var reader = new PdfReader(new RandomAccessSourceFactory().CreateSource(input), new ReaderProperties());
+            using var pdf = new PdfDocument(reader);
+            int pageCount = pdf.GetNumberOfPages();
+            var matches = new List<object>();
+            int matchedObjectCount = 0;
+            for (int number = 1; number <= pageCount; number++)
             {
                 cancellation.ThrowIfCancellationRequested();
-                var content = contents[index];
-                string? text = content.NativeText?.Text;
-                int matchIndex = text?.IndexOf(query, comparison) ?? -1;
-                if (matchIndex < 0) continue;
-                matchedObjectCount++;
-                if (matches.Count >= limit) continue;
-                matches.Add(new
+                var pageMatches = NativePdfTextService.FindBlocks(pdf.GetPage(number), query, comparison,
+                    limit - matches.Count, out int pageMatchCount);
+                matchedObjectCount += pageMatchCount;
+                foreach (var match in pageMatches)
                 {
-                    objectId = $"{revision}:{number}:content:{index}", page = number, kind = "text", text,
-                    x = content.X, y = content.Y, width = content.Width, height = content.Height,
-                    matchIndex, matchLength = query.Length
-                });
+                    matches.Add(new
+                    {
+                        objectId = $"{revision}:{number}:content:{match.BlockIndex}", page = number, kind = "text", text = match.Text,
+                        x = match.Bounds.X, y = match.Bounds.Y, width = match.Bounds.Width, height = match.Bounds.Height,
+                        matchIndex = match.MatchIndex, matchLength = query.Length
+                    });
+                }
             }
-        }
-        cancellation.ThrowIfCancellationRequested();
-        return new { inputPath = a.Path("inputPath"), revision, pageCount = pdf.GetNumberOfPages(), query,
-            caseSensitive = a.Flag("caseSensitive"), matchedObjectCount, returnedCount = matches.Count,
-            truncated = matchedObjectCount > matches.Count, matches,
-            extraction = "Existing editable body text only; no OCR, annotations, form values or matches across separate text blocks. One result per matching block; matchIndex is its first UTF-16 substring offset." };
+            cancellation.ThrowIfCancellationRequested();
+            return new { inputPath, revision, pageCount, query, caseSensitive, matchedObjectCount, returnedCount = matches.Count,
+                truncated = matchedObjectCount > matches.Count, matches,
+                extraction = "Searches existing editable body text, including saved OCR. Excludes image recognition, annotations, form values and matches across separate text blocks. Returns one result per matching block with its first UTF-16 substring offset." };
+        }, cancellation);
     }
 }

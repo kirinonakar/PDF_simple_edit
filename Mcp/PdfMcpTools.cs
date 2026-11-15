@@ -168,6 +168,7 @@ internal static partial class PdfMcpTools
         cancellation.ThrowIfCancellationRequested();
         var a = new PdfMcpArguments(arguments);
         if (name == "pdf_create_help") return PdfMcpCreationGuide.Get(a.Text("topic", "overview"), Catalog["pdf_create"].inputSchema);
+        if (name == "pdf_find_text") return await FindTextAsync(a, cancellation);
         PdfFileVersion? destinationVersion = null;
         if (a.Has("outputPath"))
         {
@@ -220,10 +221,8 @@ internal static partial class PdfMcpTools
         string inputPath = a.Path("inputPath");
         byte[] bytes = await File.ReadAllBytesAsync(inputPath, cancellation);
         string revision = Hash(bytes);
-        if (a.Has("expectedRevision") && !a.Text("expectedRevision").Equals(revision, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Source file changed. Inspect it again before editing.");
+        CheckExpectedRevision(a, revision);
         if (name == "pdf_inspect") return await InspectAsync(a, bytes, revision, cancellation);
-        if (name == "pdf_find_text") return await FindTextAsync(a, bytes, revision, cancellation);
         if (name == "pdf_vlm_ocr") return await RenderVlmOcrAsync(a, bytes, revision, cancellation);
         if (name == "pdf_vlm_ocr_apply") return await ApplyVlmOcrAsync(a, bytes, revision, inputPath, destinationVersion, cancellation);
         if (name == "pdf_read") return await Task.Run(() => PdfMcpReader.Read(a, bytes, revision, cancellation), cancellation);
@@ -544,6 +543,12 @@ internal static partial class PdfMcpTools
     private static PdfDocument Open(byte[] bytes) => new(new PdfReader(new MemoryStream(bytes)));
     private static PageSize Size(PdfMcpArguments a) => new((float)a.Number("width", 595.276, 1, 14400), (float)a.Number("height", 841.89, 1, 14400));
     private static string Hash(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
+
+    private static void CheckExpectedRevision(PdfMcpArguments a, string revision)
+    {
+        if (a.Has("expectedRevision") && !a.Text("expectedRevision").Equals(revision, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Source file changed. Inspect it again before editing.");
+    }
     private static string Absolute(string path)
     {
         if (!System.IO.Path.IsPathFullyQualified(path)) throw new ArgumentException("All paths must be absolute.");

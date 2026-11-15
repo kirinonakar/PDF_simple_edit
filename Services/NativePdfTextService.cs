@@ -72,6 +72,36 @@ public sealed partial class NativePdfTextService
         return ApplyInkBounds(doc.GetPage(pageIndex + 1), data.Blocks, data.Map);
     }
 
+    internal sealed record BlockMatch(int BlockIndex, int MatchIndex, string Text, PdfTextBox Bounds);
+
+    internal static List<BlockMatch> FindBlocks(PdfPage page, string query, StringComparison comparison,
+        int limit, out int matchCount)
+    {
+        var data = Read(page);
+        var matches = new List<(int BlockIndex, int MatchIndex, NativePdfTextBlock Block)>();
+        matchCount = 0;
+        int blockIndex = 0;
+        foreach (var block in data.Blocks)
+        {
+            // Match the numbering of text objects in PdfPageContentExtractor.
+            if (string.IsNullOrWhiteSpace(block.Text)) continue;
+            int matchIndex = block.Text.IndexOf(query, comparison);
+            if (matchIndex >= 0)
+            {
+                matchCount++;
+                if (matches.Count < limit)
+                    matches.Add((blockIndex, matchIndex, block));
+            }
+            blockIndex++;
+        }
+
+        // Ink refinement only affects bounds. Count every match and run the
+        // additional geometry pass only on pages with hits that will be returned.
+        if (matches.Count == 0) return new();
+        return ApplyInkBounds(page, matches.Select(match => match.Block).ToList(), data.Map).Select((block, index) =>
+            new BlockMatch(matches[index].BlockIndex, matches[index].MatchIndex, block.Text, block.Bounds)).ToList();
+    }
+
     private sealed record PageData(List<Source> Sources, List<NativePdfRun> Runs,
         List<NativePdfTextBlock> Blocks, PageMap Map, Dictionary<string, (Color Fill, Color Stroke)> Colors);
 
