@@ -29,13 +29,14 @@ internal static class PdfMcpCreationGuide
             rules = new[]
             {
                 "Use pages for exact page composition. Each page has width/height in points, optional rotation (multiple of 90), backgroundColor, and elements.",
-                "Each element uses type. Supported types: text, image, rectangle, ellipse, line, arrow, triangleArrow, outlineArrow, polygon, freehand, highlight. Array order is paint order: backgrounds first, text last.",
+                "Element types: text, image, rectangle, ellipse, line, bezier, arrow, triangleArrow, outlineArrow, polygon, freehand, highlight. Array order is paint order.",
                 "x/y are from the displayed page's top-left, after page rotation. width/height are points. A4 defaults to 595.276 by 841.89. One point is 1/72 inch.",
                 "Text requires text. Boxes grow within the available page area at the original font size. The result reports before/after sizes in textBoxAdjustments. Use flow for text that needs multiple pages.",
                 "Text styles: fontFamily, fontSize, color, bold, italic, alignment. Optional rotation rotates around the box center.",
                 "Images require absolute imagePath and support x/y/width/height/rotation/opacity. Image color/fillColor/lineWidth do not apply.",
                 "Shapes support color, fillColor, lineWidth, opacity, rotation. Supply points [{x,y},...] for polygon (3+) and freehand (2+). Lines default to the box diagonal; height 0 becomes 0.01 pt (see lineHeightAdjustments).",
                 "Arrows use two distinct points [tail, tip] or the box diagonal. arrow is open, triangleArrow is solid, outlineArrow is hollow. triangleArrow uses color unless fillColor is set.",
+                "bezier uses four points [start, control1, control2, end] and supports stroke color, lineWidth, opacity and rotation.",
                 "No pageCount with pages. Do not put content/text beside pages. Choose document-specific text, colors, dimensions and positions in the JSON rather than inventing preset fields."
             },
             arguments = JsonSerializer.Deserialize<JsonElement>(PositionedExample)
@@ -97,6 +98,7 @@ internal static class PdfMcpCreationGuide
           {"type":"rectangle","x":0,"y":0,"width":612,"height":150,"fillColor":"#20242A","color":"#20242A"},
           {"type":"text","text":"Sample Document","x":48,"y":40,"width":516,"height":64,"fontSize":36,"color":"#FFFFFF","alignment":"center"},
           {"type":"line","x":48,"y":190,"width":516,"height":1,"color":"#92392F","lineWidth":1},
+          {"type":"bezier","points":[{"x":48,"y":640},{"x":200,"y":570},{"x":410,"y":700},{"x":564,"y":640}],"color":"#92392F"},
           {"type":"text","text":"Left column\n왼쪽 내용","x":48,"y":210,"width":244,"height":360,"fontSize":14},
           {"type":"text","text":"Right column\n오른쪽 내용","x":320,"y":210,"width":244,"height":360,"fontSize":14},
           {"type":"text","text":"Footer information","x":48,"y":710,"width":516,"height":30,"fontSize":11,"alignment":"center"}

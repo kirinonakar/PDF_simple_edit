@@ -40,6 +40,7 @@ public enum EditorMenuCommand
     SignatureTool,
     DrawFreehandTool,
     DrawLineTool,
+    DrawBezierTool,
     DrawRectangleTool,
     DrawEllipseTool,
     DrawArrowTool,
@@ -138,6 +139,7 @@ public sealed partial class EditorMenuBar : UserControl
         MenuSignature.IsChecked = mode == EditToolMode.Signature;
         MenuDrawFreehand.IsChecked = mode == EditToolMode.DrawFreehand;
         MenuDrawLine.IsChecked = mode == EditToolMode.DrawLine;
+        MenuDrawBezier.IsChecked = mode == EditToolMode.DrawBezier;
         MenuDrawRectangle.IsChecked = mode == EditToolMode.DrawRectangle;
         MenuDrawEllipse.IsChecked = mode == EditToolMode.DrawEllipse;
         MenuDrawArrow.IsChecked = mode == EditToolMode.DrawArrow;

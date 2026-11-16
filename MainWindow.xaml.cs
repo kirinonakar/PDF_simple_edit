@@ -513,6 +513,7 @@ namespace PDF_simple_edit
                 case EditorMenuCommand.SignatureTool: SignatureTool_Click(EditorMenu, new RoutedEventArgs()); break;
                 case EditorMenuCommand.DrawFreehandTool: SetToolMode(EditToolMode.DrawFreehand); break;
                 case EditorMenuCommand.DrawLineTool: SetToolMode(EditToolMode.DrawLine); break;
+                case EditorMenuCommand.DrawBezierTool: SetToolMode(EditToolMode.DrawBezier); break;
                 case EditorMenuCommand.DrawRectangleTool: SetToolMode(EditToolMode.DrawRectangle); break;
                 case EditorMenuCommand.DrawEllipseTool: SetToolMode(EditToolMode.DrawEllipse); break;
                 case EditorMenuCommand.DrawArrowTool: SetToolMode(EditToolMode.DrawArrow); break;
@@ -1088,6 +1089,7 @@ namespace PDF_simple_edit
                 EditToolMode.Signature => Loc.Get("ToolDrawSignature"),
                 EditToolMode.DrawFreehand => Loc.Get("ToolFreehandDragToDrawEscCancel"),
                 EditToolMode.DrawLine => Loc.Get("ToolLineDragFromStartToEndEscCancel"),
+                EditToolMode.DrawBezier => Loc.Get("ToolBezierClickFourPoints"),
                 EditToolMode.DrawRectangle => Loc.Get("ToolRectangleDragToDrawEscCancel"),
                 EditToolMode.DrawEllipse => Loc.Get("ToolEllipseDragToDrawEscCancel"),
                 EditToolMode.DrawArrow => Loc.Get("ToolArrowDragFromStartToEndEscCancel"),
@@ -1198,7 +1200,7 @@ namespace PDF_simple_edit
 
         private ToggleMenuFlyoutItem[] DrawingToolItems => new[]
         {
-            EditorToolbar.DrawFreehandItem, EditorToolbar.DrawLineItem,
+            EditorToolbar.DrawFreehandItem, EditorToolbar.DrawLineItem, EditorToolbar.DrawBezierItem,
             EditorToolbar.DrawArrowItem, EditorToolbar.DrawTriangleArrowItem, EditorToolbar.DrawOutlineArrowItem,
             EditorToolbar.DrawRectangleItem, EditorToolbar.DrawEllipseItem, EditorToolbar.DrawPolygonItem
         };

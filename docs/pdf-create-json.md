@@ -103,7 +103,7 @@ Page rotation must be a multiple of 90 degrees.
 ```
 
 Elements use `type`, not the editing tool's `kind` field. Supported types are
-`text`, `image`, `rectangle`, `ellipse`, `line`, `arrow`, `triangleArrow`,
+`text`, `image`, `rectangle`, `ellipse`, `line`, `bezier`, `arrow`, `triangleArrow`,
 `outlineArrow`, `polygon`, `freehand`, `highlight`.
 All support x/y/width/height and rotation as applicable. Text requires `text` and
 supports the text styles above. Its width/height define a wrapping box; omitted
@@ -126,6 +126,11 @@ tail first and tip second. They also default to the box diagonal. `arrow` has
 an open head, `triangleArrow` has a solid shaft and triangular head, and
 `outlineArrow` is hollow. For `triangleArrow`, `lineWidth` sets the shaft
 width and `fillColor` overrides `color` when supplied.
+
+A cubic Bézier takes four absolute page `points` in order: start, first
+control, second control, end. At least two points must differ. Use
+`"type": "bezier"` on a positioned page or `"kind": "bezier"` with
+`pdf_add_graphic` and `pdf_edit_graphic`. Rotation uses the curve's bounds.
 
 ## JSON files and CLI creation
 

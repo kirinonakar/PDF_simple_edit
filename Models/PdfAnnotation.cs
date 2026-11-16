@@ -19,7 +19,7 @@ namespace PDF_simple_edit.Models
         PdfComment
     }
 
-    public enum DrawingKind { Freehand, Rectangle, Ellipse, Arrow, Polygon, TriangleArrow, OutlineArrow, Line }
+    public enum DrawingKind { Freehand, Rectangle, Ellipse, Arrow, Polygon, TriangleArrow, OutlineArrow, Line, Bezier }
 
     /// <summary>
     /// Represents an annotation on a PDF page.
@@ -59,8 +59,8 @@ namespace PDF_simple_edit.Models
         public List<PdfPathPoint> SignaturePoints { get; set; } = new();
         public DrawingKind DrawingKind { get; set; }
         public bool IsFilled { get; set; }
-        // Drawing points are relative to the annotation bounds (0..1), so all
-        // existing move, resize, rotation and clipboard operations apply to them.
+        // Drawing points are relative to the annotation bounds so transforms
+        // apply to them. Bézier control points may lie outside those bounds.
         public List<PdfPathPoint> DrawingPoints { get; set; } = new();
         public bool IsEditablePath => Type is AnnotationType.Signature or AnnotationType.Drawing;
         public string? ImagePath { get; set; }
@@ -213,6 +213,7 @@ namespace PDF_simple_edit.Models
                     drawing && payload.DrawingKind == DrawingKind.OutlineArrow ? 7 :
                     drawing && payload.DrawingKind is DrawingKind.Arrow or DrawingKind.TriangleArrow ? 4 : 2;
                 if (pathPoints == null || pathPoints.Count < minimumPoints ||
+                    (drawing && payload.DrawingKind == DrawingKind.Bezier && pathPoints.Count != 4) ||
                     pathPoints.Any(p => p == null || !double.IsFinite(p.X) || !double.IsFinite(p.Y)) ||
                     (drawing && !Enum.IsDefined(payload.DrawingKind)))
                     return false;
@@ -325,7 +326,8 @@ namespace PDF_simple_edit.Models
         TextUnderline,
         SelectAnnotations,
         StickyNote,
-        CommentTextBox
+        CommentTextBox,
+        DrawBezier
     }
 
     /// <summary>

@@ -33,7 +33,7 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 - **Annotations / Bookmarks Sidebar**: The right sidebar groups annotations by page for selection, editing, deletion and sticky-note show/hide, and lists bookmarks hierarchically with hover tooltips and page navigation.
 - **Bookmark Editing**: Use **Add current page** to add a bookmark and **Delete** to remove it with its children; changes are saved in the PDF with undo/redo.
 - **Signature Tool**: Draw, customize, select, move, resize proportionally, edit, and save mouse-drawn signatures for reuse after reopening the PDF.
-- **Drawing Tools**: Choose smooth Freehand, Line, Arrow, Triangle-head Arrow, Outline Arrow, Rectangle, Ellipse, or Polygon from the drawing menu. Drag to draw; for polygons, click vertices and double-click, press `Enter`, or click the first vertex to close. Press `Esc` to cancel. Set the color and stroke width beside the drawing menu. For rectangles, ellipses, and polygons, check **Fill** in the color settings to fill the interior with the selected color.
+- **Drawing Tools**: Choose Freehand, Line, Bézier Curve, Arrow, Triangle-head Arrow, Outline Arrow, Rectangle, Ellipse, or Polygon from the drawing menu. For a Bézier curve, click the start, two control points, and the end. For a polygon, click vertices and double-click, press `Enter`, or click the first vertex to close. Drag to draw the other shapes. Press `Esc` to cancel. Set the color and stroke width beside the drawing menu. For rectangles, ellipses, and polygons, check **Fill** in the color settings to fill the interior with the selected color.
 
 ### 📂 Document Management
 - **Multi-Tab Interface**: Work on multiple PDF files simultaneously using a modern tabbed layout.
@@ -99,7 +99,7 @@ The server exposes these tools through `tools/list`, including argument schemas:
 | `pdf_vlm_ocr_apply` | Save agent-recognized text and bounding boxes as a selectable/searchable invisible OCR layer |
 | `pdf_add_text` | Unicode text with font, size, color, bold, italic and underline |
 | `pdf_edit_text` | Replace, delete, move, scale, rotate, reflow and restyle original text |
-| `pdf_add_graphic` | Rectangle, ellipse, line, arrow, triangle-head arrow, outline arrow, polygon, freehand, highlight or image |
+| `pdf_add_graphic` | Rectangle, ellipse, line, Bézier curve, arrow, triangle-head arrow, outline arrow, polygon, freehand, highlight or image |
 | `pdf_edit_graphic` | Move, resize, rotate, recolor paths, or replace a graphic/image/annotation |
 | `pdf_delete_object` | Remove original text, graphics, images or annotations |
 | `pdf_delete_objects` | Delete multiple inspected objects across pages using the same source revision |

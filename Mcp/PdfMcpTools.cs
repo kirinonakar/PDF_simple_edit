@@ -65,7 +65,7 @@ internal static partial class PdfMcpTools
         ["underline"] = Field("boolean", "Omit to keep existing underline; false removes it.")
     };
     private static readonly string[] GraphicKinds =
-        { "rectangle", "ellipse", "line", "arrow", "triangleArrow", "outlineArrow", "polygon", "freehand", "image", "highlight" };
+        { "rectangle", "ellipse", "line", "bezier", "arrow", "triangleArrow", "outlineArrow", "polygon", "freehand", "image", "highlight" };
     private static readonly Dictionary<string, object> Graphic = new()
     {
         ["kind"] = new { type = "string", @enum = GraphicKinds },
@@ -78,7 +78,7 @@ internal static partial class PdfMcpTools
         {
             type = "array", minItems = 2,
             items = new { type = "object", properties = new { x = Number, y = Number }, required = new[] { "x", "y" }, additionalProperties = false },
-            description = "Page coordinates. Required for polygon (3+) and freehand (2+). Arrows: two distinct points [tail, tip]. Lines/arrows default to the bounds diagonal."
+            description = "Page points: polygon 3+, freehand 2+, bezier [start,control1,control2,end], arrows [tail,tip]. Line/arrows default to box diagonal."
         }
     };
     private static readonly Dictionary<string, Tool> Catalog = BuildCatalog();
@@ -133,7 +133,7 @@ internal static partial class PdfMcpTools
             Input, Output, TextStyle, Fields(("page", Page), ("text", Text), ("x", Number), ("y", Number)));
         Add("pdf_edit_text", "Edit an entire text block. Omit fields to preserve them; empty text deletes the block.", new[] { "inputPath", "outputPath", "objectId" }, false,
             Input, Output, Geometry, TextStyle, objectId, Fields(("page", Page), ("text", Text), ("rotation", Field("number", "Clockwise degrees about center.")), ("reflow", Field("boolean", "Wrap within width/height instead of scaling."))));
-        Add("pdf_add_graphic", "Add an editable graphic. Arrows: arrow (open), triangleArrow (solid), outlineArrow (hollow). Line height 0 adjusts to 0.01 pt.", new[] { "inputPath", "outputPath", "kind" }, false,
+        Add("pdf_add_graphic", "Add an editable graphic. Arrows: open, solid, or outline. Line height 0 becomes 0.01 pt.", new[] { "inputPath", "outputPath", "kind" }, false,
             Input, Output, Geometry, Graphic, Fields(("page", Page)));
         Add("pdf_edit_graphic", "Transform graphics or restyle vectors. kind/imagePath replaces artwork. Annotations support move/resize or replacement.", new[] { "inputPath", "outputPath", "objectId" }, false,
             Input, Output, Geometry, Graphic, objectId, Fields(("page", Page)));
@@ -391,15 +391,25 @@ internal static partial class PdfMcpTools
         string colorHex = a.Color();
         double lineWidth = a.Number("lineWidth", 2, .1, 100);
         PdfAnnotation? arrow = null;
+        PdfPathPoint[]? bezier = null;
+        var rotationBounds = bounds;
         if (arrowKind is { } drawingKind)
         {
             var ends = ReadPoints() ?? BoundsDiagonal();
             if (ends.Length != 2 || (ends[0].X == ends[1].X && ends[0].Y == ends[1].Y))
                 throw new ArgumentException("An arrow needs exactly two distinct points: tail and tip.");
             arrow = PdfDrawingGeometry.Create(drawingKind, ends, pageIndex, colorHex, lineWidth);
+            rotationBounds = new PdfTextBox(arrow.X, arrow.Y, arrow.Width, arrow.Height);
+        }
+        else if (kind == "bezier")
+        {
+            bezier = ReadPoints();
+            if (bezier is not { Length: 4 } || bezier.All(p => p.X == bezier[0].X && p.Y == bezier[0].Y))
+                throw new ArgumentException("Bézier needs four points [start, control1, control2, end], with at least two distinct.");
+            var curveBounds = PdfDrawingGeometry.GetBezierBounds(bezier);
+            rotationBounds = curveBounds with { Width = Math.Max(curveBounds.Width, 1), Height = Math.Max(curveBounds.Height, 1) };
         }
         var page = pdf.GetPage(pageIndex + 1);
-        var rotationBounds = arrow == null ? bounds : new PdfTextBox(arrow.X, arrow.Y, arrow.Width, arrow.Height);
         var matrix = PdfPageCoordinates.ToDisplay(page).Inverse().After(PdfAffineTransform.Between(rotationBounds, rotationBounds, a.Number("rotation")));
         var canvas = new PdfCanvas(page.NewContentStreamAfter(), page.GetResources(), pdf);
         canvas.SaveState();
@@ -414,7 +424,12 @@ internal static partial class PdfMcpTools
             canvas.MoveTo(path[0].X, path[0].Y);
             foreach (var point in path.Skip(1)) canvas.LineTo(point.X, point.Y);
         }
-        if (arrow != null)
+        if (bezier != null)
+        {
+            canvas.SetLineCapStyle(1);
+            PdfContentWriter.AppendBezier(canvas, bezier);
+        }
+        else if (arrow != null)
         {
             canvas.SetLineCapStyle(1).SetLineJoinStyle(1);
             // Paint the shaft and head together so the editor sees one vector object.

@@ -70,7 +70,20 @@ public sealed class DrawingInteractionController
             _kind = PdfDrawingGeometry.GetKind(_getMode()); _color = _getColor(); _width = _getWidth();
             _isFilled = _getFill();
         }
-        if (_kind == DrawingKind.Polygon)
+        if (_kind == DrawingKind.Bezier)
+        {
+            _points.Add(point);
+            _hover = null;
+            e.Handled = true;
+            if (_points.Count == 4) { Complete(); return; }
+            _status.Text = Loc.Get(_points.Count switch
+            {
+                1 => "BezierPlaceFirstControl",
+                2 => "BezierPlaceSecondControl",
+                _ => "BezierPlaceEnd"
+            });
+        }
+        else if (_kind == DrawingKind.Polygon)
         {
             if (_points.Count >= 3 && Distance(point, _points[0]) < 6)
             { Complete(); e.Handled = true; return; }
@@ -96,7 +109,7 @@ public sealed class DrawingInteractionController
         if (!IsCurrent) { Cancel(); return; }
         if (_pointerId != null && _pointerId != e.Pointer.PointerId) return;
         var pointer = e.GetCurrentPoint(_canvas);
-        if (_kind != DrawingKind.Polygon && !pointer.Properties.IsLeftButtonPressed)
+        if (_kind is not (DrawingKind.Polygon or DrawingKind.Bezier) && !pointer.Properties.IsLeftButtonPressed)
         { Cancel(); return; }
         _hover = GetPoint(pointer.Position);
         if (_kind == DrawingKind.Freehand)
@@ -148,13 +161,62 @@ public sealed class DrawingInteractionController
         if (_manager == null) return;
         if (!IsCurrent) { Cancel(); return; }
         if (_preview != null) _canvas.Children.Remove(_preview);
+        _preview = null;
+        if (_kind == DrawingKind.Bezier)
+        {
+            _preview = CreateBezierPreview();
+            _canvas.Children.Add(_preview);
+            return;
+        }
         var points = GetPreviewPoints();
         if (points.Count < 2) return;
         var drawing = PdfDrawingGeometry.Create(_kind, points, _page, _color, _width, _isFilled);
-        _preview = CreateElement(drawing);
-        Canvas.SetLeft(_preview, drawing.X * PdfToPixels);
-        Canvas.SetTop(_preview, drawing.Y * PdfToPixels);
+        _preview = CreatePositionedElement(drawing);
         _canvas.Children.Add(_preview);
+    }
+
+    private Canvas CreateBezierPreview()
+    {
+        var preview = new Canvas { IsHitTestVisible = false };
+        var points = _points.ToList();
+        if (_hover != null) points.Add(_hover);
+        var guideBrush = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue);
+        if (points.Count >= 2)
+        {
+            var guide = new Microsoft.UI.Xaml.Shapes.Polyline
+            {
+                Stroke = guideBrush,
+                StrokeThickness = 1,
+                StrokeDashArray = new DoubleCollection { 3, 3 }
+            };
+            foreach (var point in points) guide.Points.Add(new Point(point.X * PdfToPixels, point.Y * PdfToPixels));
+            preview.Children.Add(guide);
+        }
+        if (points.Count == 4)
+        {
+            var drawing = PdfDrawingGeometry.Create(DrawingKind.Bezier, points, _page, _color, _width);
+            preview.Children.Add(CreatePositionedElement(drawing));
+        }
+        foreach (var point in _points)
+        {
+            var marker = new Microsoft.UI.Xaml.Shapes.Ellipse
+            {
+                Width = 8, Height = 8, Fill = guideBrush,
+                Stroke = new SolidColorBrush(Microsoft.UI.Colors.White), StrokeThickness = 1
+            };
+            Canvas.SetLeft(marker, point.X * PdfToPixels - marker.Width / 2);
+            Canvas.SetTop(marker, point.Y * PdfToPixels - marker.Height / 2);
+            preview.Children.Add(marker);
+        }
+        return preview;
+    }
+
+    private static FrameworkElement CreatePositionedElement(PdfAnnotation drawing)
+    {
+        var element = CreateElement(drawing);
+        Canvas.SetLeft(element, drawing.X * PdfToPixels);
+        Canvas.SetTop(element, drawing.Y * PdfToPixels);
+        return element;
     }
 
     private List<PdfPathPoint> GetPreviewPoints()
@@ -169,8 +231,9 @@ public sealed class DrawingInteractionController
     private void Complete()
     {
         if (!IsCurrent) { Cancel(); return; }
-        var points = _kind == DrawingKind.Polygon ? _points.ToList() : GetPreviewPoints();
-        bool valid = points.Count >= (_kind == DrawingKind.Polygon ? 3 : 2) &&
+        var points = _kind is DrawingKind.Polygon or DrawingKind.Bezier ? _points.ToList() : GetPreviewPoints();
+        int minimumPoints = _kind switch { DrawingKind.Bezier => 4, DrawingKind.Polygon => 3, _ => 2 };
+        bool valid = points.Count >= minimumPoints &&
             points.Any(p => Distance(points[0], p) >= 1);
         if (_kind is DrawingKind.Rectangle or DrawingKind.Ellipse)
             valid &= Math.Abs(points[^1].X - points[0].X) >= 1 && Math.Abs(points[^1].Y - points[0].Y) >= 1;
@@ -186,6 +249,7 @@ public sealed class DrawingInteractionController
         var drawing = valid ? PdfDrawingGeometry.Create(_kind, points, _page, _color, _width, _isFilled) : null;
         Cancel();
         if (drawing != null) { _commit(drawing); _status.Text = Loc.Get("DrawingAddedUseSelectGraphicsGToEditIt"); }
+        else if (_kind == DrawingKind.Bezier) _status.Text = Loc.Get("BezierPointsTooClose");
     }
 
     private static double Distance(PdfPathPoint a, PdfPathPoint b) =>
@@ -200,17 +264,27 @@ public sealed class DrawingInteractionController
         // plus an antialiasing pixel on every edge, including pointed corners.
         double padding = strokeWidth / 2 + 1;
         var geometry = new PathGeometry();
-        var strokes = PdfDrawingGeometry.GetStrokes(drawing);
-        for (int i = 0; i < strokes.Count; i++)
+        Point Local(PdfPathPoint p) => new(
+            (p.X - drawing.X) * PdfToPixels + padding,
+            (p.Y - drawing.Y) * PdfToPixels + padding);
+        if (drawing.DrawingKind == DrawingKind.Bezier)
         {
-            var stroke = strokes[i];
-            if (stroke.Count < 2) continue;
-            Point Local(PdfPathPoint p) => new(
-                (p.X - drawing.X) * PdfToPixels + padding,
-                (p.Y - drawing.Y) * PdfToPixels + padding);
-            var figure = new PathFigure { StartPoint = Local(stroke[0]), IsFilled = PdfDrawingGeometry.IsFilledStroke(drawing, i) };
-            foreach (var point in stroke.Skip(1)) figure.Segments.Add(new LineSegment { Point = Local(point) });
+            var points = PdfDrawingGeometry.GetPathPoints(drawing);
+            var figure = new PathFigure { StartPoint = Local(points[0]), IsFilled = false };
+            figure.Segments.Add(new BezierSegment { Point1 = Local(points[1]), Point2 = Local(points[2]), Point3 = Local(points[3]) });
             geometry.Figures.Add(figure);
+        }
+        else
+        {
+            var strokes = PdfDrawingGeometry.GetStrokes(drawing);
+            for (int i = 0; i < strokes.Count; i++)
+            {
+                var stroke = strokes[i];
+                if (stroke.Count < 2) continue;
+                var figure = new PathFigure { StartPoint = Local(stroke[0]), IsFilled = PdfDrawingGeometry.IsFilledStroke(drawing, i) };
+                foreach (var point in stroke.Skip(1)) figure.Segments.Add(new LineSegment { Point = Local(point) });
+                geometry.Figures.Add(figure);
+            }
         }
         var path = new Microsoft.UI.Xaml.Shapes.Path
         {

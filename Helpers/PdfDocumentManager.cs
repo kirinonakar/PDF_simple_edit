@@ -592,15 +592,19 @@ namespace PDF_simple_edit.Helpers
         {
             var bounds = new PdfTextBox(annotation.X, annotation.Y, annotation.Width, annotation.Height);
             var rotation = PdfAffineTransform.Between(bounds, bounds, annotation.Rotation);
-            var strokes = PdfDrawingGeometry.GetStrokes(annotation).Select(stroke => stroke.Select(point =>
+            PdfPathPoint Rotate(PdfPathPoint point)
             {
                 var mapped = rotation.Map(point.X, point.Y);
                 return new PdfPathPoint { X = mapped.X, Y = mapped.Y };
-            }).ToList()).ToList();
+            }
+            var strokes = PdfDrawingGeometry.GetStrokes(annotation).Select(stroke => stroke.Select(Rotate).ToList()).ToList();
+            var bezier = annotation.DrawingKind == DrawingKind.Bezier
+                ? PdfDrawingGeometry.GetPathPoints(annotation).Select(Rotate).ToList()
+                : null;
             _contentWriter.AddPaths(doc, annotation.PageIndex, strokes, color, annotation.LineWidth,
                 PdfSignatureMetadata.Serialize(annotation),
                 Enumerable.Range(0, strokes.Count).Where(i => PdfDrawingGeometry.IsFilledStroke(annotation, i)).ToHashSet(),
-                strokeFilledPaths: PdfDrawingGeometry.SupportsFill(annotation.DrawingKind));
+                strokeFilledPaths: PdfDrawingGeometry.SupportsFill(annotation.DrawingKind), bezier: bezier);
         }
 
         public void AddImage(

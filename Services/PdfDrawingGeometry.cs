@@ -10,7 +10,7 @@ public static class PdfDrawingGeometry
 {
     public static bool IsDrawingTool(EditToolMode mode) => mode is EditToolMode.DrawFreehand or
         EditToolMode.DrawRectangle or EditToolMode.DrawEllipse or EditToolMode.DrawArrow or EditToolMode.DrawPolygon or
-        EditToolMode.DrawTriangleArrow or EditToolMode.DrawOutlineArrow or EditToolMode.DrawLine;
+        EditToolMode.DrawTriangleArrow or EditToolMode.DrawOutlineArrow or EditToolMode.DrawLine or EditToolMode.DrawBezier;
 
     public static bool IsArrow(DrawingKind kind) => kind is DrawingKind.Arrow or DrawingKind.TriangleArrow or DrawingKind.OutlineArrow;
 
@@ -23,6 +23,7 @@ public static class PdfDrawingGeometry
     public static DrawingKind GetKind(EditToolMode mode) => mode switch
     {
         EditToolMode.DrawLine => DrawingKind.Line,
+        EditToolMode.DrawBezier => DrawingKind.Bezier,
         EditToolMode.DrawRectangle => DrawingKind.Rectangle,
         EditToolMode.DrawEllipse => DrawingKind.Ellipse,
         EditToolMode.DrawArrow => DrawingKind.Arrow,
@@ -69,9 +70,10 @@ public static class PdfDrawingGeometry
                     new() { X = start.X - nx, Y = start.Y - ny } };
             }
         }
-        double x = anchors.Min(p => p.X), y = anchors.Min(p => p.Y);
-        double width = Math.Max(anchors.Max(p => p.X) - x, 1);
-        double height = Math.Max(anchors.Max(p => p.Y) - y, 1);
+        var bounds = kind == DrawingKind.Bezier ? GetBezierBounds(anchors) : BoundsOf(anchors);
+        double x = bounds.X, y = bounds.Y;
+        double width = Math.Max(bounds.Width, 1);
+        double height = Math.Max(bounds.Height, 1);
         return new PdfAnnotation
         {
             Type = AnnotationType.Drawing, DrawingKind = kind, PageIndex = pageIndex,
@@ -80,6 +82,58 @@ public static class PdfDrawingGeometry
             DrawingPoints = anchors.Select(p => new PdfPathPoint { X = (p.X - x) / width, Y = (p.Y - y) / height }).ToList()
         };
     }
+
+    private static PdfTextBox BoundsOf(List<PdfPathPoint> points)
+    {
+        double x = points.Min(p => p.X), y = points.Min(p => p.Y);
+        return new(x, y, points.Max(p => p.X) - x, points.Max(p => p.Y) - y);
+    }
+
+    internal static PdfTextBox GetBezierBounds(IReadOnlyList<PdfPathPoint> points)
+    {
+        // A cubic can reach its extrema between the endpoints where the derivative is zero.
+        var (left, right) = BezierRange(points[0].X, points[1].X, points[2].X, points[3].X);
+        var (top, bottom) = BezierRange(points[0].Y, points[1].Y, points[2].Y, points[3].Y);
+        return new(left, top, right - left, bottom - top);
+    }
+
+    private static (double Min, double Max) BezierRange(double start, double first, double second, double end)
+    {
+        double min = Math.Min(start, end), max = Math.Max(start, end);
+        double d0 = first - start, d1 = second - first, d2 = end - second;
+        double a = d0 - 2 * d1 + d2, b = 2 * (d1 - d0), c = d0;
+        if (a == 0)
+        {
+            if (b != 0) Include(-c / b);
+        }
+        else
+        {
+            double discriminant = b * b - 4 * a * c;
+            if (discriminant >= 0)
+            {
+                double q = -(b + Math.CopySign(Math.Sqrt(discriminant), b)) / 2;
+                Include(q / a);
+                if (q != 0) Include(c / q);
+            }
+        }
+        return (min, max);
+
+        void Include(double t)
+        {
+            if (t <= 0 || t >= 1) return;
+            double u = 1 - t;
+            double value = u * u * u * start + 3 * u * u * t * first + 3 * u * t * t * second + t * t * t * end;
+            min = Math.Min(min, value);
+            max = Math.Max(max, value);
+        }
+    }
+
+    internal static List<PdfPathPoint> GetPathPoints(PdfAnnotation annotation) =>
+        annotation.DrawingPoints.Select(p => new PdfPathPoint
+        {
+            X = annotation.X + p.X * annotation.Width,
+            Y = annotation.Y + p.Y * annotation.Height
+        }).ToList();
 
     public static List<List<PdfPathPoint>> GetStrokes(PdfAnnotation annotation)
     {
@@ -90,7 +144,13 @@ public static class PdfDrawingGeometry
         if (annotation.DrawingKind == DrawingKind.Ellipse)
             return new() { Enumerable.Range(0, 129).Select(i =>
                 Point((1 + Math.Cos(i * Math.Tau / 128)) / 2, (1 + Math.Sin(i * Math.Tau / 128)) / 2)).ToList() };
-        var points = annotation.DrawingPoints.Select(p => Point(p.X, p.Y)).ToList();
+        var points = GetPathPoints(annotation);
+        if (annotation.DrawingKind == DrawingKind.Bezier)
+        {
+            var curve = new List<PdfPathPoint> { points[0] };
+            FlattenBezier(points[0], points[1], points[2], points[3], curve, 0);
+            return new() { curve };
+        }
         if (annotation.DrawingKind == DrawingKind.Arrow && points.Count >= 4)
             return new() { new() { points[0], points[1] }, new() { points[2], points[1], points[3] } };
         if (annotation.DrawingKind == DrawingKind.TriangleArrow && points.Count >= 4)
@@ -122,6 +182,30 @@ public static class PdfDrawingGeometry
 
     private static PdfPathPoint Midpoint(PdfPathPoint a, PdfPathPoint b) =>
         new() { X = (a.X + b.X) / 2, Y = (a.Y + b.Y) / 2 };
+
+    private static void FlattenBezier(PdfPathPoint start, PdfPathPoint first, PdfPathPoint second,
+        PdfPathPoint end, List<PdfPathPoint> output, int depth)
+    {
+        // Compare with the controls of a straight cubic at 1/3 and 2/3 of the chord.
+        // This also detects curves that reverse along the chord or return to the start.
+        double dx = (end.X - start.X) / 3, dy = (end.Y - start.Y) / 3;
+        if (depth >= 12 || (Near(first, start.X + dx, start.Y + dy) && Near(second, end.X - dx, end.Y - dy)))
+        {
+            output.Add(end);
+            return;
+        }
+        var left = Midpoint(start, first);
+        var middle = Midpoint(first, second);
+        var right = Midpoint(second, end);
+        var leftControl = Midpoint(left, middle);
+        var rightControl = Midpoint(middle, right);
+        var split = Midpoint(leftControl, rightControl);
+        FlattenBezier(start, left, leftControl, split, output, depth + 1);
+        FlattenBezier(split, rightControl, right, end, output, depth + 1);
+
+        static bool Near(PdfPathPoint point, double x, double y) =>
+            Math.Pow(point.X - x, 2) + Math.Pow(point.Y - y, 2) <= .01;
+    }
 
     public static void UpdateLineWidth(PdfAnnotation annotation, double lineWidth)
     {

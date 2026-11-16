@@ -119,6 +119,7 @@
                             <MenuFlyout FlyoutBase.Placement="BottomEdgeAlignedRight">
                                 <ToggleMenuFlyoutItem x:Name="DrawFreehandItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Freehand}" Tag="DrawFreehand"/>
                                 <ToggleMenuFlyoutItem x:Name="DrawLineItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Line}" Tag="DrawLine"/>
+                                <ToggleMenuFlyoutItem x:Name="DrawBezierItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=BezierCurve}" Tag="DrawBezier"/>
                                 <ToggleMenuFlyoutItem x:Name="DrawArrowItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=Arrow}" Tag="DrawArrow"/>
                                 <ToggleMenuFlyoutItem x:Name="DrawTriangleArrowItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=TriangleArrow}" Tag="DrawTriangleArrow"/>
                                 <ToggleMenuFlyoutItem x:Name="DrawOutlineArrowItem" x:FieldModifier="public" Text="{loc:LocalizedString Key=OutlineArrow}" Tag="DrawOutlineArrow"/>

@@ -887,7 +887,8 @@ namespace PDF_simple_edit.Services
 
         public void AddPaths(PdfDocument doc, int pageIndex,
             IEnumerable<IReadOnlyList<PdfPathPoint>> strokes, Color color, double lineWidth, string? metadata = null,
-            IReadOnlySet<int>? filledStrokeIndexes = null, bool strokeFilledPaths = false)
+            IReadOnlySet<int>? filledStrokeIndexes = null, bool strokeFilledPaths = false,
+            IReadOnlyList<PdfPathPoint>? bezier = null)
         {
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages())
                 return;
@@ -903,12 +904,21 @@ namespace PDF_simple_edit.Services
 
             var mappedStrokes = validStrokes.Select(stroke => stroke.Select(point => toPdf.Map(point.X, point.Y)).ToList()).ToList();
             var mapped = mappedStrokes.SelectMany(stroke => stroke).ToList();
+            var mappedBezier = bezier?.Select(point =>
+            {
+                var p = toPdf.Map(point.X, point.Y);
+                return new PdfPathPoint { X = p.X, Y = p.Y };
+            }).ToList();
+            var curveBounds = mappedBezier == null ? (PdfTextBox?)null : PdfDrawingGeometry.GetBezierBounds(mappedBezier);
+            double left = curveBounds?.X ?? mapped.Min(point => point.X);
+            double bottom = curveBounds?.Y ?? mapped.Min(point => point.Y);
+            double right = curveBounds?.Right ?? mapped.Max(point => point.X);
+            double top = curveBounds?.Bottom ?? mapped.Max(point => point.Y);
             double padding = Math.Clamp(lineWidth, 0.1, 100) / 2;
             var rectangle = new Rectangle(
-                (float)(mapped.Min(point => point.X) - padding),
-                (float)(mapped.Min(point => point.Y) - padding),
-                (float)Math.Max(mapped.Max(point => point.X) - mapped.Min(point => point.X) + padding * 2, 1),
-                (float)Math.Max(mapped.Max(point => point.Y) - mapped.Min(point => point.Y) + padding * 2, 1));
+                (float)(left - padding), (float)(bottom - padding),
+                (float)Math.Max(right - left + padding * 2, 1),
+                (float)Math.Max(top - bottom + padding * 2, 1));
             var inkList = new PdfArray();
             foreach (var stroke in mappedStrokes)
             {
@@ -938,22 +948,36 @@ namespace PDF_simple_edit.Services
                 .SetFillColor(color ?? ColorConstants.BLACK)
                 .SetLineWidth((float)Math.Clamp(lineWidth, .1, 100))
                 .SetLineCapStyle(1).SetLineJoinStyle(1);
-            for (int i = 0; i < mappedStrokes.Count; i++)
+            if (mappedBezier != null)
             {
-                var stroke = mappedStrokes[i];
-                appearanceCanvas.MoveTo(stroke[0].X, stroke[0].Y);
-                foreach (var point in stroke.Skip(1)) appearanceCanvas.LineTo(point.X, point.Y);
-                if (filledStrokeIndexes?.Contains(i) == true)
+                AppendBezier(appearanceCanvas, mappedBezier);
+                appearanceCanvas.Stroke();
+            }
+            else
+            {
+                for (int i = 0; i < mappedStrokes.Count; i++)
                 {
-                    appearanceCanvas.ClosePath();
-                    if (strokeFilledPaths) appearanceCanvas.EoFillStroke();
-                    else appearanceCanvas.Fill();
+                    var stroke = mappedStrokes[i];
+                    appearanceCanvas.MoveTo(stroke[0].X, stroke[0].Y);
+                    foreach (var point in stroke.Skip(1)) appearanceCanvas.LineTo(point.X, point.Y);
+                    if (filledStrokeIndexes?.Contains(i) == true)
+                    {
+                        appearanceCanvas.ClosePath();
+                        if (strokeFilledPaths) appearanceCanvas.EoFillStroke();
+                        else appearanceCanvas.Fill();
+                    }
+                    else appearanceCanvas.Stroke();
                 }
-                else appearanceCanvas.Stroke();
             }
             appearanceCanvas.Release();
             inkAnnotation.SetNormalAppearance(appearance.GetPdfObject());
             page.AddAnnotation(inkAnnotation);
+        }
+
+        internal static void AppendBezier(PdfCanvas canvas, IReadOnlyList<PdfPathPoint> points)
+        {
+            canvas.MoveTo(points[0].X, points[0].Y);
+            canvas.CurveTo(points[1].X, points[1].Y, points[2].X, points[2].Y, points[3].X, points[3].Y);
         }
 
         public void AddImage(PdfDocument doc, int pageIndex, string imagePath, double x, double y,
