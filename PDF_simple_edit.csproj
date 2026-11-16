@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net11.0-windows10.0.19041.0</TargetFramework>
+    <Features>$(Features);runtime-async=on</Features>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>PDF_simple_edit</RootNamespace>
     <DefaultLanguage>en-US</DefaultLanguage>
@@ -89,10 +90,10 @@
   <ItemGroup>
     <PackageReference Include="itext" Version="9.8.0" />
     <PackageReference Include="itext.bouncy-castle-adapter" Version="9.8.0" />
-    <!-- pdfSweep 5.0.8 ships only net461 assets; the application still targets .NET 10. -->
+    <!-- pdfSweep 5.0.8 only provides .NET Framework assets. -->
     <PackageReference Include="itext.pdfsweep" Version="5.0.8" NoWarn="NU1701" />
     <!-- pdfSweep's partial-image cleanup loads System.Drawing at runtime. -->
-    <PackageReference Include="System.Drawing.Common" Version="10.0.14" />
+    <PackageReference Include="System.Drawing.Common" Version="11.0.0" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2957" />
     <!-- Reference WinUI directly to avoid the umbrella package's AI/ML dependencies. -->
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.5" />
@@ -104,10 +105,16 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
-    <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">False</PublishReadyToRun>
+    <PublishReadyToRun Condition="'$(Configuration)' == 'Release'">true</PublishReadyToRun>
+    <PublishReadyToRunComposite>false</PublishReadyToRunComposite>
     <PublishTrimmed>False</PublishTrimmed>
     <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(PublishReadyToRun)' == 'true'">
+    <!-- Leave these large dependencies in IL to limit publish size. -->
+    <PublishReadyToRunExclude Include="Microsoft.Windows.SDK.NET.dll" />
+    <PublishReadyToRunExclude Include="BouncyCastle.Cryptography.dll" />
+  </ItemGroup>
 </Project>

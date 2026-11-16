@@ -1,6 +1,6 @@
 # PDF Simple Editor
 
-A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET 10**. Powered by the **iText 9** engine, it provides a seamless experience for editing text, managing pages, and organizing PDF documents.
+A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET 11**. Powered by the **iText 9** engine, it provides a seamless experience for editing text, managing pages, and organizing PDF documents.
 
 ![screenshot](screenshot.png)
 
@@ -114,7 +114,7 @@ The server exposes these tools through `tools/list`, including argument schemas:
 | `images_to_pdf` | Fit each supplied image onto one A4 PDF page |
 
 ## 🛠️ Technology Stack
-- **Framework**: .NET 10.0
+- **.NET 11** with Runtime Async enabled
 - **UI Framework**: WinUI 3 (Windows App SDK)
 - **PDF Engine**: iText 9.8.0 (Core, BouncyCastle), pdfSweep 5.0.8; Windows.Data.Pdf for page rendering.
 - **Language**: C#
@@ -126,14 +126,14 @@ You can download the latest version from the [Releases Page](https://github.com/
 
 ### Prerequisites
 - Windows 10/11 (version 19041 or higher)
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- [.NET 11 SDK (11.0.100 or later)](https://dotnet.microsoft.com/download/dotnet/11.0)
 
 ### Build from Source
 1. Clone the repository:
    ```bash
    git clone https://github.com/kirinonakar/PDF_simple_edit.git
    ```
-2. Open the solution in Visual Studio 2022 (or later).
+2. Open the solution in Visual Studio 2026 18.12 (or later).
 3. Restore NuGet packages.
 4. Build and run the `PDF_simple_edit` project.
 
