@@ -1409,8 +1409,23 @@ To remove passwords individually, use Encryption and password settings.</value>
   <data name="BezierPlaceEnd" xml:space="preserve">
     <value>Click the endpoint to finish the curve.</value>
   </data>
+  <data name="BezierAdjustSelected" xml:space="preserve">
+    <value>Drag a start, control, or end point handle.</value>
+  </data>
+  <data name="BezierStartPoint" xml:space="preserve">
+    <value>Start point</value>
+  </data>
+  <data name="BezierFirstControlPoint" xml:space="preserve">
+    <value>Control point 1</value>
+  </data>
+  <data name="BezierSecondControlPoint" xml:space="preserve">
+    <value>Control point 2</value>
+  </data>
+  <data name="BezierEndPoint" xml:space="preserve">
+    <value>End point</value>
+  </data>
   <data name="BezierPointsTooClose" xml:space="preserve">
-    <value>Space the points farther apart to draw a curve.</value>
+    <value>Click a different location for the endpoint.</value>
   </data>
   <data name="FillShape" xml:space="preserve">
     <value>Fill</value>

@@ -70,17 +70,61 @@ public static class PdfDrawingGeometry
                     new() { X = start.X - nx, Y = start.Y - ny } };
             }
         }
-        var bounds = kind == DrawingKind.Bezier ? GetBezierBounds(anchors) : BoundsOf(anchors);
+        var annotation = new PdfAnnotation
+        {
+            Type = AnnotationType.Drawing, DrawingKind = kind, PageIndex = pageIndex,
+            IsFilled = isFilled && SupportsFill(kind), Color = color, LineWidth = lineWidth
+        };
+        SetBoundsAndPoints(annotation, anchors, kind == DrawingKind.Bezier ? GetBezierBounds(anchors) : BoundsOf(anchors));
+        return annotation;
+    }
+
+    private static void SetBoundsAndPoints(PdfAnnotation annotation, List<PdfPathPoint> anchors, PdfTextBox bounds)
+    {
         double x = bounds.X, y = bounds.Y;
         double width = Math.Max(bounds.Width, 1);
         double height = Math.Max(bounds.Height, 1);
-        return new PdfAnnotation
+        annotation.X = x; annotation.Y = y;
+        annotation.Width = width; annotation.Height = height;
+        annotation.DrawingPoints = anchors.Select(p => new PdfPathPoint { X = (p.X - x) / width, Y = (p.Y - y) / height }).ToList();
+    }
+
+    internal static List<PdfPathPoint> GetBezierPagePoints(PdfAnnotation annotation)
+    {
+        var rotation = GetRotation(annotation);
+        return GetPathPoints(annotation).Select(point =>
         {
-            Type = AnnotationType.Drawing, DrawingKind = kind, PageIndex = pageIndex,
-            IsFilled = isFilled && SupportsFill(kind),
-            X = x, Y = y, Width = width, Height = height, Color = color, LineWidth = lineWidth,
-            DrawingPoints = anchors.Select(p => new PdfPathPoint { X = (p.X - x) / width, Y = (p.Y - y) / height }).ToList()
-        };
+            var mapped = rotation.Map(point.X, point.Y);
+            return new PdfPathPoint { X = mapped.X, Y = mapped.Y };
+        }).ToList();
+    }
+
+    internal static bool TryMoveBezierPoint(PdfAnnotation source, PdfAnnotation target, int index, PdfPathPoint pagePoint)
+    {
+        var rotation = GetRotation(source);
+        var point = rotation.Inverse().Map(pagePoint.X, pagePoint.Y);
+        var points = GetPathPoints(source);
+        if (Math.Abs(point.X - points[index].X) <= .000001 && Math.Abs(point.Y - points[index].Y) <= .000001)
+            return false;
+        points[index] = new PdfPathPoint { X = point.X, Y = point.Y };
+        if (!IsDrawableBezier(points)) return false;
+
+        SetBoundsAndPoints(target, points, GetBezierBounds(points));
+        // The new bounds shift the rotation center. Place that center where the
+        // original transform maps it so the other three points stay in place.
+        var center = rotation.Map(target.X + target.Width / 2, target.Y + target.Height / 2);
+        target.X = center.X - target.Width / 2;
+        target.Y = center.Y - target.Height / 2;
+        return true;
+    }
+
+    internal static bool IsDrawableBezier(IReadOnlyList<PdfPathPoint> points) => points.Count == 4 &&
+        points.Skip(1).Any(p => Math.Abs(p.X - points[0].X) > .000001 || Math.Abs(p.Y - points[0].Y) > .000001);
+
+    private static PdfAffineTransform GetRotation(PdfAnnotation annotation)
+    {
+        var bounds = new PdfTextBox(annotation.X, annotation.Y, annotation.Width, annotation.Height);
+        return PdfAffineTransform.Between(bounds, bounds, annotation.Rotation);
     }
 
     private static PdfTextBox BoundsOf(List<PdfPathPoint> points)

@@ -152,6 +152,12 @@ namespace PDF_simple_edit.Helpers
             byte[] editedBytes, object? uiState, IEnumerable<int> pages) =>
             CommitPdfBytes(expectedBytes, editedBytes, uiState, new(pages, geometryChanged: true), expectedVersion);
 
+        internal void CommitAnnotationChange(object? previousAnnotations, int pageIndex)
+        {
+            var source = _pdfBytes ?? throw new InvalidOperationException(Loc.Get("NoPDFDocumentIsOpen"));
+            CommitPdfBytes(source, source, previousAnnotations, PdfDocumentChange.Page(pageIndex), force: true, appended: true);
+        }
+
         private void CommitPdfBytes(byte[] expectedBytes, byte[] editedBytes, object? uiState,
             PdfDocumentChange? change = null, long? expectedVersion = null, int? pageCount = null, bool force = false, bool appended = false)
         {

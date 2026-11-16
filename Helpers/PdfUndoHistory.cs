@@ -13,6 +13,7 @@ internal sealed record PdfHistoryEntry(byte[] Data, object? UIState, Guid StateI
     {
         if (PrefixLength is not { } prefix) return Data;
         if (prefix < 0 || prefix > current.Length) throw new InvalidOperationException("Invalid PDF history prefix.");
+        if (prefix == current.Length && Data.Length == 0) return current;
         byte[] restored = new byte[checked(prefix + Data.Length)];
         current.AsSpan(0, prefix).CopyTo(restored);
         Data.CopyTo(restored, prefix);

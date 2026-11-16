@@ -76,6 +76,12 @@ public sealed class AnnotationCanvasController
         PdfAnnotation Original, Point Start, string Direction);
     private CommentTransform? _commentTransform;
     private (uint PointerId, Point Start, double HorizontalOffset, double VerticalOffset)? _panGesture;
+    private sealed record BezierPointDrag(PdfDocumentManager Manager, long Version, uint PointerId,
+        PdfAnnotation Target, PdfAnnotation Original, int Index, Point Start, PdfPathPoint Anchor)
+    {
+        public PdfAnnotation? Preview { get; set; }
+    }
+    private BezierPointDrag? _bezierPointDrag;
 
     public string CommentColor { get; set; } = "#FFFF00";
     public double CommentOpacity { get; set; } = 1;
@@ -128,10 +134,16 @@ public sealed class AnnotationCanvasController
         _drawingController = new DrawingInteractionController(canvas, statusText, getManager, getPageIndex,
             getToolMode, getDrawingColor, getDrawingLineWidth, getDrawingFill, annotation =>
             {
+                var manager = _getManager();
+                bool isBezier = annotation.DrawingKind == DrawingKind.Bezier;
+                object? previous = isBezier ? manager.GetUIStateFunc?.Invoke() : null;
                 _getAnnotations().Add(annotation);
-                _getManager().MarkModified(pageIndex: annotation.PageIndex);
+                if (isBezier) manager.CommitAnnotationChange(previous, annotation.PageIndex);
+                else manager.MarkModified(pageIndex: annotation.PageIndex);
                 Render();
             });
+        canvas.PointerCaptureLost += (_, e) => CancelBezierPointer(e.Pointer.PointerId);
+        canvas.PointerCanceled += (_, e) => CancelBezierPointer(e.Pointer.PointerId);
     }
 
     private PdfAnnotation? _primarySelection;
@@ -162,6 +174,7 @@ public sealed class AnnotationCanvasController
 
     public void ClearSelection()
     {
+        CancelBezierPointDrag();
         TextSelection.Clear();
         PrimarySelection = null;
         SelectedAnnotations.Clear();
@@ -180,6 +193,7 @@ public sealed class AnnotationCanvasController
         _commentGesture = null;
         if (_commentPreview != null) _canvas.Children.Remove(_commentPreview);
         _commentPreview = null;
+        CancelBezierPointDrag();
         _drawingController.Cancel();
         if (_signaturePreview != null) _canvas.Children.Remove(_signaturePreview);
         _signaturePreview = null;
@@ -229,6 +243,21 @@ public sealed class AnnotationCanvasController
         double pdfX = position.X / PdfToPixels;
         double pdfY = position.Y / PdfToPixels;
         EditToolMode toolMode = _getToolMode();
+        if (_bezierPointDrag != null) { e.Handled = true; return; }
+        if (isLeftButton && toolMode == EditToolMode.SelectGraphics &&
+            PrimarySelection is { Type: AnnotationType.Drawing, DrawingKind: DrawingKind.Bezier } curve &&
+            curve.PageIndex == _getPageIndex() && e.OriginalSource is Shape { Tag: int index })
+        {
+            _scrollViewer.Focus(FocusState.Programmatic);
+            if (_canvas.CapturePointer(e.Pointer))
+            {
+                var original = curve.Clone();
+                var anchor = PdfDrawingGeometry.GetBezierPagePoints(original)[index];
+                _bezierPointDrag = new(manager, manager.EditVersion, e.Pointer.PointerId, curve, original, index, position, anchor);
+            }
+            e.Handled = true;
+            return;
+        }
         if (toolMode == EditToolMode.None)
         {
             if (!isLeftButton) return;
@@ -364,6 +393,16 @@ public sealed class AnnotationCanvasController
 
     public void PointerMoved(PointerRoutedEventArgs e)
     {
+        if (_bezierPointDrag is { } bezier)
+        {
+            if (bezier.PointerId != e.Pointer.PointerId) return;
+            var pointer = e.GetCurrentPoint(_canvas);
+            if (!IsCurrent(bezier) || !pointer.Properties.IsLeftButtonPressed) CancelBezierPointDrag();
+            else UpdateBezierPointPreview(bezier, pointer.Position);
+            Render();
+            e.Handled = true;
+            return;
+        }
         if (_panGesture is { } pan)
         {
             if (pan.PointerId != e.Pointer.PointerId) return;
@@ -494,6 +533,12 @@ public sealed class AnnotationCanvasController
 
     public async Task PointerReleasedAsync(PointerRoutedEventArgs e)
     {
+        if (_bezierPointDrag is { } bezier)
+        {
+            if (bezier.PointerId != e.Pointer.PointerId) return;
+            CompleteBezierPointDrag(bezier, e);
+            return;
+        }
         if (_panGesture is { } pan)
         {
             if (pan.PointerId == e.Pointer.PointerId) CancelPanGesture();
@@ -761,7 +806,8 @@ public sealed class AnnotationCanvasController
             shape => SetElementCursor(
                 _canvas,
                 InputSystemCursor.Create(shape)),
-            note => ToggleNoteRequested?.Invoke(note));
+            note => ToggleNoteRequested?.Invoke(note),
+            _bezierPointDrag?.Preview);
         if (_commentPreview != null && !_canvas.Children.Contains(_commentPreview)) _canvas.Children.Add(_commentPreview);
         if (_commentTextPreview != null && !_canvas.Children.Contains(_commentTextPreview)) _canvas.Children.Add(_commentTextPreview);
         _drawingController.Redraw();
@@ -770,13 +816,79 @@ public sealed class AnnotationCanvasController
 
     public bool HandleDrawingKey(Windows.System.VirtualKey key)
     {
+        if (key == Windows.System.VirtualKey.Escape && _bezierPointDrag != null)
+        {
+            CancelBezierPointDrag();
+            Render();
+            return true;
+        }
         if (key == Windows.System.VirtualKey.Escape && _getToolMode() == EditToolMode.None)
         { TextSelection.Clear(); return true; }
         if (key == Windows.System.VirtualKey.Escape && (_commentGesture != null || _commentTransform != null))
         { CancelRegionGesture(); Render(); return true; }
         return _drawingController.HandleKey(key);
     }
-    public void CancelDrawing() => _drawingController.Cancel();
+    public void CancelDrawing()
+    {
+        CancelBezierPointDrag();
+        _drawingController.Cancel();
+    }
+
+    private bool IsCurrent(BezierPointDrag drag) =>
+        drag.Manager == _getManager() && drag.Version == drag.Manager.EditVersion &&
+        drag.Target.PageIndex == _getPageIndex() && drag.Target == PrimarySelection &&
+        _getToolMode() == EditToolMode.SelectGraphics && _getAnnotations().Contains(drag.Target);
+
+    private void UpdateBezierPointPreview(BezierPointDrag drag, Point position)
+    {
+        if (position == drag.Start)
+        {
+            drag.Preview = null;
+            return;
+        }
+        var point = ClipRegionPoint(new Point(
+            drag.Anchor.X * PdfToPixels + position.X - drag.Start.X,
+            drag.Anchor.Y * PdfToPixels + position.Y - drag.Start.Y));
+        var preview = drag.Preview ?? drag.Original.Clone();
+        drag.Preview = PdfDrawingGeometry.TryMoveBezierPoint(drag.Original, preview, drag.Index,
+            new PdfPathPoint { X = point.X / PdfToPixels, Y = point.Y / PdfToPixels }) ? preview : null;
+    }
+
+    private void CompleteBezierPointDrag(BezierPointDrag drag, PointerRoutedEventArgs e)
+    {
+        if (IsCurrent(drag))
+        {
+            UpdateBezierPointPreview(drag, e.GetCurrentPoint(_canvas).Position);
+            if (drag.Preview is { } preview)
+            {
+                object? previous = drag.Manager.GetUIStateFunc?.Invoke();
+                var target = drag.Target;
+                target.X = preview.X; target.Y = preview.Y;
+                target.Width = preview.Width; target.Height = preview.Height;
+                target.DrawingPoints = preview.DrawingPoints;
+                target.IsApplied = false;
+                drag.Manager.CommitAnnotationChange(previous, target.PageIndex);
+            }
+        }
+        _bezierPointDrag = null;
+        _canvas.ReleasePointerCapture(e.Pointer);
+        Render();
+        e.Handled = true;
+    }
+
+    private void CancelBezierPointer(uint pointerId)
+    {
+        if (_bezierPointDrag?.PointerId != pointerId) return;
+        CancelBezierPointDrag();
+        Render();
+    }
+
+    private void CancelBezierPointDrag()
+    {
+        if (_bezierPointDrag == null) return;
+        _bezierPointDrag = null;
+        _canvas.ReleasePointerCaptures();
+    }
 
     private void EnsureCanvasSize()
     {
@@ -828,7 +940,10 @@ public sealed class AnnotationCanvasController
         if (!IsCurrent()) return;
 
         PrimarySelection = selection.PrimarySelection;
-        if (selection.AddedFromPageContent is PdfAnnotation added)
+        if (selectionMode == EditToolMode.SelectGraphics &&
+            PrimarySelection is { Type: AnnotationType.Drawing, DrawingKind: DrawingKind.Bezier })
+            _statusText.Text = Loc.Get("BezierAdjustSelected");
+        else if (selection.AddedFromPageContent is PdfAnnotation added)
         {
             _statusText.Text = added.IsOriginalTextReplacement
                 ? _fontSettings.TextEditingMode == TextEditingMode.Legacy

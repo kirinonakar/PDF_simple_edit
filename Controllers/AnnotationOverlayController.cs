@@ -29,7 +29,8 @@ public sealed class AnnotationOverlayController
         Func<string, Color> parseColor,
         Action<string, Point> resizeStarted,
         Action<InputSystemCursorShape> cursorChanged,
-        Action<PdfAnnotation> toggleNote)
+        Action<PdfAnnotation> toggleNote,
+        PdfAnnotation? bezierPreview)
     {
         foreach (UIElement child in canvas.Children.Where(child => child is not RichEditBox &&
             (child is not FrameworkElement element || element.Tag != NativeInlineTextEditorController.OverlayTag)).ToList())
@@ -99,17 +100,19 @@ public sealed class AnnotationOverlayController
                 continue;
             }
 
-            FrameworkElement? element = CreateElement(annotation, parseColor);
+            bool isPrimary = annotation == primarySelection;
+            var displayed = isPrimary ? bezierPreview ?? annotation : annotation;
+            FrameworkElement? element = CreateElement(displayed, parseColor);
             if (element == null)
                 continue;
 
             element.RenderTransformOrigin = new Point(.5, .5);
             var transforms = new TransformGroup();
             if (element.RenderTransform is Transform existingTransform) transforms.Children.Add(existingTransform);
-            transforms.Children.Add(new RotateTransform { Angle = annotation.Rotation });
+            transforms.Children.Add(new RotateTransform { Angle = displayed.Rotation });
             element.RenderTransform = transforms;
-            Canvas.SetLeft(element, annotation.X * PdfToPixels);
-            Canvas.SetTop(element, annotation.Y * PdfToPixels);
+            Canvas.SetLeft(element, displayed.X * PdfToPixels);
+            Canvas.SetTop(element, displayed.Y * PdfToPixels);
             if (!selectedAnnotations.Contains(annotation))
             {
                 canvas.Children.Insert(insertIndex++, element);
@@ -120,19 +123,28 @@ public sealed class AnnotationOverlayController
             // Wrapping it in a bordered parent changes its layout origin and makes
             // text appear to jump when selection is toggled.
             canvas.Children.Insert(insertIndex++, element);
-            AddSelectionBorder(canvas, annotation, ref insertIndex);
+            AddSelectionBorder(canvas, displayed, ref insertIndex);
 
-            if (annotation == primarySelection &&
+            if (isPrimary &&
                 annotation.Type is AnnotationType.Text or AnnotationType.FreeText or
                 AnnotationType.Image or AnnotationType.Highlight or AnnotationType.Signature or AnnotationType.Drawing)
             {
                 AddResizeHandles(
                     canvas,
-                    annotation,
+                    displayed,
                     ref insertIndex,
                     resizeStarted,
                     cursorChanged);
             }
+        }
+
+        if (primarySelection is { Type: AnnotationType.Drawing, DrawingKind: DrawingKind.Bezier } curve &&
+            curve.PageIndex == pageIndex && selectedAnnotations.Contains(curve))
+        {
+            var handles = new Canvas { Width = canvas.Width, Height = canvas.Height };
+            var points = PdfDrawingGeometry.GetBezierPagePoints(bezierPreview ?? curve);
+            BezierPointHandles.Add(handles, points, points.Count, editable: true);
+            canvas.Children.Add(handles);
         }
     }
 
@@ -372,16 +384,18 @@ public sealed class AnnotationOverlayController
         double height = annotation.Height * PdfToPixels;
         const double size = 8;
         const double offset = size / 2;
+        // Leave room for the independently draggable endpoints at the bounds.
+        double gap = annotation is { Type: AnnotationType.Drawing, DrawingKind: DrawingKind.Bezier } ? 14 : 0;
         var handles = new Dictionary<string, Point>
         {
-            ["NW"] = new(x - offset, y - offset),
-            ["N"] = new(x + width / 2 - offset, y - offset),
-            ["NE"] = new(x + width - offset, y - offset),
-            ["W"] = new(x - offset, y + height / 2 - offset),
-            ["E"] = new(x + width - offset, y + height / 2 - offset),
-            ["SW"] = new(x - offset, y + height - offset),
-            ["S"] = new(x + width / 2 - offset, y + height - offset),
-            ["SE"] = new(x + width - offset, y + height - offset),
+            ["NW"] = new(x - gap - offset, y - gap - offset),
+            ["N"] = new(x + width / 2 - offset, y - gap - offset),
+            ["NE"] = new(x + width + gap - offset, y - gap - offset),
+            ["W"] = new(x - gap - offset, y + height / 2 - offset),
+            ["E"] = new(x + width + gap - offset, y + height / 2 - offset),
+            ["SW"] = new(x - gap - offset, y + height + gap - offset),
+            ["S"] = new(x + width / 2 - offset, y + height + gap - offset),
+            ["SE"] = new(x + width + gap - offset, y + height + gap - offset),
             ["Rotate"] = new(x + width / 2 - offset, y - 24 - offset)
         };
 
