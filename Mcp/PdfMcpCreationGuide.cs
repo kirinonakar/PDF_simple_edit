@@ -36,7 +36,7 @@ internal static class PdfMcpCreationGuide
                 "Images require absolute imagePath and support x/y/width/height/rotation/opacity. Image color/fillColor/lineWidth do not apply.",
                 "Shapes support color, fillColor, lineWidth, opacity, rotation. Supply points [{x,y},...] for polygon (3+) and freehand (2+). Lines default to the box diagonal; height 0 becomes 0.01 pt (see lineHeightAdjustments).",
                 "Arrows use two distinct points [tail, tip] or the box diagonal. arrow is open, triangleArrow is solid, outlineArrow is hollow. triangleArrow uses color unless fillColor is set.",
-                "bezier uses four points [start, control1, control2, end] and supports stroke color, lineWidth, opacity and rotation.",
+                "bezier uses [start, control1, control2, end]. fillColor closes and fills the curve.",
                 "No pageCount with pages. Do not put content/text beside pages. Choose document-specific text, colors, dimensions and positions in the JSON rather than inventing preset fields."
             },
             arguments = JsonSerializer.Deserialize<JsonElement>(PositionedExample)

@@ -951,7 +951,7 @@ namespace PDF_simple_edit.Services
             if (mappedBezier != null)
             {
                 AppendBezier(appearanceCanvas, mappedBezier);
-                appearanceCanvas.Stroke();
+                PaintPath(0);
             }
             else
             {
@@ -960,18 +960,23 @@ namespace PDF_simple_edit.Services
                     var stroke = mappedStrokes[i];
                     appearanceCanvas.MoveTo(stroke[0].X, stroke[0].Y);
                     foreach (var point in stroke.Skip(1)) appearanceCanvas.LineTo(point.X, point.Y);
-                    if (filledStrokeIndexes?.Contains(i) == true)
-                    {
-                        appearanceCanvas.ClosePath();
-                        if (strokeFilledPaths) appearanceCanvas.EoFillStroke();
-                        else appearanceCanvas.Fill();
-                    }
-                    else appearanceCanvas.Stroke();
+                    PaintPath(i);
                 }
             }
             appearanceCanvas.Release();
             inkAnnotation.SetNormalAppearance(appearance.GetPdfObject());
             page.AddAnnotation(inkAnnotation);
+
+            void PaintPath(int index)
+            {
+                if (filledStrokeIndexes?.Contains(index) == true)
+                {
+                    appearanceCanvas.ClosePath();
+                    if (strokeFilledPaths) appearanceCanvas.EoFillStroke();
+                    else appearanceCanvas.Fill();
+                }
+                else appearanceCanvas.Stroke();
+            }
         }
 
         internal static void AppendBezier(PdfCanvas canvas, IReadOnlyList<PdfPathPoint> points)

@@ -14,7 +14,8 @@ public static class PdfDrawingGeometry
 
     public static bool IsArrow(DrawingKind kind) => kind is DrawingKind.Arrow or DrawingKind.TriangleArrow or DrawingKind.OutlineArrow;
 
-    public static bool SupportsFill(DrawingKind kind) => kind is DrawingKind.Rectangle or DrawingKind.Ellipse or DrawingKind.Polygon;
+    public static bool SupportsFill(DrawingKind kind) => kind is DrawingKind.Rectangle or DrawingKind.Ellipse or
+        DrawingKind.Polygon or DrawingKind.Bezier;
 
     public static bool IsFilledStroke(PdfAnnotation annotation, int strokeIndex) =>
         strokeIndex == 0 && (annotation.DrawingKind == DrawingKind.TriangleArrow ||
@@ -193,6 +194,7 @@ public static class PdfDrawingGeometry
         {
             var curve = new List<PdfPathPoint> { points[0] };
             FlattenBezier(points[0], points[1], points[2], points[3], curve, 0);
+            if (annotation.IsFilled) curve.Add(points[0]);
             return new() { curve };
         }
         if (annotation.DrawingKind == DrawingKind.Arrow && points.Count >= 4)

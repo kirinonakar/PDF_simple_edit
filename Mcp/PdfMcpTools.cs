@@ -415,7 +415,8 @@ internal static partial class PdfMcpTools
         canvas.SaveState();
         canvas.ConcatMatrix(matrix.A, matrix.B, matrix.C, matrix.D, matrix.E, matrix.F);
         var color = PdfMcpArguments.PdfColor(colorHex);
-        var fill = a.Has("fillColor") ? PdfMcpArguments.PdfColor(a.Color("fillColor")) : color;
+        bool hasFillColor = a.Has("fillColor");
+        var fill = hasFillColor ? PdfMcpArguments.PdfColor(a.Color("fillColor")) : color;
         canvas.SetStrokeColor(color).SetFillColor(fill).SetLineWidth((float)lineWidth);
         float opacity = (float)a.Number("opacity", kind == "highlight" ? .3 : 1, 0, 1);
         canvas.SetExtGState(new PdfExtGState().SetFillOpacity(opacity).SetStrokeOpacity(opacity));
@@ -426,7 +427,7 @@ internal static partial class PdfMcpTools
         }
         if (bezier != null)
         {
-            canvas.SetLineCapStyle(1);
+            canvas.SetLineCapStyle(1).SetLineJoinStyle(1);
             PdfContentWriter.AppendBezier(canvas, bezier);
         }
         else if (arrow != null)
@@ -453,7 +454,12 @@ internal static partial class PdfMcpTools
             }
         }
         if (kind == "highlight" || (arrow != null && PdfDrawingGeometry.IsFilledStroke(arrow, 0))) canvas.Fill();
-        else if (a.Has("fillColor") && kind is "rectangle" or "ellipse" or "polygon") canvas.FillStroke();
+        else if (hasFillColor && bezier != null)
+        {
+            canvas.ClosePath();
+            canvas.EoFillStroke();
+        }
+        else if (hasFillColor && kind is "rectangle" or "ellipse" or "polygon") canvas.FillStroke();
         else canvas.Stroke();
         canvas.RestoreState(); canvas.Release();
         return adjustHeight ? new(pageIndex + 1, 0, bounds.Height) : null;

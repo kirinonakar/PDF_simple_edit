@@ -182,7 +182,7 @@ public sealed class DrawingInteractionController
         if (_hover != null) points.Add(_hover);
         if (points.Count == 4)
         {
-            var drawing = PdfDrawingGeometry.Create(DrawingKind.Bezier, points, _page, _color, _width);
+            var drawing = PdfDrawingGeometry.Create(DrawingKind.Bezier, points, _page, _color, _width, _isFilled);
             preview.Children.Add(CreatePositionedElement(drawing));
         }
         BezierPointHandles.Add(preview, points, _points.Count, editable: false);
@@ -248,14 +248,19 @@ public sealed class DrawingInteractionController
         // A Path clips its stroke to its layout bounds. Reserve half the stroke
         // plus an antialiasing pixel on every edge, including pointed corners.
         double padding = strokeWidth / 2 + 1;
-        var geometry = new PathGeometry();
+        var geometry = new PathGeometry { FillRule = FillRule.EvenOdd };
         Point Local(PdfPathPoint p) => new(
             (p.X - drawing.X) * PdfToPixels + padding,
             (p.Y - drawing.Y) * PdfToPixels + padding);
         if (drawing.DrawingKind == DrawingKind.Bezier)
         {
             var points = PdfDrawingGeometry.GetPathPoints(drawing);
-            var figure = new PathFigure { StartPoint = Local(points[0]), IsFilled = false };
+            var figure = new PathFigure
+            {
+                StartPoint = Local(points[0]),
+                IsClosed = drawing.IsFilled,
+                IsFilled = drawing.IsFilled
+            };
             figure.Segments.Add(new BezierSegment { Point1 = Local(points[1]), Point2 = Local(points[2]), Point3 = Local(points[3]) });
             geometry.Figures.Add(figure);
         }

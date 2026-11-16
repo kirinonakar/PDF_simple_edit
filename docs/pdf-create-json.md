@@ -131,6 +131,8 @@ A cubic Bézier takes four absolute page `points` in order: start, first
 control, second control, end. At least two points must differ. Use
 `"type": "bezier"` on a positioned page or `"kind": "bezier"` with
 `pdf_add_graphic` and `pdf_edit_graphic`. Rotation uses the curve's bounds.
+With `fillColor`, the curve closes along the straight line between its
+endpoints and fills the enclosed area.
 
 ## JSON files and CLI creation
 
