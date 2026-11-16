@@ -22,7 +22,7 @@
           KeyDown="MainWindow_KeyDown"
           KeyUp="MainWindow_KeyUp">
         <Grid.RowDefinitions>
-            <RowDefinition Height="48"/>
+            <RowDefinition Height="32"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
