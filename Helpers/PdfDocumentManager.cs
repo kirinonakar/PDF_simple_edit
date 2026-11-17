@@ -607,10 +607,14 @@ namespace PDF_simple_edit.Helpers
             var bezier = annotation.DrawingKind == DrawingKind.Bezier
                 ? PdfDrawingGeometry.GetPathPoints(annotation).Select(Rotate).ToList()
                 : null;
+            Color? fill = annotation.IsFilled && PdfDrawingGeometry.SupportsFill(annotation.DrawingKind) &&
+                annotation.FillGradient is { } gradient
+                ? PdfGradientPattern.Create(gradient, bounds, PdfPageCoordinates.ToDisplay(doc.GetPage(annotation.PageIndex + 1)).Inverse().After(rotation))
+                : null;
             _contentWriter.AddPaths(doc, annotation.PageIndex, strokes, color, annotation.LineWidth,
                 PdfSignatureMetadata.Serialize(annotation),
                 Enumerable.Range(0, strokes.Count).Where(i => PdfDrawingGeometry.IsFilledStroke(annotation, i)).ToHashSet(),
-                strokeFilledPaths: PdfDrawingGeometry.SupportsFill(annotation.DrawingKind), bezier: bezier);
+                strokeFilledPaths: PdfDrawingGeometry.SupportsFill(annotation.DrawingKind), bezier: bezier, fillColor: fill);
         }
 
         public void AddImage(

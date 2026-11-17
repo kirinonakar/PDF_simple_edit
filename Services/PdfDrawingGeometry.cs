@@ -35,7 +35,7 @@ public static class PdfDrawingGeometry
     };
 
     public static PdfAnnotation Create(DrawingKind kind, IReadOnlyList<PdfPathPoint> points,
-        int pageIndex, string color, double lineWidth, bool isFilled = false)
+        int pageIndex, string color, double lineWidth, bool isFilled = false, PdfFillGradient? fillGradient = null)
     {
         var anchors = points.Select(p => p.Clone()).ToList();
         if (IsArrow(kind) && anchors.Count >= 2)
@@ -74,7 +74,8 @@ public static class PdfDrawingGeometry
         var annotation = new PdfAnnotation
         {
             Type = AnnotationType.Drawing, DrawingKind = kind, PageIndex = pageIndex,
-            IsFilled = isFilled && SupportsFill(kind), Color = color, LineWidth = lineWidth
+            IsFilled = isFilled && SupportsFill(kind), Color = color, LineWidth = lineWidth,
+            FillGradient = SupportsFill(kind) ? fillGradient : null
         };
         SetBoundsAndPoints(annotation, anchors, kind == DrawingKind.Bezier ? GetBezierBounds(anchors) : BoundsOf(anchors));
         return annotation;
@@ -128,7 +129,7 @@ public static class PdfDrawingGeometry
         return PdfAffineTransform.Between(bounds, bounds, annotation.Rotation);
     }
 
-    private static PdfTextBox BoundsOf(List<PdfPathPoint> points)
+    internal static PdfTextBox BoundsOf(IReadOnlyList<PdfPathPoint> points)
     {
         double x = points.Min(p => p.X), y = points.Min(p => p.Y);
         return new(x, y, points.Max(p => p.X) - x, points.Max(p => p.Y) - y);

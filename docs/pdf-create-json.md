@@ -134,6 +134,20 @@ control, second control, end. At least two points must differ. Use
 With `fillColor`, the curve closes along the straight line between its
 endpoints and fills the enclosed area.
 
+`fillGradient` fills a rectangle, ellipse, polygon or Bézier curve. Supply it
+instead of `fillColor`. The gradient uses the shape's bounds and rotates with the
+shape. A filled Bézier closes between its endpoints.
+
+```json
+{"type":"rectangle","x":48,"y":32,"width":220,"height":90,
+ "fillGradient":{"type":"linear","startColor":"#154773","endColor":"#C9E7FF","angle":35}}
+```
+
+Linear angles are clockwise in page coordinates. At the default `0` degrees,
+the gradient runs left to right. Radial gradients run from the shape's center
+to the edge of its bounding ellipse. Use the same `fillGradient` object with
+`pdf_add_graphic`, or with `pdf_edit_graphic` when replacing a shape with `kind`.
+
 ## JSON files and CLI creation
 
 Write the creation arguments as UTF-8 JSON, then call:

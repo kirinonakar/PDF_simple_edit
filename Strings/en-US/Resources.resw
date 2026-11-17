@@ -1430,6 +1430,33 @@ To remove passwords individually, use Encryption and password settings.</value>
   <data name="FillShape" xml:space="preserve">
     <value>Fill</value>
   </data>
+  <data name="DrawingFillType" xml:space="preserve">
+    <value>Fill type</value>
+  </data>
+  <data name="DrawingFillSolid" xml:space="preserve">
+    <value>Solid</value>
+  </data>
+  <data name="DrawingFillLinear" xml:space="preserve">
+    <value>Linear gradient</value>
+  </data>
+  <data name="DrawingFillRadial" xml:space="preserve">
+    <value>Radial gradient</value>
+  </data>
+  <data name="DrawingGradientAngle" xml:space="preserve">
+    <value>Angle (°)</value>
+  </data>
+  <data name="DrawingStrokeColor" xml:space="preserve">
+    <value>Stroke color</value>
+  </data>
+  <data name="DrawingColorTarget" xml:space="preserve">
+    <value>Color to edit</value>
+  </data>
+  <data name="DrawingGradientStartColor" xml:space="preserve">
+    <value>Start color</value>
+  </data>
+  <data name="DrawingGradientEndColor" xml:space="preserve">
+    <value>End color</value>
+  </data>
   <data name="FillShapeTooltip" xml:space="preserve">
     <value>Fill the interior of rectangles, ellipses, and polygons with the selected color.</value>
   </data>

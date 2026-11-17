@@ -888,7 +888,7 @@ namespace PDF_simple_edit.Services
         public void AddPaths(PdfDocument doc, int pageIndex,
             IEnumerable<IReadOnlyList<PdfPathPoint>> strokes, Color color, double lineWidth, string? metadata = null,
             IReadOnlySet<int>? filledStrokeIndexes = null, bool strokeFilledPaths = false,
-            IReadOnlyList<PdfPathPoint>? bezier = null)
+            IReadOnlyList<PdfPathPoint>? bezier = null, Color? fillColor = null)
         {
             if (pageIndex < 0 || pageIndex >= doc.GetNumberOfPages())
                 return;
@@ -945,7 +945,7 @@ namespace PDF_simple_edit.Services
             var appearance = new iText.Kernel.Pdf.Xobject.PdfFormXObject(rectangle);
             var appearanceCanvas = new PdfCanvas(appearance, doc);
             appearanceCanvas.SetStrokeColor(color ?? ColorConstants.BLACK)
-                .SetFillColor(color ?? ColorConstants.BLACK)
+                .SetFillColor(fillColor ?? color ?? ColorConstants.BLACK)
                 .SetLineWidth((float)Math.Clamp(lineWidth, .1, 100))
                 .SetLineCapStyle(1).SetLineJoinStyle(1);
             if (mappedBezier != null)

@@ -26,6 +26,7 @@ public sealed class DrawingInteractionController
     private readonly Func<string> _getColor;
     private readonly Func<double> _getWidth;
     private readonly Func<bool> _getFill;
+    private readonly Func<PdfFillGradient?> _getFillGradient;
     private readonly Action<PdfAnnotation> _commit;
     private readonly List<PdfPathPoint> _points = new();
     private PdfDocumentManager? _manager;
@@ -34,16 +35,19 @@ public sealed class DrawingInteractionController
     private string _color = "#000000";
     private double _width;
     private bool _isFilled;
+    private PdfFillGradient? _fillGradient;
     private uint? _pointerId;
     private PdfPathPoint? _hover;
     private FrameworkElement? _preview;
 
     public DrawingInteractionController(Canvas canvas, TextBlock status,
         Func<PdfDocumentManager> getManager, Func<int> getPage, Func<EditToolMode> getMode,
-        Func<string> getColor, Func<double> getWidth, Func<bool> getFill, Action<PdfAnnotation> commit)
+        Func<string> getColor, Func<double> getWidth, Func<bool> getFill, Func<PdfFillGradient?> getFillGradient,
+        Action<PdfAnnotation> commit)
     {
         _canvas = canvas; _status = status; _getManager = getManager; _getPage = getPage;
-        _getMode = getMode; _getColor = getColor; _getWidth = getWidth; _getFill = getFill; _commit = commit;
+        _getMode = getMode; _getColor = getColor; _getWidth = getWidth; _getFill = getFill;
+        _getFillGradient = getFillGradient; _commit = commit;
         canvas.PointerCaptureLost += (_, e) => { if (_pointerId == e.Pointer.PointerId) Cancel(); };
         canvas.PointerCanceled += (_, _) => Cancel();
     }
@@ -69,6 +73,7 @@ public sealed class DrawingInteractionController
             _manager = _getManager(); _page = _getPage();
             _kind = PdfDrawingGeometry.GetKind(_getMode()); _color = _getColor(); _width = _getWidth();
             _isFilled = _getFill();
+            _fillGradient = _getFillGradient();
         }
         if (_kind == DrawingKind.Bezier)
         {
@@ -170,7 +175,7 @@ public sealed class DrawingInteractionController
         }
         var points = GetPreviewPoints();
         if (points.Count < 2) return;
-        var drawing = PdfDrawingGeometry.Create(_kind, points, _page, _color, _width, _isFilled);
+        var drawing = CreateDrawing(points);
         _preview = CreatePositionedElement(drawing);
         _canvas.Children.Add(_preview);
     }
@@ -182,7 +187,7 @@ public sealed class DrawingInteractionController
         if (_hover != null) points.Add(_hover);
         if (points.Count == 4)
         {
-            var drawing = PdfDrawingGeometry.Create(DrawingKind.Bezier, points, _page, _color, _width, _isFilled);
+            var drawing = CreateDrawing(points);
             preview.Children.Add(CreatePositionedElement(drawing));
         }
         BezierPointHandles.Add(preview, points, _points.Count, editable: false);
@@ -232,10 +237,13 @@ public sealed class DrawingInteractionController
             Redraw();
             return;
         }
-        var drawing = valid ? PdfDrawingGeometry.Create(_kind, points, _page, _color, _width, _isFilled) : null;
+        var drawing = valid ? CreateDrawing(points) : null;
         Cancel();
         if (drawing != null) { _commit(drawing); _status.Text = Loc.Get("DrawingAddedUseSelectGraphicsGToEditIt"); }
     }
+
+    private PdfAnnotation CreateDrawing(IReadOnlyList<PdfPathPoint> points) =>
+        PdfDrawingGeometry.Create(_kind, points, _page, _color, _width, _isFilled, _fillGradient);
 
     private static double Distance(PdfPathPoint a, PdfPathPoint b) =>
         Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2));
@@ -276,11 +284,14 @@ public sealed class DrawingInteractionController
                 geometry.Figures.Add(figure);
             }
         }
+        var color = new SolidColorBrush(EditorColorService.Parse(drawing.Color));
         var path = new Microsoft.UI.Xaml.Shapes.Path
         {
             Data = geometry, Width = width + padding * 2, Height = height + padding * 2,
-            Stroke = drawing.DrawingKind == DrawingKind.TriangleArrow ? null : new SolidColorBrush(EditorColorService.Parse(drawing.Color)),
-            Fill = new SolidColorBrush(EditorColorService.Parse(drawing.Color)),
+            Stroke = drawing.DrawingKind == DrawingKind.TriangleArrow ? null : color,
+            Fill = drawing.IsFilled && drawing.FillGradient is { } gradient
+                ? CreateGradientBrush(gradient, width, height, padding)
+                : color,
             StrokeThickness = strokeWidth, StrokeLineJoin = PenLineJoin.Round,
             StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round,
             IsHitTestVisible = false
@@ -292,5 +303,30 @@ public sealed class DrawingInteractionController
         Canvas.SetTop(path, -padding);
         container.Children.Add(path);
         return container;
+    }
+
+    internal static Brush CreateGradientBrush(PdfFillGradient gradient, double width, double height, double inset = 0)
+    {
+        var first = EditorColorService.Parse(gradient.StartColor);
+        var last = EditorColorService.Parse(gradient.EndColor);
+        if (gradient.Kind == PdfGradientKind.Radial)
+        {
+            var center = new Point(inset + width / 2, inset + height / 2);
+            return new RadialGradientBrush
+            {
+                MappingMode = BrushMappingMode.Absolute,
+                Center = center, GradientOrigin = center,
+                RadiusX = width / 2, RadiusY = height / 2, FallbackColor = first,
+                GradientStops = { new() { Offset = 0, Color = first }, new() { Offset = 1, Color = last } }
+            };
+        }
+        var (start, end) = gradient.LinearAxis(width, height);
+        return new LinearGradientBrush
+        {
+            MappingMode = BrushMappingMode.Absolute,
+            StartPoint = new Point(inset + start.X, inset + start.Y),
+            EndPoint = new Point(inset + end.X, inset + end.Y),
+            GradientStops = new() { new() { Offset = 0, Color = first }, new() { Offset = 1, Color = last } }
+        };
     }
 }

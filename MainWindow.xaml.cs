@@ -79,6 +79,9 @@ namespace PDF_simple_edit
         private string _drawingColor = "#FF0000";
         private double _drawingLineWidth = 2;
         private bool _drawingFill;
+        private PdfFillGradient? _drawingFillGradient;
+        private PdfFillGradient _drawingGradientPalette = new(PdfGradientKind.Linear, "#FF0000", "#FFFFFF");
+        private bool _isSyncingDrawingFill;
         private double _standardDrawingLineWidth = 2;
         private double _triangleArrowLineWidth = 2;
         private bool _isSyncingDrawingWidth;
@@ -166,6 +169,7 @@ namespace PDF_simple_edit
                     () => _drawingColor,
                     () => _drawingLineWidth,
                     () => _drawingFill,
+                    () => _drawingFillGradient,
                     color =>
                     {
                         _fontSettings.HighlightColor = color.ToString();
@@ -559,14 +563,34 @@ namespace PDF_simple_edit
             foreach (var item in DrawingToolItems)
                 item.Click += DrawingTool_Click;
             EditorToolbar.DrawingSettingsFlyout.Opening += (_, _) => UpdateDrawingFillControl();
-            EditorToolbar.DrawingFillCheckBox.Click += (_, _) =>
+            EditorToolbar.DrawingFillCheckBox.Click += (_, _) => ApplyDrawingFillSettings();
+            EditorToolbar.DrawingFillType.SelectionChanged += (_, _) => ApplyDrawingFillSettings();
+            EditorToolbar.DrawingColorTarget.SelectionChanged += (_, _) =>
             {
-                _drawingFill = EditorToolbar.DrawingFillCheckBox.IsChecked == true;
-                ApplySelectedDrawingStyle(changeColor: false, changeFill: true);
+                if (!_isSyncingDrawingFill) UpdateDrawingGradientControls();
+            };
+            EditorToolbar.DrawingGradientAngle.ValueChanged += (_, args) =>
+            {
+                if (_isSyncingDrawingFill || !double.IsFinite(args.NewValue)) return;
+                _drawingGradientPalette = _drawingGradientPalette with { Angle = args.NewValue };
+                ApplyDrawingFillSettings();
             };
             EditorToolbar.DrawingColorPicker.Color = ParseColor(_drawingColor);
             EditorToolbar.DrawingColorPicker.ColorChanged += (_, args) =>
             {
+                if (_isSyncingDrawingFill) return;
+                string rgb = $"#{args.NewColor.R:X2}{args.NewColor.G:X2}{args.NewColor.B:X2}";
+                switch (EditorToolbar.DrawingColorTarget.SelectedIndex)
+                {
+                    case 1:
+                        _drawingGradientPalette = _drawingGradientPalette with { StartColor = rgb };
+                        ApplyDrawingFillSettings();
+                        return;
+                    case 2:
+                        _drawingGradientPalette = _drawingGradientPalette with { EndColor = rgb };
+                        ApplyDrawingFillSettings();
+                        return;
+                }
                 _drawingColor = args.NewColor.ToString();
                 EditorToolbar.DrawingColorIndicator.Background = new SolidColorBrush(args.NewColor);
                 ApplySelectedDrawingStyle(changeColor: true);
@@ -1217,19 +1241,84 @@ namespace PDF_simple_edit
                 .Where(a => a.Type == AnnotationType.Drawing && PdfDrawingGeometry.SupportsFill(a.DrawingKind)).ToList();
             bool canFill = PdfDrawingGeometry.IsDrawingTool(_currentTool) &&
                 PdfDrawingGeometry.SupportsFill(PdfDrawingGeometry.GetKind(_currentTool));
-            EditorToolbar.DrawingFillCheckBox.Visibility = canFill || selected.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            EditorToolbar.DrawingFillCheckBox.IsChecked = selected.Count > 0 ? selected.All(a => a.IsFilled) : _drawingFill;
+            var gradient = selected.Count > 0 ? selected[^1].FillGradient : _drawingFillGradient;
+            if (gradient != null) _drawingGradientPalette = gradient;
+            _isSyncingDrawingFill = true;
+            try
+            {
+                EditorToolbar.DrawingFillCheckBox.Visibility = canFill || selected.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+                EditorToolbar.DrawingFillCheckBox.IsChecked = selected.Count > 0 ? selected.All(a => a.IsFilled) : _drawingFill;
+                EditorToolbar.DrawingFillType.SelectedIndex = gradient?.Kind switch
+                {
+                    PdfGradientKind.Linear => 1,
+                    PdfGradientKind.Radial => 2,
+                    _ => 0
+                };
+                EditorToolbar.DrawingGradientAngle.Value = (_drawingGradientPalette.Angle % 360 + 360) % 360;
+                EditorToolbar.DrawingColorTarget.SelectedIndex = 0;
+            }
+            finally { _isSyncingDrawingFill = false; }
+            UpdateDrawingGradientControls();
         }
 
-        private void ApplySelectedDrawingStyle(bool changeColor, bool changeFill = false)
+        private void UpdateDrawingGradientControls()
         {
+            _isSyncingDrawingFill = true;
+            try
+            {
+                bool fill = EditorToolbar.DrawingFillCheckBox.Visibility == Visibility.Visible &&
+                    EditorToolbar.DrawingFillCheckBox.IsChecked == true;
+                int type = EditorToolbar.DrawingFillType.SelectedIndex;
+                bool gradient = fill && type is 1 or 2;
+                EditorToolbar.DrawingFillType.Visibility = fill ? Visibility.Visible : Visibility.Collapsed;
+                EditorToolbar.DrawingGradientAngle.Visibility = gradient && type == 1 ? Visibility.Visible : Visibility.Collapsed;
+                EditorToolbar.DrawingGradientColors.Visibility = gradient ? Visibility.Visible : Visibility.Collapsed;
+                if (!gradient) EditorToolbar.DrawingColorTarget.SelectedIndex = 0;
+                else EditorToolbar.DrawingGradientSwatch.Background = DrawingInteractionController.CreateGradientBrush(
+                    _drawingGradientPalette with { Kind = type == 1 ? PdfGradientKind.Linear : PdfGradientKind.Radial },
+                    EditorToolbar.DrawingGradientSwatch.Width, EditorToolbar.DrawingGradientSwatch.Height);
+                EditorToolbar.DrawingColorPicker.Color = ParseColor(EditorToolbar.DrawingColorTarget.SelectedIndex switch
+                {
+                    1 => _drawingGradientPalette.StartColor,
+                    2 => _drawingGradientPalette.EndColor,
+                    _ => _drawingColor
+                });
+            }
+            finally { _isSyncingDrawingFill = false; }
+        }
+
+        private void ApplyDrawingFillSettings()
+        {
+            if (_isSyncingDrawingFill) return;
+            _drawingFill = EditorToolbar.DrawingFillCheckBox.IsChecked == true;
+            _drawingFillGradient = EditorToolbar.DrawingFillType.SelectedIndex switch
+            {
+                1 => _drawingGradientPalette with { Kind = PdfGradientKind.Linear },
+                2 => _drawingGradientPalette with { Kind = PdfGradientKind.Radial },
+                _ => null
+            };
+            UpdateDrawingGradientControls();
             var selected = _annotationCanvasController.SelectedAnnotations.Where(a => a.Type == AnnotationType.Drawing &&
-                (!changeFill || PdfDrawingGeometry.SupportsFill(a.DrawingKind) && a.IsFilled != _drawingFill)).ToList();
+                PdfDrawingGeometry.SupportsFill(a.DrawingKind) &&
+                (a.IsFilled != _drawingFill || _drawingFill && a.FillGradient != _drawingFillGradient)).ToList();
+            if (selected.Count == 0) return;
+            foreach (var drawing in selected)
+            {
+                drawing.IsFilled = _drawingFill;
+                if (_drawingFill) drawing.FillGradient = _drawingFillGradient;
+                drawing.IsApplied = false;
+            }
+            _pdfManager.MarkModified(pageIndex: _currentPageIndex);
+            RenderAnnotationOverlays();
+        }
+
+        private void ApplySelectedDrawingStyle(bool changeColor)
+        {
+            var selected = _annotationCanvasController.SelectedAnnotations.Where(a => a.Type == AnnotationType.Drawing).ToList();
             if (selected.Count == 0) return;
             foreach (var drawing in selected)
             {
                 if (changeColor) drawing.Color = _drawingColor;
-                else if (changeFill) drawing.IsFilled = _drawingFill;
                 else PdfDrawingGeometry.UpdateLineWidth(drawing, _drawingLineWidth);
                 drawing.IsApplied = false;
             }

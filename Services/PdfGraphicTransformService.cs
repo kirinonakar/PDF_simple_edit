@@ -51,10 +51,26 @@ internal static class PdfGraphicTransformService
                 var after = new Dictionary<int, string>();
                 int pathIndex = -1, imageIndex = -1, shadingIndex = -1;
                 var pathCommands = new List<int>();
+                var state = (Ctm: PdfAffineTransform.Identity, FillPattern: (PdfName?)null);
+                var states = new Stack<(PdfAffineTransform Ctm, PdfName? FillPattern)>();
+                var resources = stream.GetAsDictionary(PdfName.Resources) is { } localResources
+                    ? new PdfResources(localResources) : page.GetResources();
                 int handled = 0;
                 for (int i = 0; i < operations.Count; i++)
                 {
                     string name = operations[i][^1].ToString()!;
+                    switch (name)
+                    {
+                        case "q": states.Push(state); break;
+                        case "Q": if (states.TryPop(out var saved)) state = saved; break;
+                        case "cm" when operations[i].Count == 7 &&
+                            operations[i].Take(6).All(value => value is PdfNumber):
+                            var m = operations[i].Take(6).Cast<PdfNumber>().Select(n => n.DoubleValue()).ToArray();
+                            state.Ctm = state.Ctm.After(new(m[0], m[1], m[2], m[3], m[4], m[5]));
+                            break;
+                        case "scn": state.FillPattern = operations[i].Count > 1 ? operations[i][^2] as PdfName : null; break;
+                        case "g": case "rg": case "k": case "cs": case "sc": state.FillPattern = null; break;
+                    }
                     if (IsPathCommand(name)) pathCommands.Add(i);
                     bool paint = IsPathEnd(name);
                     if (paint) pathIndex++;
@@ -68,6 +84,7 @@ internal static class PdfGraphicTransformService
                     if (matches.Count == 1)
                     {
                         var target = matches[0];
+                        PdfName? gradient = null;
                         if (style != null && target.Operation.IsImageOperation &&
                             (style.StrokeColor != null || style.FillColor != null || style.LineWidth != null))
                             throw new ArgumentException("Raster images cannot be recolored as vector paths; supply imagePath to replace the image.");
@@ -90,6 +107,12 @@ internal static class PdfGraphicTransformService
                             // includes the containing form's full placement matrix.
                             foreach (int command in pathCommands)
                                 operations[command] = TransformPath(operations[command], target.Transform);
+                            if (style?.FillColor == null && target.Transform != PdfAffineTransform.Identity &&
+                                state.FillPattern is { } pattern && (name is "f" or "F" or "f*" or "B" or "B*" or "b" or "b*"))
+                            {
+                                var streamTransform = state.Ctm.After(target.Transform).After(state.Ctm.Inverse());
+                                gradient = PdfGradientPattern.Transform(resources, pattern, streamTransform);
+                            }
                             double scale = Math.Sqrt(Math.Abs(target.Transform.A * target.Transform.D - target.Transform.B * target.Transform.C));
                             before[i] = Number(target.Operation.LineWidth * scale) + " w\n";
                             after[i] = Number(target.Operation.LineWidth) + " w\n";
@@ -99,17 +122,18 @@ internal static class PdfGraphicTransformService
                             before[i] = target.Transform.Command;
                             after[i] = target.Transform.Inverse().Command;
                         }
-                        if (style is { StrokeColor: not null } or { FillColor: not null } or
+                        if (gradient != null || style is { StrokeColor: not null } or { FillColor: not null } or
                             { LineWidth: not null } or { Opacity: not null })
                         {
                             string paintStyle = "q\n";
-                            if (style.StrokeColor is { } stroke) paintStyle += ColorCommand(stroke, "RG");
-                            if (style.FillColor is { } fill) paintStyle += ColorCommand(fill, "rg");
-                            if (style.LineWidth is { } width) paintStyle += Number(width) + " w\n";
-                            if (style.Opacity is { } opacity)
+                            if (gradient != null) paintStyle += $"/Pattern cs\n{gradient} scn\n";
+                            if (style?.StrokeColor is { } stroke) paintStyle += ColorCommand(stroke, "RG");
+                            if (style?.FillColor is { } fill) paintStyle += ColorCommand(fill, "rg");
+                            if (style?.LineWidth is { } width) paintStyle += Number(width) + " w\n";
+                            if (style?.Opacity is { } opacity)
                             {
-                                var state = new iText.Kernel.Pdf.Extgstate.PdfExtGState().SetStrokeOpacity((float)opacity).SetFillOpacity((float)opacity);
-                                var stateName = page.GetResources().AddExtGState(state);
+                                var alpha = new iText.Kernel.Pdf.Extgstate.PdfExtGState().SetStrokeOpacity((float)opacity).SetFillOpacity((float)opacity);
+                                var stateName = page.GetResources().AddExtGState(alpha);
                                 // A nested form uses its own resources, so an opacity
                                 // name installed on the page is not visible there.
                                 if (!Enumerable.Range(0, page.GetContentStreamCount()).Any(s => page.GetContentStream(s) == stream))

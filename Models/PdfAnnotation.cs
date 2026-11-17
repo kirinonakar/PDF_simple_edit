@@ -59,6 +59,7 @@ namespace PDF_simple_edit.Models
         public List<PdfPathPoint> SignaturePoints { get; set; } = new();
         public DrawingKind DrawingKind { get; set; }
         public bool IsFilled { get; set; }
+        public PdfFillGradient? FillGradient { get; set; }
         // Drawing points are relative to the annotation bounds so transforms
         // apply to them. Bézier control points may lie outside those bounds.
         public List<PdfPathPoint> DrawingPoints { get; set; } = new();
@@ -123,6 +124,7 @@ namespace PDF_simple_edit.Models
                 SignaturePoints = this.SignaturePoints.Select(point => point.Clone()).ToList(),
                 DrawingKind = this.DrawingKind,
                 IsFilled = this.IsFilled,
+                FillGradient = this.FillGradient,
                 DrawingPoints = this.DrawingPoints.Select(point => point.Clone()).ToList(),
                 ImagePath = this.ImagePath,
                 CreatedAt = this.CreatedAt,
@@ -185,6 +187,7 @@ namespace PDF_simple_edit.Models
                 LineWidth = annotation.LineWidth,
                 DrawingKind = annotation.DrawingKind,
                 IsFilled = annotation.IsFilled,
+                FillGradient = annotation.FillGradient,
                 DrawingPoints = annotation.DrawingPoints.Select(point => point.Clone()).ToList(),
                 Points = annotation.SignaturePoints.Select(point => point.Clone()).ToList()
             });
@@ -232,6 +235,7 @@ namespace PDF_simple_edit.Models
                     SignaturePoints = payload.Points.Select(point => point.Clone()).ToList(),
                     DrawingKind = payload.DrawingKind,
                     IsFilled = payload.IsFilled,
+                    FillGradient = payload.FillGradient is { IsValid: true } ? payload.FillGradient : null,
                     DrawingPoints = payload.DrawingPoints.Select(point => point.Clone()).ToList(),
                     IsApplied = true
                 };
@@ -256,6 +260,8 @@ namespace PDF_simple_edit.Models
             public List<PdfPathPoint> Points { get; set; } = new();
             public DrawingKind DrawingKind { get; set; }
             public bool IsFilled { get; set; }
+            [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+            public PdfFillGradient? FillGradient { get; set; }
             public List<PdfPathPoint> DrawingPoints { get; set; } = new();
         }
     }

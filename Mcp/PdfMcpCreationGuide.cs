@@ -37,6 +37,7 @@ internal static class PdfMcpCreationGuide
                 "Shapes support color, fillColor, lineWidth, opacity, rotation. Supply points [{x,y},...] for polygon (3+) and freehand (2+). Lines default to the box diagonal; height 0 becomes 0.01 pt (see lineHeightAdjustments).",
                 "Arrows use two distinct points [tail, tip] or the box diagonal. arrow is open, triangleArrow is solid, outlineArrow is hollow. triangleArrow uses color unless fillColor is set.",
                 "bezier uses [start, control1, control2, end]. fillColor closes and fills the curve.",
+                "fillGradient: {type:linear|radial,startColor,endColor,angle?} for rectangle, ellipse, polygon or bezier. Use instead of fillColor.",
                 "No pageCount with pages. Do not put content/text beside pages. Choose document-specific text, colors, dimensions and positions in the JSON rather than inventing preset fields."
             },
             arguments = JsonSerializer.Deserialize<JsonElement>(PositionedExample)

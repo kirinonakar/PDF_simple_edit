@@ -109,6 +109,7 @@ public sealed class AnnotationCanvasController
         Func<string> getDrawingColor,
         Func<double> getDrawingLineWidth,
         Func<bool> getDrawingFill,
+        Func<PdfFillGradient?> getDrawingFillGradient,
         Action<Windows.UI.Color> applyPickedHighlightColor,
         Func<Task> renderCurrentPageAsync,
         Action<bool> focusAfterInlineEdit)
@@ -132,7 +133,7 @@ public sealed class AnnotationCanvasController
         TextSelection = new(canvas, statusText, getManager, getPageIndex, getToolMode);
         _selectionController = new AnnotationSelectionController(_contentService);
         _drawingController = new DrawingInteractionController(canvas, statusText, getManager, getPageIndex,
-            getToolMode, getDrawingColor, getDrawingLineWidth, getDrawingFill, annotation =>
+            getToolMode, getDrawingColor, getDrawingLineWidth, getDrawingFill, getDrawingFillGradient, annotation =>
             {
                 var manager = _getManager();
                 bool isBezier = annotation.DrawingKind == DrawingKind.Bezier;

@@ -71,6 +71,17 @@ internal static partial class PdfMcpTools
         ["kind"] = new { type = "string", @enum = GraphicKinds },
         ["imagePath"] = Field("string", "Required for kind=image; also replaces existing artwork."),
         ["color"] = Style["color"], ["fillColor"] = Field("string", "#RRGGBB fill. triangleArrow defaults to color; recolor it with fillColor."),
+        ["fillGradient"] = new
+        {
+            type = "object", description = "Gradient fill for rectangle, ellipse, polygon or bezier.",
+            properties = new
+            {
+                type = new { type = "string", @enum = new[] { "linear", "radial" } },
+                startColor = Field("string", "#RRGGBB"), endColor = Field("string", "#RRGGBB"),
+                angle = Field("number", "Linear clockwise degrees, default 0.")
+            },
+            required = new[] { "type", "startColor", "endColor" }, additionalProperties = false
+        },
         ["lineWidth"] = Field("number", "Stroke or triangleArrow shaft width in points (default 2)."),
         ["opacity"] = Field("number", "Opacity from 0 to 1 (default 1; highlights 0.3)."),
         ["rotation"] = Field("number", "Clockwise degrees about center; default 0."),
@@ -295,7 +306,8 @@ internal static partial class PdfMcpTools
                     { RemoveAnnotation(pdf, page, annotation); WriteGraphic(pdf, original); }
                     else
                     {
-                        if (a.Has("rotation") || a.Has("color") || a.Has("fillColor") || a.Has("lineWidth") || a.Has("opacity") || a.Has("points"))
+                        if (a.Has("rotation") || a.Has("color") || a.Has("fillColor") || a.Has("fillGradient") ||
+                            a.Has("lineWidth") || a.Has("opacity") || a.Has("points"))
                             throw new ArgumentException("Annotation artwork changes require kind or imagePath to replace the artwork.");
                         var bounds = PdfPageCoordinates.ToDisplay(page).Inverse().Map(a.Bounds(original));
                         annotation.SetRectangle(new PdfArray(new[] { (float)bounds.X, (float)bounds.Y, (float)bounds.Right, (float)bounds.Bottom }));
@@ -328,6 +340,7 @@ internal static partial class PdfMcpTools
                     else
                     {
                         if (a.Has("points")) throw new ArgumentException("Changing path points requires kind to replace the graphic.");
+                        if (a.Has("fillGradient")) throw new ArgumentException("Changing fillGradient requires kind to replace the graphic.");
                         var transform = PdfAffineTransform.Between(original, a.Bounds(original), a.Number("rotation"));
                         var paint = new PdfGraphicStyle(a.Has("color") ? a.Color() : null, a.Has("fillColor") ? a.Color("fillColor") : null,
                             a.Has("lineWidth") ? a.Number("lineWidth", 2, .1, 100) : null,
@@ -363,6 +376,7 @@ internal static partial class PdfMcpTools
         string kind = a.Has("imagePath") && !a.Has("kind") ? "image" : a.Text("kind");
         bool adjustHeight = kind == "line" && a.Has("height") && a.Number("height") == 0;
         var bounds = a.Bounds(original, heightOverride: adjustHeight ? .01 : null);
+        var gradient = ReadFillGradient(a, kind);
         if (kind == "image")
         {
             if (a.Has("color") || a.Has("fillColor") || a.Has("lineWidth") || a.Has("points"))
@@ -393,6 +407,7 @@ internal static partial class PdfMcpTools
         PdfAnnotation? arrow = null;
         PdfPathPoint[]? bezier = null;
         var rotationBounds = bounds;
+        var fillBounds = bounds;
         if (arrowKind is { } drawingKind)
         {
             var ends = ReadPoints() ?? BoundsDiagonal();
@@ -408,6 +423,7 @@ internal static partial class PdfMcpTools
                 throw new ArgumentException("Bézier needs four points [start, control1, control2, end], with at least two distinct.");
             var curveBounds = PdfDrawingGeometry.GetBezierBounds(bezier);
             rotationBounds = curveBounds with { Width = Math.Max(curveBounds.Width, 1), Height = Math.Max(curveBounds.Height, 1) };
+            fillBounds = rotationBounds;
         }
         var page = pdf.GetPage(pageIndex + 1);
         var matrix = PdfPageCoordinates.ToDisplay(page).Inverse().After(PdfAffineTransform.Between(rotationBounds, rotationBounds, a.Number("rotation")));
@@ -448,12 +464,22 @@ internal static partial class PdfMcpTools
                         : throw new ArgumentException("points are required for polygons and freehand paths."));
                     if (kind == "polygon" && path.Length < 3) throw new ArgumentException("A polygon needs at least 3 points.");
                     AppendPath(path);
-                    if (kind == "polygon") canvas.ClosePath();
+                    if (kind == "polygon")
+                    {
+                        canvas.ClosePath();
+                        if (gradient != null) fillBounds = PdfDrawingGeometry.BoundsOf(path);
+                    }
                     break;
                 default: throw new ArgumentException("Unsupported graphic kind.");
             }
         }
-        if (kind == "highlight" || (arrow != null && PdfDrawingGeometry.IsFilledStroke(arrow, 0))) canvas.Fill();
+        if (gradient != null)
+        {
+            canvas.SetFillColor(PdfGradientPattern.Create(gradient, fillBounds, matrix));
+            if (bezier != null) canvas.ClosePath();
+            canvas.EoFillStroke();
+        }
+        else if (kind == "highlight" || (arrow != null && PdfDrawingGeometry.IsFilledStroke(arrow, 0))) canvas.Fill();
         else if (hasFillColor && bezier != null)
         {
             canvas.ClosePath();
@@ -463,6 +489,19 @@ internal static partial class PdfMcpTools
         else canvas.Stroke();
         canvas.RestoreState(); canvas.Release();
         return adjustHeight ? new(pageIndex + 1, 0, bounds.Height) : null;
+    }
+
+    private static PdfFillGradient? ReadFillGradient(PdfMcpArguments arguments, string kind)
+    {
+        if (!arguments.Has("fillGradient")) return null;
+        if (kind is not ("rectangle" or "ellipse" or "polygon" or "bezier"))
+            throw new ArgumentException("fillGradient requires rectangle, ellipse, polygon or bezier.");
+        if (arguments.Has("fillColor")) throw new ArgumentException("Supply one of fillColor or fillGradient.");
+        var gradient = new PdfMcpArguments(arguments.Value.GetProperty("fillGradient"));
+        var type = gradient.Text("type") == "linear" ? PdfGradientKind.Linear : PdfGradientKind.Radial;
+        if (type == PdfGradientKind.Radial && gradient.Has("angle"))
+            throw new ArgumentException("fillGradient.angle applies to linear gradients.");
+        return new(type, gradient.Color("startColor"), gradient.Color("endColor"), gradient.Number("angle"));
     }
 
     private static void ManagePages(PdfDocument pdf, PdfMcpArguments a)

@@ -137,9 +137,34 @@
                         <Flyout x:Name="DrawingSettingsFlyout" x:FieldModifier="public" FlyoutBase.Placement="BottomEdgeAlignedRight">
                             <StackPanel Spacing="10" Width="360">
                                 <TextBlock Text="{loc:LocalizedString Key=DrawingLineSettings}" FontWeight="Bold"/>
+                                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                                    <CheckBox x:Name="DrawingFillCheckBox" x:FieldModifier="public" Content="{loc:LocalizedString Key=FillShape}"
+                                              ToolTipService.ToolTip="{loc:LocalizedString Key=FillShapeTooltip}" IsChecked="False"
+                                              VerticalAlignment="Center" MinWidth="0" Visibility="Collapsed"/>
+                                    <ComboBox x:Name="DrawingFillType" x:FieldModifier="public" Grid.Column="1" SelectedIndex="0" Visibility="Collapsed"
+                                              VerticalAlignment="Center"
+                                              AutomationProperties.Name="{loc:LocalizedString Key=DrawingFillType}">
+                                        <ComboBoxItem Content="{loc:LocalizedString Key=DrawingFillSolid}"/>
+                                        <ComboBoxItem Content="{loc:LocalizedString Key=DrawingFillLinear}"/>
+                                        <ComboBoxItem Content="{loc:LocalizedString Key=DrawingFillRadial}"/>
+                                    </ComboBox>
+                                    <TextBlock Grid.Column="2" Text="{loc:LocalizedString Key=DrawingGradientAngle}" VerticalAlignment="Center"
+                                               Visibility="{Binding Visibility, ElementName=DrawingGradientAngle}"/>
+                                    <NumberBox x:Name="DrawingGradientAngle" x:FieldModifier="public" Grid.Column="3" Value="0" Minimum="0" Maximum="360"
+                                               SmallChange="1" LargeChange="15" Width="90" SpinButtonPlacementMode="Compact" Visibility="Collapsed"
+                                               VerticalAlignment="Center" AutomationProperties.Name="{loc:LocalizedString Key=DrawingGradientAngle}"/>
+                                </Grid>
+                                <StackPanel x:Name="DrawingGradientColors" x:FieldModifier="public" Orientation="Horizontal" Spacing="10" Visibility="Collapsed">
+                                    <ComboBox x:Name="DrawingColorTarget" x:FieldModifier="public" SelectedIndex="0"
+                                              AutomationProperties.Name="{loc:LocalizedString Key=DrawingColorTarget}">
+                                        <ComboBoxItem Content="{loc:LocalizedString Key=DrawingStrokeColor}"/>
+                                        <ComboBoxItem Content="{loc:LocalizedString Key=DrawingGradientStartColor}"/>
+                                        <ComboBoxItem Content="{loc:LocalizedString Key=DrawingGradientEndColor}"/>
+                                    </ComboBox>
+                                    <Border x:Name="DrawingGradientSwatch" x:FieldModifier="public" Width="48" Height="20" CornerRadius="3"
+                                            VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw"/>
+                                </StackPanel>
                                 <ColorPicker x:Name="DrawingColorPicker" x:FieldModifier="public" Width="340" HorizontalAlignment="Left" IsAlphaEnabled="False"/>
-                                <CheckBox x:Name="DrawingFillCheckBox" x:FieldModifier="public" Content="{loc:LocalizedString Key=FillShape}"
-                                          ToolTipService.ToolTip="{loc:LocalizedString Key=FillShapeTooltip}" IsChecked="False" Visibility="Collapsed"/>
                                 <StackPanel Orientation="Horizontal" Spacing="10">
                                     <TextBlock Text="{loc:LocalizedString Key=LineWidth}" VerticalAlignment="Center"/>
                                     <Slider x:Name="DrawingWidthSlider" x:FieldModifier="public" Minimum="0.5" Maximum="12" StepFrequency="0.5" Value="2" Width="150"/>

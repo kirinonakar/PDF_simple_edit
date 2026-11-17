@@ -34,6 +34,7 @@ A lightweight, powerful, and modern PDF editor built with **WinUI 3** and **.NET
 - **Bookmark Editing**: Use **Add current page** to add a bookmark and **Delete** to remove it with its children; changes are saved in the PDF with undo/redo.
 - **Signature Tool**: Draw, customize, select, move, resize proportionally, edit, and save mouse-drawn signatures for reuse after reopening the PDF.
 - **Drawing Tools**: Choose Freehand, Line, Bézier Curve, Arrow, Triangle-head Arrow, Outline Arrow, Rectangle, Ellipse, or Polygon from the drawing menu. For a Bézier curve, click the start, two control points, and the end. The endpoint click finishes the curve. To edit it, select it with **Select graphics** (`G`) and drag its point handles. For a polygon, click vertices and double-click, press `Enter`, or click the first vertex to close. Drag to draw the other shapes. Press `Esc` to cancel. Set the color and stroke width beside the drawing menu. Use **Fill** for rectangles, ellipses, polygons, and Bézier curves. A filled curve closes with a straight line between its endpoints.
+  - Choose **Solid**, **Linear gradient**, or **Radial gradient** under **Fill**. Use the color selector to edit the start and end colors separately. Linear gradients also have an angle control.
 
 ### 📂 Document Management
 - **Multi-Tab Interface**: Work on multiple PDF files simultaneously using a modern tabbed layout.

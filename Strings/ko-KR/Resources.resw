@@ -1430,6 +1430,33 @@
   <data name="FillShape" xml:space="preserve">
     <value>채우기</value>
   </data>
+  <data name="DrawingFillType" xml:space="preserve">
+    <value>채우기 유형</value>
+  </data>
+  <data name="DrawingFillSolid" xml:space="preserve">
+    <value>단색</value>
+  </data>
+  <data name="DrawingFillLinear" xml:space="preserve">
+    <value>선형 그라데이션</value>
+  </data>
+  <data name="DrawingFillRadial" xml:space="preserve">
+    <value>방사형 그라데이션</value>
+  </data>
+  <data name="DrawingGradientAngle" xml:space="preserve">
+    <value>각도 (°)</value>
+  </data>
+  <data name="DrawingStrokeColor" xml:space="preserve">
+    <value>선 색상</value>
+  </data>
+  <data name="DrawingColorTarget" xml:space="preserve">
+    <value>편집할 색상</value>
+  </data>
+  <data name="DrawingGradientStartColor" xml:space="preserve">
+    <value>시작색</value>
+  </data>
+  <data name="DrawingGradientEndColor" xml:space="preserve">
+    <value>끝색</value>
+  </data>
   <data name="FillShapeTooltip" xml:space="preserve">
     <value>선택한 색으로 사각형, 타원, 다각형의 내부를 채웁니다.</value>
   </data>
