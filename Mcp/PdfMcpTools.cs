@@ -64,13 +64,16 @@ internal static partial class PdfMcpTools
     {
         ["underline"] = Field("boolean", "Omit to keep existing underline; false removes it.")
     };
+    private const double MinGraphicLineWidth = 0.01;
+    private const double MaxGraphicLineWidth = 100;
     private static readonly string[] GraphicKinds =
         { "rectangle", "ellipse", "line", "bezier", "arrow", "triangleArrow", "outlineArrow", "polygon", "freehand", "image", "highlight" };
     private static readonly Dictionary<string, object> Graphic = new()
     {
         ["kind"] = new { type = "string", @enum = GraphicKinds },
         ["imagePath"] = Field("string", "Required for kind=image; also replaces existing artwork."),
-        ["color"] = Style["color"], ["fillColor"] = Field("string", "#RRGGBB fill. triangleArrow defaults to color; recolor it with fillColor."),
+        ["color"] = Style["color"], ["fillColor"] = Field("string",
+            "Solid #RRGGBB. Rectangle/ellipse/polygon/bezier: stroke only without fillColor or fillGradient. triangleArrow defaults to color."),
         ["fillGradient"] = new
         {
             type = "object", description = "Gradient fill for rectangle, ellipse, polygon or bezier.",
@@ -82,7 +85,8 @@ internal static partial class PdfMcpTools
             },
             required = new[] { "type", "startColor", "endColor" }, additionalProperties = false
         },
-        ["lineWidth"] = Field("number", "Stroke or triangleArrow shaft width in points (default 2)."),
+        ["lineWidth"] = new { type = "number", minimum = MinGraphicLineWidth, maximum = MaxGraphicLineWidth,
+            description = "Stroke or triangleArrow shaft width in pt. Default 2." },
         ["opacity"] = Field("number", "Opacity from 0 to 1 (default 1; highlights 0.3)."),
         ["rotation"] = Field("number", "Clockwise degrees about center; default 0."),
         ["points"] = new
@@ -343,7 +347,7 @@ internal static partial class PdfMcpTools
                         if (a.Has("fillGradient")) throw new ArgumentException("Changing fillGradient requires kind to replace the graphic.");
                         var transform = PdfAffineTransform.Between(original, a.Bounds(original), a.Number("rotation"));
                         var paint = new PdfGraphicStyle(a.Has("color") ? a.Color() : null, a.Has("fillColor") ? a.Color("fillColor") : null,
-                            a.Has("lineWidth") ? a.Number("lineWidth", 2, .1, 100) : null,
+                            a.Has("lineWidth") ? a.Number("lineWidth", 2, MinGraphicLineWidth, MaxGraphicLineWidth) : null,
                             a.Has("opacity") ? a.Number("opacity", 1, 0, 1) : null);
                         edited = PdfGraphicTransformService.Transform(bytes, pageIndex, new[] { (annotation, transform) }, paint);
                     }
@@ -403,7 +407,7 @@ internal static partial class PdfMcpTools
             _ => null
         };
         string colorHex = a.Color();
-        double lineWidth = a.Number("lineWidth", 2, .1, 100);
+        double lineWidth = a.Number("lineWidth", 2, MinGraphicLineWidth, MaxGraphicLineWidth);
         PdfAnnotation? arrow = null;
         PdfPathPoint[]? bezier = null;
         var rotationBounds = bounds;

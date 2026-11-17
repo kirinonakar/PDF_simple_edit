@@ -35,6 +35,7 @@ internal static class PdfMcpCreationGuide
                 "Text styles: fontFamily, fontSize, color, bold, italic, alignment. Optional rotation rotates around the box center.",
                 "Images require absolute imagePath and support x/y/width/height/rotation/opacity. Image color/fillColor/lineWidth do not apply.",
                 "Shapes support color, fillColor, lineWidth, opacity, rotation. Supply points [{x,y},...] for polygon (3+) and freehand (2+). Lines default to the box diagonal; height 0 becomes 0.01 pt (see lineHeightAdjustments).",
+                "Rectangle, ellipse, polygon and bezier default to stroke only. Set fillColor or fillGradient to fill.",
                 "Arrows use two distinct points [tail, tip] or the box diagonal. arrow is open, triangleArrow is solid, outlineArrow is hollow. triangleArrow uses color unless fillColor is set.",
                 "bezier uses [start, control1, control2, end]. fillColor closes and fills the curve.",
                 "fillGradient: {type:linear|radial,startColor,endColor,angle?} for rectangle, ellipse, polygon or bezier. Use instead of fillColor.",

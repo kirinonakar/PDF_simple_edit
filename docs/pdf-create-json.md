@@ -115,11 +115,14 @@ text exceeds the remaining page area at its current size, creation reports the
 page and element in the error. Flow content can span multiple pages.
 
 Images require `imagePath`; they support rotation and `opacity`, not stroke/fill
-colors. Shapes support `color` (stroke), `fillColor`, `lineWidth`, `opacity` and
+colors. Shapes support `color` (stroke), `fillColor`, `lineWidth` (0.01–100 pt), `opacity` and
 rotation. Opacity ranges from 0 to 1. `polygon`/`freehand` require absolute page
 `points: [{"x": 10, "y": 20}, ...]`; polygons need at least three points. Lines
 default to the diagonal of their specified box. A line with `height: 0` uses
 `0.01` pt. `lineHeightAdjustments` reports `page`, `element`, `before` and `after`.
+
+Rectangles, ellipses, polygons and Bézier curves default to an outline. Set
+`fillColor` or `fillGradient` to fill the interior.
 
 Arrows take exactly two distinct `points` from the displayed page's top-left,
 tail first and tip second. They also default to the box diagonal. `arrow` has
