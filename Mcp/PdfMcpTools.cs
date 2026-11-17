@@ -129,7 +129,7 @@ internal static partial class PdfMcpTools
         }
         Dictionary<string, object> Fields(params (string key, object field)[] values) => values.ToDictionary(p => p.key, p => p.field);
         var objectId = Fields(("objectId", Text));
-        Add("pdf_create", "Create a PDF from text, content, pages or jsonPath. outputPath must be an absolute path. Positioned text boxes auto-fit. See pdf_create_help for structured input.", new[] { "outputPath" }, false,
+        Add("pdf_create", "Create a PDF from text, content, pages or jsonPath. outputPath must be an absolute path. Positioned text boxes auto-fit. Match color to fillGradient.endColor for a subtle border. Use line for thin dividers. See pdf_create_help.", new[] { "outputPath" }, false,
             Output, Style, PdfMcpCreationService.Schema(Graphic, GraphicKinds));
         Add("pdf_create_help", "Creation examples (flow/positioned) or full schema.", Array.Empty<string>(), true,
             Fields(("topic", new { type = "string", @enum = new[] { "overview", "flow", "positioned", "schema" } })));

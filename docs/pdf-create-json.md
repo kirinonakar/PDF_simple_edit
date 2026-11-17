@@ -120,6 +120,7 @@ rotation. Opacity ranges from 0 to 1. `polygon`/`freehand` require absolute page
 `points: [{"x": 10, "y": 20}, ...]`; polygons need at least three points. Lines
 default to the diagonal of their specified box. A line with `height: 0` uses
 `0.01` pt. `lineHeightAdjustments` reports `page`, `element`, `before` and `after`.
+Use `line` elements for thin dividers.
 
 Rectangles, ellipses, polygons and Bézier curves default to an outline. Set
 `fillColor` or `fillGradient` to fill the interior.
@@ -140,9 +141,12 @@ endpoints and fills the enclosed area.
 `fillGradient` fills a rectangle, ellipse, polygon or Bézier curve. Supply it
 instead of `fillColor`. The gradient uses the shape's bounds and rotates with the
 shape. A filled Bézier closes between its endpoints.
+For a subtle border, set `color` to the same hex value as
+`fillGradient.endColor` and use a thin stroke.
 
 ```json
 {"type":"rectangle","x":48,"y":32,"width":220,"height":90,
+ "color":"#C9E7FF","lineWidth":0.5,
  "fillGradient":{"type":"linear","startColor":"#154773","endColor":"#C9E7FF","angle":35}}
 ```
 

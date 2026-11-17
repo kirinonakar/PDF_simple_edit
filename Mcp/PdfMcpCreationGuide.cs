@@ -39,6 +39,7 @@ internal static class PdfMcpCreationGuide
                 "Arrows use two distinct points [tail, tip] or the box diagonal. arrow is open, triangleArrow is solid, outlineArrow is hollow. triangleArrow uses color unless fillColor is set.",
                 "bezier uses [start, control1, control2, end]. fillColor closes and fills the curve.",
                 "fillGradient: {type:linear|radial,startColor,endColor,angle?} for rectangle, ellipse, polygon or bezier. Use instead of fillColor.",
+                "For a subtle gradient border, use the same hex value for color and fillGradient.endColor. Draw thin dividers with line elements.",
                 "No pageCount with pages. Do not put content/text beside pages. Choose document-specific text, colors, dimensions and positions in the JSON rather than inventing preset fields."
             },
             arguments = JsonSerializer.Deserialize<JsonElement>(PositionedExample)
