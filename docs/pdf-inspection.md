@@ -26,8 +26,31 @@ pages use `pdf_vlm_ocr` and `pdf_vlm_ocr_apply` before searching.
 All pages are searched even when returned results are capped. Pass the returned
 ID and page directly to `pdf_edit_text`, or use IDs with `pdf_batch` or
 `pdf_delete_objects`. IDs remain valid only for the returned `revision`.
-`pdf_edit_text` edits the entire block, so preserve any surrounding text when
-replacing only a substring. Use `expectedRevision` to reject changed source files.
+Use `expectedRevision` to reject changed source files.
+
+## Replacing part of a text block
+
+Pass `findText` and `replaceText` to `pdf_edit_text` for a literal substring
+replacement. The first match is replaced by default. Set `replaceAll` to `true`
+for every non-overlapping match in the selected block, and `caseSensitive` to
+`true` to require exact case. An empty `replaceText` removes the match. A missing
+match returns an error. Use `text` by itself for whole-block replacement.
+
+```json
+{
+  "inputPath": "C:\\Documents\\source.pdf",
+  "outputPath": "C:\\Documents\\edited.pdf",
+  "page": 2,
+  "objectId": "<objectId from pdf_find_text>",
+  "findText": "Draft",
+  "replaceText": "Final"
+}
+```
+
+To update multiple blocks, use `pdf_find_text` to get their IDs and submit one
+`pdf_edit_text` operation per block in `pdf_batch`.
+
+## Inspecting objects on one page
 
 For focused inspection, `pdf_inspect` accepts these optional arguments:
 
@@ -53,6 +76,13 @@ Filtered objects retain the IDs from a full inspection. Form fields are returned
 separately only with `kind: "all"`; region filters also apply to them, while
 `maxObjects` limits only the `objects` array. Omitting all filters retains the
 full inspection behavior.
+
+`pdf_set_form_fields` accepts an optional `fontFamily` for text fields. Supply
+an installed family name or an absolute `.ttf`, `.otf`, or `.ttc` path. The
+selected font must support the full value and allow PDF embedding. Omit
+`fontFamily` to reuse the field's font when it covers the value or select a
+compatible font automatically. Checkbox values use the inspected `onValue` or
+`Off`.
 
 Run `python tests/McpInspection/run.py` after a Release/x64 build for headless
 MCP integration checks. The script accepts an optional executable path.

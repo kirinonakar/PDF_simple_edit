@@ -84,9 +84,14 @@ public sealed record NativePdfTextBlock
 public sealed record NativePdfTextStyle(string? Color = null, double? FontSize = null,
     bool? IsBold = null, bool? IsItalic = null, string? FontFamily = null, bool? IsUnderline = null);
 
+internal readonly record struct NativePdfTextReplacement(int Start, int Length, int ReplacementLength);
+
 public sealed record NativePdfTextEdit(NativePdfTextBlock Block, string Text, double DeltaX = 0, double DeltaY = 0,
     NativePdfTextStyle? Style = null, PdfAffineTransform? Transform = null, PdfTextBox? ReflowBounds = null,
-    IReadOnlyList<PdfTextStyleRange>? StyleRanges = null);
+    IReadOnlyList<PdfTextStyleRange>? StyleRanges = null)
+{
+    internal IReadOnlyList<NativePdfTextReplacement>? Replacements { get; init; }
+}
 public sealed record NativePdfTextResult(byte[] Bytes, NativePdfTextBlock Layout)
 {
     public IReadOnlyList<NativePdfTextBlock> Layouts { get; init; } = new[] { Layout };

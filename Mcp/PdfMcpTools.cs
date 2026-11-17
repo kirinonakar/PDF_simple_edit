@@ -8,8 +8,6 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using iText.Forms;
-using iText.IO.Font;
-using iText.Kernel.Font;
 using iText.Kernel.Geom;
 using iText.Kernel.Pdf;
 using iText.Kernel.Pdf.Canvas;
@@ -146,8 +144,13 @@ internal static partial class PdfMcpTools
             Input, Fields(("page", Page), ("pages", Field("string", "Range (e.g. 1,3,5-8) or all; omit page when set."))));
         Add("pdf_add_text", "Add Unicode text at x/y (default 0/0).", new[] { "inputPath", "outputPath", "text" }, false,
             Input, Output, TextStyle, Fields(("page", Page), ("text", Text), ("x", Number), ("y", Number)));
-        Add("pdf_edit_text", "Edit an entire text block. Omit fields to preserve them; empty text deletes the block.", new[] { "inputPath", "outputPath", "objectId" }, false,
-            Input, Output, Geometry, TextStyle, objectId, Fields(("page", Page), ("text", Text), ("rotation", Field("number", "Clockwise degrees about center.")), ("reflow", Field("boolean", "Wrap within width/height instead of scaling."))));
+        Add("pdf_edit_text", "Edit a text block or replace a literal substring. Empty text deletes the block.", new[] { "inputPath", "outputPath", "objectId" }, false,
+            Input, Output, Geometry, TextStyle, objectId, Fields(("page", Page), ("text", Text),
+                ("findText", Field("string", "Nonempty literal substring. Pair with replaceText.")),
+                ("replaceText", Field("string", "Replacement for findText. Empty removes the match.")),
+                ("replaceAll", Field("boolean", "Replace all non-overlapping matches in this block. Default first.")),
+                ("caseSensitive", Field("boolean", "Case-sensitive substring matching. Default false.")),
+                ("rotation", Field("number", "Clockwise degrees about center.")), ("reflow", Field("boolean", "Wrap within width/height instead of scaling."))));
         Add("pdf_add_graphic", "Add an editable graphic. Arrows: open, solid, or outline. Line height 0 becomes 0.01 pt.", new[] { "inputPath", "outputPath", "kind" }, false,
             Input, Output, Geometry, Graphic, Fields(("page", Page)));
         Add("pdf_edit_graphic", "Transform graphics or restyle vectors. kind/imagePath replaces artwork. Annotations support move/resize or replacement.", new[] { "inputPath", "outputPath", "objectId" }, false,
@@ -160,7 +163,8 @@ internal static partial class PdfMcpTools
             Input, Output, Fields(("action", new { type = "string", @enum = new[] { "insert", "delete", "reorder", "rotate", "crop" } }),
                 ("pages", PageArray), ("page", Page), ("count", Page), ("width", Number), ("height", Number), ("rotation", Field("number", "Added degrees; multiple of 90, default 90.")), ("x", Number), ("y", Number)));
         Add("pdf_set_form_fields", "Set AcroForm values by name. Checkboxes use inspected onValue or Off.", new[] { "inputPath", "outputPath", "values" }, false,
-            Input, Output, Fields(("values", new { type = "object", additionalProperties = new { type = "string" } })));
+            Input, Output, Fields(("values", new { type = "object", additionalProperties = new { type = "string" } }),
+                ("fontFamily", Field("string", "Installed family or absolute font file path for text fields. Defaults to automatic selection."))));
         Add("pdf_merge", "Merge inputPaths in order.", new[] { "inputPaths", "outputPath" }, false,
             Output, Fields(("inputPaths", Paths)));
         Add("pdf_extract_pages", "Extract pages in supplied order; duplicates allowed.", new[] { "inputPath", "outputPath", "pages" }, false,
@@ -550,6 +554,7 @@ internal static partial class PdfMcpTools
     private static void SetFormFields(PdfDocument pdf, PdfMcpArguments a)
     {
         var form = PdfAcroForm.GetAcroForm(pdf, false) ?? throw new ArgumentException("PDF contains no AcroForm fields.");
+        string? fontFamily = a.Has("fontFamily") ? a.Text("fontFamily") : null;
         foreach (var pair in a.Value.GetProperty("values").EnumerateObject())
         {
             var field = form.GetField(pair.Name) ?? throw new ArgumentException($"Unknown field: {pair.Name}");
@@ -557,12 +562,7 @@ internal static partial class PdfMcpTools
             string value = pair.Value.GetString()!;
             if (field.GetFormType().Equals(PdfName.Btn) && !field.GetAppearanceStates().Contains(value))
                 throw new ArgumentException($"Invalid button value for {pair.Name}. Use an appearance state from pdf_inspect, such as Yes or Off.");
-            if (value.Any(ch => ch > 127) && field.GetFormType().Equals(PdfName.Tx))
-            {
-                string fontPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "malgun.ttf");
-                var font = PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H, PdfFontFactory.EmbeddingStrategy.FORCE_EMBEDDED);
-                field.SetValue(value, font, 0);
-            }
+            if (PdfName.Tx.Equals(field.GetFormType())) PdfFormService.SetTextValue(field, value, fontFamily);
             else field.SetValue(value);
         }
     }

@@ -2,8 +2,6 @@ using Loc = PDF_simple_edit.Services.LocalizationService;
 using iText.Forms;
 using iText.Forms.Fields;
 using iText.Kernel.Pdf;
-using iText.Kernel.Font;
-using iText.IO.Font;
 using PDF_simple_edit.Helpers;
 using PDF_simple_edit.Models;
 using System;
@@ -91,7 +89,7 @@ public sealed class PdfFormService
         return inputs;
     }
 
-    public void SetValue(PdfDocumentManager manager, PdfFormInput input, string value)
+    public void SetValue(PdfDocumentManager manager, PdfFormInput input, string value, string? fontFamily = null)
     {
         var affectedPages = new List<int> { input.PageIndex };
         manager.ApplyBatchEdit(document =>
@@ -119,20 +117,17 @@ public sealed class PdfFormService
                         new PdfName(value == onValue ? onValue : "Off"));
                 }
             }
-            else if (field is PdfTextFormField && value.Any(character => character > 127))
-            {
-                string fontPath = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "malgun.ttf");
-                if (File.Exists(fontPath))
-                {
-                    var font = PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H,
-                        PdfFontFactory.EmbeddingStrategy.FORCE_EMBEDDED);
-                    field.SetValue(value, font, 0);
-                }
-                else field.SetValue(value);
-            }
+            else if (field is PdfTextFormField) SetTextValue(field, value, fontFamily);
             else field.SetValue(value);
         }, affectedPages);
+    }
+
+    internal static void SetTextValue(PdfFormField field, string value, string? fontFamily)
+    {
+        var existing = fontFamily == null ? field.GetFont() : null;
+        var font = PdfAppearanceFont.Resolve(value, fontFamily, existing);
+        if (ReferenceEquals(font, existing)) field.SetValue(value);
+        else field.SetValue(value, font, fontFamily == null ? 0 : field.GetFontSize());
     }
 
     private static void RestoreOriginalCheckAppearance(PdfAcroForm form,

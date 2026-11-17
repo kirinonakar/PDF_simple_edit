@@ -99,7 +99,7 @@ The server exposes these tools through `tools/list`, including argument schemas:
 | `pdf_vlm_ocr` | Return a page image for the calling agent's own VLM to recognize, with coordinate instructions and revision |
 | `pdf_vlm_ocr_apply` | Save agent-recognized text and bounding boxes as a selectable/searchable invisible OCR layer |
 | `pdf_add_text` | Unicode text with font, size, color, bold, italic and underline |
-| `pdf_edit_text` | Replace, delete, move, scale, rotate, reflow and restyle original text |
+| `pdf_edit_text` | Replace whole blocks or literal substrings, delete, move, scale, rotate, reflow and restyle original text |
 | `pdf_add_graphic` | Rectangle, ellipse, line, Bézier curve, arrow, triangle-head arrow, outline arrow, polygon, freehand, highlight or image |
 | `pdf_edit_graphic` | Move, resize, rotate, recolor paths, or replace a graphic/image/annotation |
 | `pdf_delete_object` | Remove original text, graphics, images or annotations |
@@ -107,7 +107,7 @@ The server exposes these tools through `tools/list`, including argument schemas:
 | `pdf_batch` | Apply multiple edits, additions, redactions, form and page operations to one PDF atomically |
 | `pdf_redact_region` | Remove intersecting content and form widgets using pdfSweep |
 | `pdf_manage_pages` | Insert, delete, reorder, rotate and crop pages |
-| `pdf_set_form_fields` | Fill named AcroForm fields, including Korean text and checkboxes |
+| `pdf_set_form_fields` | Fill named AcroForm fields with optional `fontFamily` for text fields |
 | `pdf_merge` | Merge PDFs in the supplied order |
 | `pdf_extract_pages` | Extract/split pages in the supplied order |
 | `pdf_to_images` | Render whole pages as PNG; select ranges and 72–600 DPI |

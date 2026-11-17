@@ -680,7 +680,7 @@ namespace PDF_simple_edit.Services
             canvas.Release();
         }
 
-        private string? GetSystemFontPath(
+        internal static string? GetSystemFontPath(
             string nameOrFile,
             int fontWeight = 400,
             string? sampleText = null,

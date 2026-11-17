@@ -7,7 +7,6 @@ using iText.Kernel.Pdf.Extgstate;
 using iText.Kernel.Pdf.Xobject;
 using iText.Kernel.Font;
 using iText.IO.Font;
-using iText.IO.Font.Constants;
 using PDF_simple_edit.Models;
 using System;
 using System.Collections.Generic;
@@ -118,7 +117,8 @@ public static class PdfCommentService
         return color?.Size() == 3 ? "#" + string.Concat(Enumerable.Range(0, 3).Select(i => Math.Clamp((int)Math.Round((color.GetAsNumber(i)?.DoubleValue() ?? 0) * 255), 0, 255).ToString("X2"))) : "#FF0000";
     }
 
-    public static void UpdateNoteOrTextBox(PdfDocument document, EditorAnnotation target, PdfTextBox bounds, string? contents = null)
+    public static void UpdateNoteOrTextBox(PdfDocument document, EditorAnnotation target, PdfTextBox bounds,
+        string? contents = null, string? fontFamily = null)
     {
         var page = document.GetPage(target.PageIndex + 1);
         var annotation = Enumerate(page).FirstOrDefault(a => a.Key == target.PdfCommentKey).Annotation;
@@ -127,8 +127,9 @@ public static class PdfCommentService
         string text = contents ?? annotation.GetContents()?.ToUnicodeString() ?? "";
         if (PdfName.FreeText.Equals(annotation.GetSubtype()))
         {
-            var replacement = AddNoteOrTextBox(document, target.PageIndex, bounds, false, text,
-                PdfAnnotationDocumentService.ParseCommentColor(target.Color), (float)target.Opacity, target.FontSize);
+            var font = PdfAppearanceFont.Resolve(text, fontFamily, fontFamily == null ? ReadAppearanceFont(annotation) : null);
+            var replacement = WriteNoteOrTextBox(document, target.PageIndex, bounds, false, text,
+                PdfAnnotationDocumentService.ParseCommentColor(target.Color), (float)target.Opacity, target.FontSize, font);
             foreach (var name in new[] { PdfName.Rect, PdfName.Contents, PdfName.AP, PdfName.DA, new PdfName("PDFSimpleBorderColor"), new PdfName("PDFSimpleFontSize") })
                 annotation.GetPdfObject().Put(name, replacement.GetPdfObject().Get(name));
             annotation.GetPdfObject().Remove(PdfName.C);
@@ -153,8 +154,27 @@ public static class PdfCommentService
         annotation.SetModified();
     }
 
+    private static PdfFont? ReadAppearanceFont(NativeAnnotation annotation)
+    {
+        var fonts = annotation.GetPdfObject().GetAsDictionary(PdfName.AP)?.GetAsStream(PdfName.N)?
+            .GetAsDictionary(PdfName.Resources)?.GetAsDictionary(PdfName.Font);
+        if (fonts == null || fonts.Size() != 1 || fonts.GetAsDictionary(fonts.KeySet().Single()) is not { } dictionary)
+            return null;
+        try { return PdfFontFactory.CreateFont(dictionary); }
+        catch (Exception error)
+        {
+            System.Diagnostics.Debug.WriteLine(error.Message);
+            return null;
+        }
+    }
+
     public static PdfMarkupAnnotation AddNoteOrTextBox(PdfDocument document, int pageIndex, PdfTextBox box, bool sticky,
-        string contents, Color color, float opacity, double fontSize)
+        string contents, Color color, float opacity, double fontSize, string? fontFamily = null) =>
+        WriteNoteOrTextBox(document, pageIndex, box, sticky, contents, color, opacity, fontSize,
+            sticky ? null : PdfAppearanceFont.Resolve(contents, fontFamily));
+
+    private static PdfMarkupAnnotation WriteNoteOrTextBox(PdfDocument document, int pageIndex, PdfTextBox box, bool sticky,
+        string contents, Color color, float opacity, double fontSize, PdfFont? font)
     {
         var page = document.GetPage(pageIndex + 1);
         var toPdf = PdfPageCoordinates.ToDisplay(page).Inverse();
@@ -176,11 +196,7 @@ public static class PdfCommentService
             note.SetPopup(popup);
             page.AddAnnotation(popup);
         }
-        else
-        {
-            annotation = new PdfFreeTextAnnotation(rectangle, new PdfString(contents, PdfEncodings.UNICODE_BIG));
-            annotation.GetPdfObject().Put(PdfName.DA, new PdfString("/Helv " + fontSize.ToString(System.Globalization.CultureInfo.InvariantCulture) + " Tf 0 g"));
-        }
+        else annotation = new PdfFreeTextAnnotation(rectangle, new PdfString(contents, PdfEncodings.UNICODE_BIG));
         annotation.SetContents(new PdfString(contents, PdfEncodings.UNICODE_BIG));
         if (sticky) annotation.SetColor(color);
         else
@@ -206,11 +222,8 @@ public static class PdfCommentService
             canvas.SetStrokeColor(ColorConstants.BLACK).SetLineWidth(.8f);
             for (int i = 1; i <= 3; i++) canvas.MoveTo(4, box.Height - 4 - i * 3).LineTo(box.Width - 4, box.Height - 4 - i * 3).Stroke();
         }
-        else
+        else if (font != null)
         {
-            string fontPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "malgun.ttf");
-            var font = File.Exists(fontPath) ? PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H,
-                PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED) : PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
             var lines = new List<string>();
             for (double size = Math.Clamp(fontSize, 4, 72); ; size = Math.Max(4, size - .5))
             {
@@ -230,7 +243,6 @@ public static class PdfCommentService
                 if (lines.Count * size * 1.25 <= box.Height - 8 || size <= 4)
                 { fontSize = size; break; }
             }
-            annotation.GetPdfObject().Put(PdfName.DA, new PdfString("/Helv " + fontSize.ToString(System.Globalization.CultureInfo.InvariantCulture) + " Tf 0 g"));
             canvas.Rectangle(1, 1, box.Width - 2, box.Height - 2).Clip().EndPath();
             var fontName = appearance.GetResources().AddFont(document, font);
             annotation.GetPdfObject().Put(PdfName.DA, new PdfString("/" + fontName.GetValue() + " " + fontSize.ToString(System.Globalization.CultureInfo.InvariantCulture) + " Tf 0 g"));

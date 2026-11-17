@@ -799,6 +799,15 @@
   <data name="NoFallbackFontSupportingTheGlyphIsInstalled" xml:space="preserve">
     <value>'{0}' 글리프를 지원하는 대체 글꼴이 설치되어 있지 않습니다.</value>
   </data>
+  <data name="PdfAppearanceFontUnavailable" xml:space="preserve">
+    <value>글꼴 '{0}'을(를) 불러오거나 PDF에 포함할 수 없습니다. 설치된 글꼴 이름이나 절대 파일 경로를 지정하세요.</value>
+  </data>
+  <data name="PdfAppearanceFontMissingGlyph" xml:space="preserve">
+    <value>글꼴 '{0}'에 {1} 문자의 글리프가 없습니다.</value>
+  </data>
+  <data name="NoPdfAppearanceFontSupportsText" xml:space="preserve">
+    <value>입력한 모든 문자를 지원하는 PDF 글꼴이 없습니다.</value>
+  </data>
   <data name="RotatedOrRightToLeftTextCurrentlySupportsOnly" xml:space="preserve">
     <value>회전되거나 오른쪽에서 왼쪽으로 배치된 텍스트는 현재 이동과 전체 삭제만 지원합니다.</value>
   </data>

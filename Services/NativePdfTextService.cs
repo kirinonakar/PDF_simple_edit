@@ -600,7 +600,7 @@ public sealed partial class NativePdfTextService
     private static NativePdfTextBlock Layout(PdfDocument doc, PageData data, NativePdfTextEdit edit)
     {
         var block = edit.Block;
-        string text = edit.Text.Replace("\r\n", "\n").Replace('\r', '\n');
+        string text = edit.Replacements == null ? edit.Text.Replace("\r\n", "\n").Replace('\r', '\n') : edit.Text;
         var original = block.Glyphs;
         var glyphsByTextIndex = new Dictionary<int, NativePdfGlyph>();
         foreach (var glyph in original) glyphsByTextIndex.TryAdd(glyph.TextIndex, glyph);
@@ -664,20 +664,30 @@ public sealed partial class NativePdfTextService
                 (Font(run).GetWidth(' ') * run.FontSize / 1000 + run.CharacterSpacing + run.WordSpacing) * run.HorizontalScale, data.Map);
             return spaceWidths[run.Id] = measured > .01 ? measured : run.DisplayFontSize * .25;
         }
-        var matches = MatchCharacters(block.Text, text);
+        var replacementStarts = new Dictionary<int, int>();
+        var matches = edit.Replacements is { } spans
+            ? MatchUnchangedCharacters(block.Text.Length, spans, replacementStarts)
+            : MatchCharacters(block.Text, text);
         var tokens = new List<NativePdfGlyph>();
         int precedingSourceIndex = -1;
         for (int index = 0; index < text.Length;)
         {
+            if (replacementStarts.TryGetValue(index, out int replacementStart)) precedingSourceIndex = replacementStart;
             int sourceIndex = matches.GetValueOrDefault(index, -1);
             var existing = sourceIndex < 0 ? null : glyphsByTextIndex.GetValueOrDefault(sourceIndex);
-            if (existing != null && (index + existing.Text.Length > text.Length ||
-                !text.AsSpan(index, existing.Text.Length).SequenceEqual(existing.Text))) existing = null;
+            if (existing != null)
+            {
+                int length = existing.Text.Length;
+                if (index + length > text.Length || !text.AsSpan(index, length).SequenceEqual(existing.Text) ||
+                    edit.Replacements != null && matches.GetValueOrDefault(index + length - 1, -1) != sourceIndex + length - 1)
+                    existing = null;
+            }
             if (existing != null)
             {
                 tokens.Add(existing with { TextIndex = index }); precedingSourceIndex = existing.TextIndex + existing.Text.Length - 1;
                 index += existing.Text.Length; continue;
             }
+            if (edit.Replacements != null && sourceIndex >= 0) precedingSourceIndex = sourceIndex;
             string value = char.IsHighSurrogate(text[index]) && index + 1 < text.Length ? text.Substring(index, 2) : text.Substring(index, 1);
             var near = original.LastOrDefault(g => g.TextIndex <= precedingSourceIndex && !g.IsVirtual) ?? original.First(g => !g.IsVirtual);
             var run = runs[near.RunId];
@@ -761,6 +771,23 @@ public sealed partial class NativePdfTextService
     }
 
     private static PdfTextBox Shift(PdfTextBox box, double x, double y) => box with { X = box.X + x, Y = box.Y + y };
+
+    // Anchor repeated text to the selected occurrence so retained glyphs keep their own styles.
+    private static Dictionary<int, int> MatchUnchangedCharacters(int sourceLength,
+        IReadOnlyList<NativePdfTextReplacement> replacements, Dictionary<int, int> replacementStarts)
+    {
+        var matches = new Dictionary<int, int>();
+        int source = 0, target = 0;
+        foreach (var replacement in replacements)
+        {
+            while (source < replacement.Start) matches[target++] = source++;
+            if (replacement.ReplacementLength > 0) replacementStarts[target] = source;
+            source += replacement.Length;
+            target += replacement.ReplacementLength;
+        }
+        while (source < sourceLength) matches[target++] = source++;
+        return matches;
+    }
 
     // Hirschberg LCS: preserve style/bytes of unchanged spans even when several
     // separate edits occur in one session. Memory stays linear in paragraph size.

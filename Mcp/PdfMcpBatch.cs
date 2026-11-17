@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -281,9 +282,42 @@ internal static partial class PdfMcpTools
         var target = a.Bounds(block.Bounds);
         bool transform = a.Has("width") || a.Has("height") || a.Has("rotation"), reflow = a.Flag("reflow");
         if (reflow && a.Number("rotation") != 0) throw new ArgumentException("Reflow and rotation require separate edits.");
-        return new(block, tool == "pdf_delete_object" ? "" : a.Text("text", block.Text),
+        var (text, replacements) = tool == "pdf_delete_object" ? ("", null) : ResolveTextEdit(a, block.Text);
+        return new NativePdfTextEdit(block, text,
             transform || reflow ? 0 : target.X - block.Bounds.X, transform || reflow ? 0 : target.Y - block.Bounds.Y,
             style, transform && !reflow ? PdfAffineTransform.Between(block.Bounds, target, a.Number("rotation")) : null,
-            reflow ? target : null);
+            reflow ? target : null) { Replacements = replacements };
+    }
+
+    private static (string Text, IReadOnlyList<NativePdfTextReplacement>? Replacements) ResolveTextEdit(PdfMcpArguments a, string source)
+    {
+        if (!a.Has("findText"))
+        {
+            if (a.Has("replaceText") || a.Has("replaceAll") || a.Has("caseSensitive"))
+                throw new ArgumentException("Substring replacement options require findText.");
+            return (a.Text("text", source), null);
+        }
+
+        if (a.Has("text")) throw new ArgumentException("Use either text or findText with replaceText.");
+        string query = a.Text("findText");
+        if (query.Length == 0) throw new ArgumentException("findText cannot be empty.");
+        string replacement = a.Text("replaceText").Replace("\r\n", "\n").Replace('\r', '\n');
+        bool replaceAll = a.Flag("replaceAll");
+        var comparison = a.Flag("caseSensitive") ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var text = new StringBuilder(source.Length);
+        var replacements = new List<NativePdfTextReplacement>();
+        int start = 0;
+        for (int match = source.IndexOf(query, start, comparison); match >= 0;
+            match = source.IndexOf(query, start, comparison))
+        {
+            text.Append(source, start, match - start).Append(replacement);
+            if (!source.AsSpan(match, query.Length).SequenceEqual(replacement))
+                replacements.Add(new(match, query.Length, replacement.Length));
+            start = match + query.Length;
+            if (!replaceAll) break;
+        }
+        if (start == 0) throw new ArgumentException("findText did not match the selected text block.");
+        text.Append(source, start, source.Length - start);
+        return (text.ToString(), replacements);
     }
 }

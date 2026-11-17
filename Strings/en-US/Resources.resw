@@ -799,6 +799,15 @@ Enter the password to open the document.</value>
   <data name="NoFallbackFontSupportingTheGlyphIsInstalled" xml:space="preserve">
     <value>No fallback font supporting the '{0}' glyph is installed.</value>
   </data>
+  <data name="PdfAppearanceFontUnavailable" xml:space="preserve">
+    <value>Cannot load or embed the font '{0}'. Specify an installed family or an absolute font file path.</value>
+  </data>
+  <data name="PdfAppearanceFontMissingGlyph" xml:space="preserve">
+    <value>The font '{0}' does not contain a glyph for {1}.</value>
+  </data>
+  <data name="NoPdfAppearanceFontSupportsText" xml:space="preserve">
+    <value>No available PDF font supports all characters in the text.</value>
+  </data>
   <data name="RotatedOrRightToLeftTextCurrentlySupportsOnly" xml:space="preserve">
     <value>Rotated or right-to-left text currently supports only moving and complete deletion.</value>
   </data>

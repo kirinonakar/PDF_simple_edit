@@ -253,17 +253,17 @@ namespace PDF_simple_edit.Helpers
         }
 
         public Task AddNoteOrTextBoxAsync(int pageIndex, PdfTextBox box, bool sticky, string contents,
-            string color, double opacity, double fontSize) => ApplyEditAsync(document =>
+            string color, double opacity, double fontSize, string? fontFamily = null) => ApplyEditAsync(document =>
                 PdfCommentService.AddNoteOrTextBox(document, pageIndex, box, sticky, contents,
-                    PdfAnnotationDocumentService.ParseCommentColor(color), (float)opacity, fontSize), PdfDocumentChange.Page(pageIndex), incremental: true);
+                    PdfAnnotationDocumentService.ParseCommentColor(color), (float)opacity, fontSize, fontFamily), PdfDocumentChange.Page(pageIndex), incremental: true);
 
         public Task SetNoteOpenAsync(PdfAnnotation target, bool open) => ApplyEditAsync(document =>
             PdfCommentService.SetNoteOpen(document, target, open), PdfDocumentChange.Page(target.PageIndex), incremental: true);
 
-        public Task UpdatePdfCommentAsync(PdfAnnotation target, PdfTextBox bounds, string? contents = null)
+        public Task UpdatePdfCommentAsync(PdfAnnotation target, PdfTextBox bounds, string? contents = null, string? fontFamily = null)
         {
             var captured = target.Clone();
-            return ApplyEditAsync(document => PdfCommentService.UpdateNoteOrTextBox(document, captured, bounds, contents), PdfDocumentChange.Page(target.PageIndex), incremental: true);
+            return ApplyEditAsync(document => PdfCommentService.UpdateNoteOrTextBox(document, captured, bounds, contents, fontFamily), PdfDocumentChange.Page(target.PageIndex), incremental: true);
         }
 
         public Task AddBookmarkAsync(int pageIndex, string title) => ApplyEditAsync(document =>
