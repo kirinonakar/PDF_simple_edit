@@ -48,7 +48,7 @@ internal static partial class PdfMcpTools
     };
     private static readonly Dictionary<string, object> Output = new()
     {
-        ["outputPath"] = Text,
+        ["outputPath"] = Field("string", "Absolute path to the output PDF."),
         ["overwrite"] = Boolean
     };
     private static readonly Dictionary<string, object> Geometry = new()
@@ -129,7 +129,7 @@ internal static partial class PdfMcpTools
         }
         Dictionary<string, object> Fields(params (string key, object field)[] values) => values.ToDictionary(p => p.key, p => p.field);
         var objectId = Fields(("objectId", Text));
-        Add("pdf_create", "Create a PDF from text, content, pages or jsonPath. Positioned text boxes auto-fit. See pdf_create_help for structured input.", new[] { "outputPath" }, false,
+        Add("pdf_create", "Create a PDF from text, content, pages or jsonPath. outputPath must be an absolute path. Positioned text boxes auto-fit. See pdf_create_help for structured input.", new[] { "outputPath" }, false,
             Output, Style, PdfMcpCreationService.Schema(Graphic, GraphicKinds));
         Add("pdf_create_help", "Creation examples (flow/positioned) or full schema.", Array.Empty<string>(), true,
             Fields(("topic", new { type = "string", @enum = new[] { "overview", "flow", "positioned", "schema" } })));
