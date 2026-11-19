@@ -266,9 +266,20 @@ public static class PdfCommentService
     public static List<PdfTextBox> SelectText(IEnumerable<NativePdfTextBlock> blocks, PdfTextBox region,
         out string contents, out List<PdfTextPoint[]> quads)
     {
-        var boxes = new List<PdfTextBox>();
-        quads = new();
         var text = new List<string>();
+        quads = GetTextQuads(blocks, region, text);
+        contents = string.Join("\n", text);
+        return quads.Select(quad => new PdfTextBox(quad.Min(p => p.X), quad.Min(p => p.Y),
+            quad.Max(p => p.X) - quad.Min(p => p.X), quad.Max(p => p.Y) - quad.Min(p => p.Y))).ToList();
+    }
+
+    internal static List<PdfTextPoint[]> GetTextQuads(IEnumerable<NativePdfTextBlock> blocks) =>
+        GetTextQuads(blocks, new(-1e8, -1e8, 2e8, 2e8), null);
+
+    private static List<PdfTextPoint[]> GetTextQuads(IEnumerable<NativePdfTextBlock> blocks, PdfTextBox region,
+        List<string>? contents)
+    {
+        var quads = new List<PdfTextPoint[]>();
         foreach (var block in blocks)
         {
             // Whitespace retains unreliable font ascent/descent in some PDFs.
@@ -298,20 +309,33 @@ public static class PdfCommentService
                 double length = Math.Sqrt(dx * dx + dy * dy);
                 double ux = length > .001 ? dx / length : 1, uy = length > .001 ? dy / length : 0;
                 double vx = -uy, vy = ux;
-                var points = group.SelectMany(g => new[] { new PdfTextPoint(g.Bounds.X, g.Bounds.Y), new(g.Bounds.Right, g.Bounds.Y),
-                    new(g.Bounds.X, g.Bounds.Bottom), new(g.Bounds.Right, g.Bounds.Bottom) }).ToList();
-                double left = points.Min(p => p.X * ux + p.Y * uy) - .5, right = points.Max(p => p.X * ux + p.Y * uy) + .5;
-                double top = points.Min(p => p.X * vx + p.Y * vy) - .5, bottom = points.Max(p => p.X * vx + p.Y * vy) + .5;
+                double left = double.PositiveInfinity, right = double.NegativeInfinity;
+                double top = double.PositiveInfinity, bottom = double.NegativeInfinity;
+                void Expand(double x, double y)
+                {
+                    double u = x * ux + y * uy, v = x * vx + y * vy;
+                    left = Math.Min(left, u); right = Math.Max(right, u);
+                    top = Math.Min(top, v); bottom = Math.Max(bottom, v);
+                }
+                foreach (var glyph in group)
+                {
+                    var bounds = glyph.Bounds;
+                    Expand(bounds.X, bounds.Y);
+                    Expand(bounds.Right, bounds.Y);
+                    Expand(bounds.X, bounds.Bottom);
+                    Expand(bounds.Right, bounds.Bottom);
+                }
                 PdfTextPoint Point(double u, double v) => new(ux * u + vx * v, uy * u + vy * v);
-                var quad = new[] { Point(left, top), Point(right, top), Point(left, bottom), Point(right, bottom) };
-                quads.Add(quad);
-                boxes.Add(new(quad.Min(p => p.X), quad.Min(p => p.Y), quad.Max(p => p.X) - quad.Min(p => p.X), quad.Max(p => p.Y) - quad.Min(p => p.Y)));
-                int start = block.Glyphs.IndexOf(group[0]), end = block.Glyphs.IndexOf(group[^1]);
-                text.Add(string.Concat(block.Glyphs.Skip(start).Take(end - start + 1).Select(g => g.Text)));
+                quads.Add(new[] { Point(left - .5, top - .5), Point(right + .5, top - .5),
+                    Point(left - .5, bottom + .5), Point(right + .5, bottom + .5) });
+                if (contents != null)
+                {
+                    int start = block.Glyphs.IndexOf(group[0]), end = block.Glyphs.IndexOf(group[^1]);
+                    contents.Add(string.Concat(block.Glyphs.Skip(start).Take(end - start + 1).Select(g => g.Text)));
+                }
             }
         }
-        contents = string.Join("\n", text);
-        return boxes;
+        return quads;
     }
 
     public static void AddTextMarkup(PdfDocument document, int pageIndex, IReadOnlyList<PdfTextBox> boxes,

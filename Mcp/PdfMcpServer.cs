@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -11,6 +15,10 @@ namespace PDF_simple_edit.Mcp;
 /// <summary>Newline-delimited UTF-8 JSON-RPC over inherited standard streams.</summary>
 internal sealed class PdfMcpServer
 {
+    private static readonly JsonSerializerOptions JsonOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+    private static readonly Regex UnicodeEscapes = new(
+        @"\\\\|\\u[Dd][89A-Ba-b][0-9A-Fa-f]{2}\\u[Dd][C-Fc-f][0-9A-Fa-f]{2}|\\u(?:[Ee][0-9A-Fa-f]{3}|[Ff][0-8][0-9A-Fa-f]{2})",
+        RegexOptions.NonBacktracking);
     private readonly SemaphoreSlim _writer = new(1, 1);
     private readonly SemaphoreSlim _tools = new(1, 1);
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _requests = new();
@@ -97,7 +105,7 @@ internal sealed class PdfMcpServer
                 await _tools.WaitAsync(cts.Token); acquired = true;
                 object result = await PdfMcpTools.ExecuteAsync(name.GetString()!, arguments, cts.Token);
                 object[] content = result is PdfMcpImageResult image ? image.Content
-                    : new object[] { new { type = "text", text = JsonSerializer.Serialize(result) } };
+                    : new object[] { new { type = "text", text = Serialize(result) } };
                 await Result(output, id, new { content, isError = false });
             }
             catch (Exception error)
@@ -114,7 +122,25 @@ internal sealed class PdfMcpServer
     private async Task Send(TextWriter output, object message)
     {
         await _writer.WaitAsync();
-        try { await output.WriteLineAsync(JsonSerializer.Serialize(message)); await output.FlushAsync(); }
+        try { await output.WriteLineAsync(Serialize(message)); await output.FlushAsync(); }
         finally { _writer.Release(); }
+    }
+
+    private static string Serialize(object value)
+    {
+        string json = JsonSerializer.Serialize(value, JsonOptions);
+        if (!json.Contains(@"\u", StringComparison.Ordinal)) return json;
+
+        // The relaxed encoder still escapes private-use characters and supplementary
+        // scalars. Leave escaped backslashes, control characters and JSON syntax intact.
+        return UnicodeEscapes.Replace(json, match =>
+        {
+            ReadOnlySpan<char> escape = match.ValueSpan;
+            if (escape.Length == 2) return match.Value;
+            char first = (char)int.Parse(escape.Slice(2, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+            if (escape.Length == 6) return first.ToString();
+            char second = (char)int.Parse(escape.Slice(8, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+            return new Rune(first, second).ToString();
+        });
     }
 }

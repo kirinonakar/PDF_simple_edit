@@ -7,8 +7,10 @@ using PDF_simple_edit.Models;
 using PDF_simple_edit.Services;
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Windows.Foundation;
+using PageLayout = PDF_simple_edit.Services.PdfTextSelectionService.PageLayout;
 
 namespace PDF_simple_edit.Controllers;
 
@@ -28,15 +30,18 @@ public sealed class PdfTextSelectionController(
         public Point End { get; set; } = start;
         public uint? PointerId { get; set; } = pointerId;
         public bool AllText { get; init; }
-        public List<NativePdfTextBlock>? Blocks { get; set; }
-        public string Text { get; set; } = "";
+        public PageLayout? Layout { get; set; }
+        public int? StartCaret { get; set; }
+        public int? EndCaret { get; set; }
+        public IReadOnlyList<NativePdfTextBlock>? SelectedBlocks { get; set; }
+        public string? Text { get; set; }
     }
 
     private Selection? _selection;
     private Canvas? _preview;
-    private byte[]? _cachedSource;
-    private int _cachedPage;
-    private Task<List<NativePdfTextBlock>>? _cachedExtraction;
+    private SolidColorBrush? _highlightBrush;
+    private List<PdfTextPoint[]> _previewQuads = new();
+    private (byte[] Source, int Index, CancellationTokenSource Cancellation, Task<PageLayout> Layout)? _preparedPage;
 
     private bool IsCurrent(Selection selection) => ReferenceEquals(selection, _selection) &&
         getToolMode() == EditToolMode.None && selection.Manager == getManager() &&
@@ -44,16 +49,58 @@ public sealed class PdfTextSelectionController(
         selection.Version == selection.Manager.EditVersion &&
         ReferenceEquals(selection.Source, selection.Manager.GetPdfBytes());
 
-    public string SelectedText => _selection is { } selection && IsCurrent(selection) ? selection.Text : "";
+    public string SelectedText =>
+        _selection is { SelectedBlocks: { } blocks } selection && IsCurrent(selection)
+            ? selection.Text ??= PdfTextSelectionService.GetSelectedText(blocks) : "";
     public bool HasSelection => SelectedText.Length > 0;
 
     public void Clear()
     {
         bool captured = _selection?.PointerId != null;
         _selection = null;
+        ClearPreview();
+        if (captured) canvas.ReleasePointerCaptures();
+    }
+
+    private void ClearPreview()
+    {
         if (_preview != null) canvas.Children.Remove(_preview);
         _preview = null;
-        if (captured) canvas.ReleasePointerCaptures();
+        _previewQuads.Clear();
+    }
+
+    public void ResetPreparedPage()
+    {
+        if (_preparedPage is not { } page) return;
+        _preparedPage = null;
+        page.Cancellation.Cancel();
+        page.Cancellation.Dispose();
+    }
+
+    private Task<PageLayout> GetPageLayoutAsync(byte[] source, int pageIndex)
+    {
+        if (_preparedPage is { } page && ReferenceEquals(page.Source, source) && page.Index == pageIndex &&
+            !page.Layout.IsFaulted && !page.Layout.IsCanceled)
+            return page.Layout;
+
+        ResetPreparedPage();
+        var cancellation = new CancellationTokenSource();
+        var token = cancellation.Token;
+        var layout = Task.Run(() =>
+        {
+            var blocks = new NativePdfTextService().Extract(source, pageIndex, token);
+            token.ThrowIfCancellationRequested();
+            return new PageLayout(blocks);
+        }, token);
+        _preparedPage = (source, pageIndex, cancellation, layout);
+        return layout;
+    }
+
+    public async Task PreparePageAsync(byte[] source, int pageIndex)
+    {
+        try { await GetPageLayoutAsync(source, pageIndex).ConfigureAwait(false); }
+        catch (OperationCanceledException) { }
+        catch (Exception error) { System.Diagnostics.Debug.WriteLine($"Text selection preparation: {error}"); }
     }
 
     public void CancelGesture()
@@ -91,23 +138,19 @@ public sealed class PdfTextSelectionController(
 
     private async Task ExtractSelectionAsync(Selection selection)
     {
-        if (!ReferenceEquals(selection.Source, _cachedSource) || selection.Page != _cachedPage || _cachedExtraction == null)
-        {
-            _cachedSource = selection.Source;
-            _cachedPage = selection.Page;
-            _cachedExtraction = Task.Run(() => new NativePdfTextService().Extract(selection.Source, selection.Page));
-        }
-        var extraction = _cachedExtraction;
         try
         {
-            var blocks = await extraction;
+            var layout = await GetPageLayoutAsync(selection.Source, selection.Page);
             if (!IsCurrent(selection)) return;
-            selection.Blocks = blocks;
+            selection.Layout = layout;
             Update(selection);
+        }
+        catch (OperationCanceledException)
+        {
+            if (ReferenceEquals(selection, _selection)) Clear();
         }
         catch (Exception error)
         {
-            if (ReferenceEquals(extraction, _cachedExtraction)) _cachedExtraction = null;
             if (IsCurrent(selection))
             {
                 Clear();
@@ -145,26 +188,69 @@ public sealed class PdfTextSelectionController(
 
     private void Update(Selection selection)
     {
-        if (selection.Blocks == null) return;
-        if (_preview != null) canvas.Children.Remove(_preview);
-        _preview = null;
-        selection.Text = "";
-        if (!selection.AllText && Math.Abs(selection.End.X - selection.Start.X) + Math.Abs(selection.End.Y - selection.Start.Y) < 4) return;
-        var selected = selection.AllText ? selection.Blocks : PdfTextSelectionService.SelectRange(selection.Blocks,
-            new(selection.Start.X / PdfToPixels, selection.Start.Y / PdfToPixels),
-            new(selection.End.X / PdfToPixels, selection.End.Y / PdfToPixels));
-        selection.Text = PdfTextSelectionService.GetSelectedText(selected);
-        PdfCommentService.SelectText(selected, new(-1e8, -1e8, 2e8, 2e8), out _, out var quads);
-        _preview = new Canvas { IsHitTestVisible = false };
-        foreach (var quad in quads)
+        if (selection.Layout is not { } layout) return;
+        if (selection.AllText)
         {
-            var polygon = new Polygon { Fill = new SolidColorBrush(Windows.UI.Color.FromArgb(90, 0, 120, 215)), IsHitTestVisible = false };
-            foreach (int index in new[] { 0, 1, 3, 2 })
-                polygon.Points.Add(new(quad[index].X * PdfToPixels, quad[index].Y * PdfToPixels));
-            _preview.Children.Add(polygon);
+            selection.SelectedBlocks = layout.Blocks;
         }
-        canvas.Children.Add(_preview);
+        else
+        {
+            if (Math.Abs(selection.End.X - selection.Start.X) + Math.Abs(selection.End.Y - selection.Start.Y) < 4)
+            {
+                selection.EndCaret = null;
+                selection.SelectedBlocks = null;
+                selection.Text = null;
+                ClearPreview();
+                return;
+            }
+
+            int start = selection.StartCaret ??= layout.Hit(ToPdfPoint(selection.Start));
+            int end = layout.Hit(ToPdfPoint(selection.End));
+            if (selection.EndCaret == end) return;
+            selection.EndCaret = end;
+            selection.SelectedBlocks = layout.SelectRange(start, end);
+        }
+        selection.Text = null;
+        UpdatePreview(PdfCommentService.GetTextQuads(selection.SelectedBlocks));
     }
+
+    private static PdfTextPoint ToPdfPoint(Point point) => new(point.X / PdfToPixels, point.Y / PdfToPixels);
+
+    private void UpdatePreview(List<PdfTextPoint[]> quads)
+    {
+        if (quads.Count == 0)
+        {
+            ClearPreview();
+            return;
+        }
+
+        _preview ??= new Canvas { IsHitTestVisible = false };
+        _highlightBrush ??= new SolidColorBrush(Windows.UI.Color.FromArgb(90, 0, 120, 215));
+        var children = _preview.Children;
+        for (int i = children.Count - 1; i >= quads.Count; i--) children.RemoveAt(i);
+        for (int i = 0; i < quads.Count; i++)
+        {
+            var quad = quads[i];
+            if (i < children.Count)
+            {
+                if (!quad.AsSpan().SequenceEqual(_previewQuads[i]))
+                    ((Polygon)children[i]).Points = ToPolygonPoints(quad);
+            }
+            else
+            {
+                children.Add(new Polygon { Fill = _highlightBrush, Points = ToPolygonPoints(quad) });
+            }
+        }
+        _previewQuads = quads;
+        if (!canvas.Children.Contains(_preview)) canvas.Children.Add(_preview);
+    }
+
+    private static PointCollection ToPolygonPoints(PdfTextPoint[] quad) => new()
+    {
+        ToCanvasPoint(quad[0]), ToCanvasPoint(quad[1]), ToCanvasPoint(quad[3]), ToCanvasPoint(quad[2])
+    };
+
+    private static Point ToCanvasPoint(PdfTextPoint point) => new(point.X * PdfToPixels, point.Y * PdfToPixels);
 
     public void Render()
     {

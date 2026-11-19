@@ -27,6 +27,7 @@ public sealed class PageViewController
     private const double PdfToPixels = 96.0 / 72.0;
 
     private readonly PdfPageRenderService _renderService;
+    private readonly PdfTextSelectionController _textSelection;
     private readonly ListView _pageListView;
     private readonly Image _pageImage;
     private readonly Canvas _overlayCanvas;
@@ -68,6 +69,7 @@ public sealed class PageViewController
 
     public PageViewController(
         PdfPageRenderService renderService,
+        PdfTextSelectionController textSelection,
         ListView pageListView,
         Image pageImage,
         Canvas overlayCanvas,
@@ -90,6 +92,7 @@ public sealed class PageViewController
         Action updateUiState)
     {
         _renderService = renderService;
+        _textSelection = textSelection;
         _pageListView = pageListView;
         _pageImage = pageImage;
         _overlayCanvas = overlayCanvas;
@@ -126,11 +129,10 @@ public sealed class PageViewController
         _detailCts?.Cancel();
         if (_detailImage != null) _detailImage.Source = null;
         PdfDocumentManager manager = _getManager();
-        if (!manager.IsLoaded)
+        if (manager.GetPdfBytes() is not { } snapshot)
             return;
 
         int pageIndex = _getCurrentPageIndex();
-        byte[]? snapshot = manager.GetPdfBytes();
         bool IsCurrentRequest() => version == _renderVersion &&
             ReferenceEquals(manager, _getManager()) &&
             ReferenceEquals(snapshot, manager.GetPdfBytes()) && pageIndex == _getCurrentPageIndex();
@@ -139,6 +141,7 @@ public sealed class PageViewController
         try
         {
             _statusText.Text = Loc.Get("RenderingPage");
+            _ = _textSelection.PreparePageAsync(snapshot, pageIndex);
             RenderedPdfPage? page = await _renderService.RenderPageAsync(
                 manager,
                 pageIndex,
@@ -186,6 +189,7 @@ public sealed class PageViewController
     public void CancelPendingOperations()
     {
         ++_renderVersion;
+        _textSelection.ResetPreparedPage();
         _displayedPage = null;
         _dirtyThumbnailPages.Clear();
         _allThumbnailsDirty = false;

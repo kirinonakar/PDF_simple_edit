@@ -95,7 +95,7 @@ The server exposes these tools through `tools/list`, including argument schemas:
 | `pdf_create_help` | Agent authoring guide, working examples and the live JSON schema |
 | `pdf_inspect` | Document revision, page sizes and editable objects; optional kind, region and count filters |
 | `pdf_find_text` | Search editable text across all pages and return matching object IDs, page numbers and bounds |
-| `pdf_read` | Read body text by page or page range, with automatic two-column reading order |
+| `pdf_read` | Read normalized text, inferred LaTeX with coordinates, raw text, or font diagnostics by page |
 | `pdf_vlm_ocr` | Return a page image for the calling agent's own VLM to recognize, with coordinate instructions and revision |
 | `pdf_vlm_ocr_apply` | Save agent-recognized text and bounding boxes as a selectable/searchable invisible OCR layer |
 | `pdf_add_text` | Unicode text with font, size, color, bold, italic and underline |

@@ -18,6 +18,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 namespace PDF_simple_edit.Services;
 
@@ -65,11 +66,16 @@ public sealed partial class NativePdfTextService
         { 90 => new(y, x), 180 => new(-x, y), 270 => new(-y, -x), _ => new(x, -y) };
     }
 
-    public List<NativePdfTextBlock> Extract(byte[] bytes, int pageIndex)
+    public List<NativePdfTextBlock> Extract(byte[] bytes, int pageIndex) => Extract(bytes, pageIndex, default);
+
+    internal List<NativePdfTextBlock> Extract(byte[] bytes, int pageIndex, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         using var doc = new PdfDocument(new PdfReader(new MemoryStream(bytes)));
-        var data = Read(doc.GetPage(pageIndex + 1));
-        return ApplyInkBounds(doc.GetPage(pageIndex + 1), data.Blocks, data.Map);
+        var page = doc.GetPage(pageIndex + 1);
+        var data = Read(page);
+        cancellationToken.ThrowIfCancellationRequested();
+        return data.Blocks.Count == 0 ? data.Blocks : ApplyInkBounds(page, data.Blocks, data.Map);
     }
 
     internal sealed record BlockMatch(int BlockIndex, int MatchIndex, string Text, PdfTextBox Bounds);

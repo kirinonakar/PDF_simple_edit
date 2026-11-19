@@ -23,19 +23,29 @@ internal static class PdfMcpColumnReader
     private sealed record Body(double Split, double Top, double Bottom, int Score);
 
     public static (string Text, Column[]? Columns) Read(PdfPage page, PdfTextBox bounds,
-        PdfReadTextExtractionStrategy original, bool force, CancellationToken cancellation)
+        PdfReadTextExtractionStrategy original, bool force, CancellationToken cancellation, PdfMcpPageDetails? details)
     {
         var transform = PdfPageCoordinates.ToDisplay(page);
         var runs = new List<Run>();
         var rules = new List<PdfTextBox>();
         Process(page, info =>
         {
+            cancellation.ThrowIfCancellationRequested();
             original.EventOccurred(info, EventType.RENDER_TEXT);
+            details?.ReadText(info);
             if (string.IsNullOrWhiteSpace(info.GetText())) return;
             var run = GetRun(info, transform);
             if (run.Horizontal && run.Left < bounds.Width && run.Right > 0 && run.Y >= 0 && run.Y <= bounds.Height)
                 runs.Add(run);
-        }, path => CollectRules(path, transform, bounds, rules));
+        }, path =>
+        {
+            cancellation.ThrowIfCancellationRequested();
+            foreach (var box in GetRuleBounds(path, transform))
+            {
+                CollectColumnRule(box, bounds, rules);
+                details?.ReadRule(box);
+            }
+        });
 
         var rows = new List<Row>();
         foreach (var run in runs.OrderBy(run => run.Y))
@@ -58,6 +68,7 @@ internal static class PdfMcpColumnReader
         cancellation.ThrowIfCancellationRequested();
         Process(page, info =>
         {
+            cancellation.ThrowIfCancellationRequested();
             var run = GetRun(info, transform);
             var strategy = run.Y < body.Top ? before
                 : run.Y > body.Bottom ? after
@@ -74,30 +85,31 @@ internal static class PdfMcpColumnReader
             new[] { new Column(1, leftText), new Column(2, rightText) });
     }
 
-    private static void CollectRules(PathRenderInfo path, PdfAffineTransform transform, PdfTextBox bounds, List<PdfTextBox> rules)
+    private static void CollectColumnRule(PdfTextBox box, PdfTextBox bounds, List<PdfTextBox> rules)
     {
-        if (path.GetOperation() == PathRenderInfo.NO_OP) return;
+        double split = box.X + box.Width / 2;
+        bool vertical = box.Width <= 2 && box.Height >= bounds.Height * .45 &&
+            split >= bounds.Width * .35 && split <= bounds.Width * .65;
+        bool horizontal = box.Height <= 2 && box.Width >= bounds.Width * .55;
+        if ((vertical || horizontal) && box.Y >= 0 && box.Bottom <= bounds.Height)
+            rules.Add(box);
+    }
+
+    internal static IEnumerable<PdfTextBox> GetRuleBounds(PathRenderInfo path, PdfAffineTransform transform)
+    {
+        if (path.GetOperation() == PathRenderInfo.NO_OP) yield break;
         var ctm = path.GetCtm();
         var toDisplay = transform.After(new(ctm.Get(0), ctm.Get(1), ctm.Get(3), ctm.Get(4), ctm.Get(6), ctm.Get(7)));
-        void Add(PdfTextBox box)
-        {
-            double split = box.X + box.Width / 2;
-            bool vertical = box.Width <= 2 && box.Height >= bounds.Height * .45 &&
-                split >= bounds.Width * .35 && split <= bounds.Width * .65;
-            bool horizontal = box.Height <= 2 && box.Width >= bounds.Width * .55;
-            if ((vertical || horizontal) && box.Y >= 0 && box.Bottom <= bounds.Height)
-                rules.Add(box);
-        }
         foreach (var subpath in path.GetPath().GetSubpaths())
         {
             var segments = subpath.GetSegments();
             if ((path.GetOperation() & PathRenderInfo.STROKE) != 0 && path.GetLineWidth() <= 3)
             {
                 foreach (var line in segments.OfType<Line>())
-                    Add(PathBounds(line.GetBasePoints(), toDisplay));
+                    yield return PathBounds(line.GetBasePoints(), toDisplay);
             }
             if ((path.GetOperation() & PathRenderInfo.FILL) != 0 && segments.Count is 3 or 4 && segments.All(s => s is Line))
-                Add(PathBounds(segments.SelectMany(s => s.GetBasePoints()), toDisplay));
+                yield return PathBounds(segments.SelectMany(s => s.GetBasePoints()), toDisplay);
         }
     }
 
@@ -237,7 +249,7 @@ internal static class PdfMcpColumnReader
             Math.Abs(a.Y - b.Y) <= Math.Max(BaselineTolerance, Math.Abs(a.X - b.X) * .02));
     }
 
-    private static void Process(PdfPage page, Action<TextRenderInfo> read, Action<PathRenderInfo>? path = null) =>
+    internal static void Process(PdfPage page, Action<TextRenderInfo> read, Action<PathRenderInfo>? path = null) =>
         new PdfCanvasProcessor(new LayoutListener(read, path)).ProcessPageContent(page);
 
     private sealed class LayoutListener(Action<TextRenderInfo> read, Action<PathRenderInfo>? path) : IEventListener

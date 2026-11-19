@@ -194,6 +194,7 @@ namespace PDF_simple_edit
                     () => _currentTool);
                 _pageViewController = new PageViewController(
                     _pageRenderService,
+                    _annotationCanvasController.TextSelection,
                     PageListView,
                     PdfPageImage,
                     OverlayCanvas,

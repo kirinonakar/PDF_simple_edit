@@ -1,5 +1,40 @@
 # Finding and inspecting editable objects
 
+## Reading pages with `pdf_read`
+
+Pass an absolute `inputPath` and either a 1-based `page` (default 1) or
+`pages` with a range such as `1,3,5-8` or `all`.
+
+```json
+{
+  "inputPath": "C:\\Documents\\math.pdf",
+  "pages": "1-3",
+  "mode": "structured"
+}
+```
+
+| Mode | Page output |
+| --- | --- |
+| `text` (default) | Normalized Unicode `text` with known HYhwpEQ mappings applied. |
+| `structured` | Normalized `text`, positioned `spans`, and `equations` with inferred LaTeX and bounds. |
+| `raw` | Original decoded `text` in content-stream order. Preserves PUA characters and original whitespace without inserting line breaks or spaces. |
+| `diagnostic` | Structured output plus `rawText`, source PDF bytes and font IDs on spans, and per-font mappings with code points, PUA code points, available ToUnicode values, and applied repairs. |
+
+Page entries include the page number, size, rotation and `hasText`. Normalized
+text uses `layout: "auto"` by default and includes `columns` when a two-column
+layout is detected. Use `single` for line order or `two-column` to request a
+split. Raw text always follows content-stream order. Spans follow content-stream
+order and their bounds are PDF points from the top-left of the displayed CropBox.
+
+For math PDFs, use `structured`. LaTeX is inferred from recognized glyphs
+and geometry, including nearby scripts and limits and stacked terms around a
+fraction rule. An equation with an unmapped glyph or unresolved fraction rule
+returns `latex: null` and a corresponding `status`. Compare complex equations against the page. Saved OCR
+layers are read as PDF text. For pages with an image and no text layer, use
+`pdf_vlm_ocr`.
+
+## Finding text
+
 Call `pdf_find_text` with an absolute `inputPath` and a nonempty literal `query`.
 It searches editable body text on every page, with ordinal case-insensitive
 comparison by default. Set `caseSensitive: true` for exact case.

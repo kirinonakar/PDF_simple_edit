@@ -262,8 +262,9 @@ public sealed class AnnotationCanvasController
         if (toolMode == EditToolMode.None)
         {
             if (!isLeftButton) return;
+            bool hadSelectedAnnotations = PrimarySelection != null || SelectedAnnotations.Count > 0;
             ClearSelection();
-            Render();
+            if (hadSelectedAnnotations) Render();
             _focusAfterInlineEdit(false);
             if (KeyboardStateService.IsControlDown())
             {
@@ -724,7 +725,7 @@ public sealed class AnnotationCanvasController
     {
         if (_commentTextPreview != null) _canvas.Children.Remove(_commentTextPreview);
         var selected = PdfTextSelectionService.SelectRange(blocks, new(start.X / PdfToPixels, start.Y / PdfToPixels), new(end.X / PdfToPixels, end.Y / PdfToPixels));
-        PdfCommentService.SelectText(selected, new(-1e8, -1e8, 2e8, 2e8), out _, out var quads);
+        var quads = PdfCommentService.GetTextQuads(selected);
         _commentTextPreview = new Canvas { IsHitTestVisible = false };
         foreach (var quad in quads)
         {

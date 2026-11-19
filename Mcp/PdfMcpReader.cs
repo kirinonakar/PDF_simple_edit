@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading;
 using iText.Kernel.Pdf;
 using iText.Kernel.Pdf.Canvas.Parser;
+using PDF_simple_edit.Models;
 using PDF_simple_edit.Services;
 
 namespace PDF_simple_edit.Mcp;
@@ -13,13 +15,22 @@ namespace PDF_simple_edit.Mcp;
 /// <summary>Reads page text directly, without graphic extraction or rendering.</summary>
 internal static class PdfMcpReader
 {
+    public static readonly string[] Modes = ["text", "structured", "raw", "diagnostic"];
+
     private sealed record ReadPage(int page, string text, bool hasText, double width, double height, int rotation,
-        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PdfMcpColumnReader.Column[]? columns);
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PdfMcpColumnReader.Column[]? columns = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PdfMcpPageDetails.Span>? spans = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PdfMcpMath.Equation>? equations = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? rawText = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PdfMcpPageDetails.Font>? fonts = null);
 
     public static object Read(PdfMcpArguments arguments, byte[] snapshot, string revision, CancellationToken cancellation)
     {
         if (arguments.Has("page") && arguments.Has("pages"))
             throw new ArgumentException("Supply either page or pages, not both.");
+        string mode = arguments.Text("mode", "text");
+        if (!Modes.Contains(mode, StringComparer.Ordinal))
+            throw new ArgumentException("mode must be text, structured, raw, or diagnostic.");
         string layout = arguments.Text("layout", "auto");
         if (layout is not ("auto" or "single" or "two-column"))
             throw new ArgumentException("layout must be auto, single, or two-column.");
@@ -36,19 +47,60 @@ internal static class PdfMcpReader
         {
             cancellation.ThrowIfCancellationRequested();
             var page = pdf.GetPage(index + 1);
-            var bounds = PdfPageCoordinates.GetDisplayBounds(page);
-            var strategy = new PdfReadTextExtractionStrategy();
-            (string text, PdfMcpColumnReader.Column[]? columns) = layout == "single"
-                ? (Normalize(PdfTextExtractor.GetTextFromPage(page, strategy)), null)
-                : PdfMcpColumnReader.Read(page, bounds, strategy, layout == "two-column", cancellation);
-            pages.Add(new(index + 1, text, text.Length > 0, bounds.Width, bounds.Height, page.GetRotation(), columns));
+            pages.Add(ReadPageContent(page, index + 1, mode, layout, cancellation));
         }
         cancellation.ThrowIfCancellationRequested();
         return new
         {
-            inputPath = arguments.Path("inputPath"), revision, pageCount, pages,
-            extraction = "Existing PDF text, including saved OCR layers. No image recognition is performed here. For image-only pages use pdf_vlm_ocr with your own vision and pdf_vlm_ocr_apply to add recognized text. Pages without extractable text return empty text. Two-column pages include columns in left-to-right order. Known HYhwpEQ glyphs are decoded to Unicode. Reading order is inferred from text positions and may differ in complex layouts."
+            inputPath = arguments.Path("inputPath"), revision, pageCount, mode, pages,
+            extraction = "Existing PDF text, including saved OCR layers. For image-only pages use pdf_vlm_ocr. " + (mode switch
+            {
+                "raw" => "Decoded characters in content-stream order, without inserted whitespace or font repairs.",
+                "text" => "Reading order is inferred from glyph positions. Known HYhwpEQ glyphs are decoded to Unicode.",
+                _ => "Coordinates are in PDF points from the displayed CropBox top-left. Spans are in content-stream order. LaTeX is inferred from the glyphs and their positions."
+            })
         };
+    }
+
+    private static ReadPage ReadPageContent(PdfPage page, int number, string mode, string layout, CancellationToken cancellation)
+    {
+        PdfTextBox bounds = PdfPageCoordinates.GetDisplayBounds(page);
+        if (mode == "raw")
+        {
+            var raw = new StringBuilder();
+            PdfMcpColumnReader.Process(page, info =>
+            {
+                cancellation.ThrowIfCancellationRequested();
+                raw.Append(info.GetText());
+            });
+            return new(number, raw.ToString(), raw.Length > 0, bounds.Width, bounds.Height, page.GetRotation());
+        }
+
+        var strategy = new PdfReadTextExtractionStrategy();
+        var details = mode == "text" ? null : new PdfMcpPageDetails(page, mode == "diagnostic");
+        string text;
+        PdfMcpColumnReader.Column[]? columns = null;
+        if (layout == "single")
+        {
+            PdfMcpColumnReader.Process(page, info =>
+            {
+                cancellation.ThrowIfCancellationRequested();
+                strategy.EventOccurred(info, EventType.RENDER_TEXT);
+                details?.ReadText(info);
+            }, details == null ? null : path =>
+            {
+                cancellation.ThrowIfCancellationRequested();
+                details.ReadPath(path);
+            });
+            text = Normalize(strategy.GetResultantText());
+        }
+        else
+        {
+            (text, columns) = PdfMcpColumnReader.Read(page, bounds, strategy, layout == "two-column", cancellation, details);
+        }
+
+        return new(number, text, text.Length > 0, bounds.Width, bounds.Height, page.GetRotation(),
+            columns, details?.Spans, details?.GetEquations(cancellation), details?.RawText, details?.Fonts);
     }
 
     internal static string Normalize(string text) => string.IsNullOrWhiteSpace(text)
