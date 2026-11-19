@@ -9,8 +9,15 @@ namespace PDF_simple_edit.Services;
 public static class PdfTextSelectionService
 {
     public static string GetSelectedText(IReadOnlyList<NativePdfTextBlock> selected) =>
-        string.Join(Environment.NewLine, selected.Select(block => string.Concat(block.Glyphs
-            .Select(glyph => glyph.IsSoftBreak ? Environment.NewLine : glyph.Text))));
+        string.Join(Environment.NewLine, selected.Select(GetBlockText));
+
+    private static string GetBlockText(NativePdfTextBlock block)
+    {
+        var equations = block.Runs.Where(run => HwpEquationText.IsFont(run.FontName))
+            .Select(run => run.Id).ToHashSet();
+        return string.Concat(block.Glyphs.Select(glyph => glyph.IsSoftBreak ? Environment.NewLine
+            : equations.Contains(glyph.RunId) ? HwpEquationText.Decode(glyph.Text) : glyph.Text));
+    }
 
     public static List<NativePdfTextBlock> SelectRange(IReadOnlyList<NativePdfTextBlock> blocks,
         PdfTextPoint start, PdfTextPoint end)

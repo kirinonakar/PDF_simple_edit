@@ -140,8 +140,10 @@ internal static partial class PdfMcpTools
             Input, Fields(("query", Field("string", "Nonempty substring.")),
                 ("caseSensitive", Boolean),
                 ("maxResults", new { type = "integer", minimum = 1, maximum = 10000, description = "Default 100 blocks." })));
-        Add("pdf_read", "Read body text by page, including existing OCR. For scans, use pdf_vlm_ocr.", new[] { "inputPath" }, true,
-            Input, Fields(("page", Page), ("pages", Field("string", "Range (e.g. 1,3,5-8) or all; omit page when set."))));
+        Add("pdf_read", "Read body text by page, including existing OCR. Detects two-column pages and returns their text left to right with a separate columns array. For scans, use pdf_vlm_ocr.", new[] { "inputPath" }, true,
+            Input, Fields(("page", Page), ("pages", Field("string", "Range (e.g. 1,3,5-8) or all; omit page when set.")),
+                ("layout", new { type = "string", @enum = new[] { "auto", "single", "two-column" }, @default = "auto",
+                    description = "auto detects two columns per page; single uses line-by-line order; two-column forces a split if detection fails." })));
         Add("pdf_add_text", "Add Unicode text at x/y (default 0/0).", new[] { "inputPath", "outputPath", "text" }, false,
             Input, Output, TextStyle, Fields(("page", Page), ("text", Text), ("x", Number), ("y", Number)));
         Add("pdf_edit_text", "Edit a text block or replace a literal substring. Empty text deletes the block.", new[] { "inputPath", "outputPath", "objectId" }, false,
